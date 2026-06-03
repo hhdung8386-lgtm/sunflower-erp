@@ -61,6 +61,21 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     'Mua hàng:': 'Purchasing:',
     'Sản xuất:': 'Production:',
     'Kế toán:': 'Accountant:',
+    'SUNFLOWER LABEL MANUFACTURING': 'SUNFLOWER LABEL MANUFACTURING',
+    'Chào mừng đến với SUNFLOWER': 'Welcome to SUNFLOWER',
+    'Đăng nhập để bắt đầu phiên làm việc': 'Sign in to start your session',
+    'Tên đăng nhập': 'Username',
+    'Nhập tên đăng nhập hoặc email': 'Enter username or email',
+    'Mật khẩu của bạn': 'Your password',
+    'Ghi nhớ đăng nhập': 'Remember me',
+    'Đăng Nhập': 'Sign In',
+    'Quy Trình Hoạt Động Cốt Lõi': 'Core Operating Process',
+    'Khách Hàng & CRM': 'Customer & CRM',
+    'Tiếp Nhận PO': 'PO Intake',
+    'Thiết Kế & Duyệt': 'Design & Approval',
+    'Lệnh Sản Xuất': 'Production Command',
+    'Giao Hàng & Ký': 'Delivery & Sign-off',
+    'Hệ Thống Phân Hệ Chức Năng': 'Functional Subsystem Grid',
 
     // Dashboard Overview
     'BẢNG ĐIỀU KHIỂN TỔNG QUAN': 'DASHBOARD OVERVIEW',
@@ -413,6 +428,11 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     'để phù hợp với cơ chế xác thực gọn nhẹ.': 'to match the lightweight authentication mechanism.',
     'Lưu Thay Đổi': 'Save Changes',
     'Khóa Tài Khoản': 'Disable Account',
+    'Tạo bởi:': 'Created by:',
+    'Cập nhật bởi:': 'Updated by:',
+    'Chưa cập nhật': 'Never updated',
+    'Không xác định': 'Unknown',
+    'Xác nhận xóa': 'Confirm Delete',
     'Kích Hoạt': 'Activate Account'
   };
 

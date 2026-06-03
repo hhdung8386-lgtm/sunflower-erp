@@ -86,7 +86,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       email: emailTrim,
       role,
       active,
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
     };
 
     await dbService.addDocument('users', newUser);
@@ -113,7 +114,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     await dbService.updateDocument('users', selectedUser.uid, {
       displayName: displayName.trim(),
       role,
-      active
+      active,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
     });
 
     setShowEditModal(false);
@@ -127,11 +130,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       return;
     }
 
-    const action = user.active ? t('Khóa Tài Khoản') : t('Kích Hoạt');
     if (window.confirm(t(`Bạn có chắc chắn muốn thay đổi trạng thái tài khoản ${user.displayName}?`))) {
       await dbService.updateDocument('users', user.uid, {
-        active: !user.active
+        active: !user.active,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
       });
+      onRefresh();
+    }
+  };
+
+  const handleDeleteUser = async (userToDelete: UserProfile) => {
+    if (userToDelete.uid === currentUser.uid) {
+      alert(t('Bạn không thể tự xóa tài khoản của chính mình.'));
+      return;
+    }
+
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản người dùng này?'))) {
+      await dbService.deleteDocument('users', userToDelete.uid);
       onRefresh();
     }
   };
@@ -221,12 +237,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                       <div className="btn-group">
                         <button className="btn btn-sm btn-outline" onClick={() => openEditModal(u)}>{t('Sửa')}</button>
                         {!isSelf && (
-                          <button 
-                            className={`btn btn-sm ${u.active ? 'btn-danger' : 'btn-outline'}`}
-                            onClick={() => handleToggleStatus(u)}
-                          >
-                            {u.active ? t('Khóa Tài Khoản') : t('Kích Hoạt')}
-                          </button>
+                          <>
+                            <button 
+                              className={`btn btn-sm ${u.active ? 'btn-danger' : 'btn-outline'}`}
+                              onClick={() => handleToggleStatus(u)}
+                            >
+                              {u.active ? t('Khóa Tài Khoản') : t('Kích Hoạt')}
+                            </button>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteUser(u)}>{t('Xóa')}</button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -375,8 +394,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                 <div style={{ backgroundColor: 'var(--color-bg-light)', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', marginTop: '8px' }}>
                   <span style={{ fontSize: '12.5px', fontWeight: 600 }}>{t('Thông tin bảo mật:')}</span>
                   <div style={{ marginTop: '6px', fontSize: '12px' }}>
-                    {t('Nếu đổi vai trò phòng ban của nhân sự, mật khẩu đăng nhập của họ cũng sẽ tự động chuyển thành mật khẩu tương ứng với vai trò mới (ví dụ:')} <code>{getDefaultPassword(role)}</code>{t('để phù hợp với cơ chế xác thực gọn nhẹ.')}
+                    {t('Nếu đổi vai trò phòng ban của nhân sự, mật khẩu đăng nhập của họ cũng sẽ tự động chuyển thành mật khẩu tương ứng với vai trò mới (ví dụ:')} <code>{getDefaultPassword(role)}</code> {t('để phù hợp với cơ chế xác thực gọn nhẹ.')}
                   </div>
+                </div>
+
+                {/* Audit trail */}
+                <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border-light)', paddingTop: '8px' }}>
+                  <div>{t('Tạo bởi:')} {selectedUser.createdBy || t('Không xác định')} {selectedUser.createdAt && `(${selectedUser.createdAt})`}</div>
+                  {selectedUser.updatedBy && (
+                    <div>{t('Cập nhật bởi:')} {selectedUser.updatedBy} ({selectedUser.updatedAt ? new Date(selectedUser.updatedAt).toLocaleString(t('vi-VN')) : ''})</div>
+                  )}
                 </div>
               </div>
               <div className="modal-footer">

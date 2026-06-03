@@ -12,6 +12,7 @@ interface ProductionProps {
 export const Production: React.FC<ProductionProps> = ({ pos, productionCommands, currentUser, onRefresh }) => {
   const { t } = useLanguage();
   const [showAddLsxModal, setShowAddLsxModal] = useState(false);
+  const [showEditLsxModal, setShowEditLsxModal] = useState(false);
   const [selectedLsx, setSelectedLsx] = useState<any | null>(null);
 
   // Form states
@@ -21,6 +22,13 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   const [operatorName, setOperatorName] = useState('Thành Vũ (Sản xuất)');
   const [qtyToProduce, setQtyToProduce] = useState(10000);
   const [notes, setNotes] = useState('');
+
+  // Edit form states
+  const [editMachineId, setEditMachineId] = useState('');
+  const [editShift, setEditShift] = useState('');
+  const [editOperatorName, setEditOperatorName] = useState('');
+  const [editQtyToProduce, setEditQtyToProduce] = useState(10000);
+  const [editNotes, setEditNotes] = useState('');
 
   // Complete LSX states
   const [scrapQty, setScrapQty] = useState(0);
@@ -63,12 +71,14 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       machineId,
       shift,
       operatorId: currentUser.uid,
-      operatorName: currentUser.displayName,
+      operatorName: operatorName,
       status: 'producing',
       scrapQty: 0,
       notes,
       startedAt: new Date().toISOString(),
-      completedAt: ''
+      completedAt: '',
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
     };
 
     await dbService.addDocument('production_commands', newLsx);
@@ -80,7 +90,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
         status: 'producing',
         updatedBy: currentUser.displayName,
         updatedAt: new Date().toISOString(),
-        note: `Phát hành Lệnh sản xuất ${lsxCode} giao phó thợ máy ${currentUser.displayName} đứng máy in ${machineId}.`
+        note: `Phát hành Lệnh sản xuất ${lsxCode} giao phó thợ máy ${operatorName} đứng máy in ${machineId}.`
       }
     ];
 
@@ -94,6 +104,63 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     onRefresh();
   };
 
+  const handleOpenEditLsx = (lsx: any) => {
+    setEditMachineId(lsx.machineId);
+    setEditShift(lsx.shift);
+    setEditOperatorName(lsx.operatorName || '');
+    setEditQtyToProduce(lsx.qtyToProduce);
+    setEditNotes(lsx.notes || '');
+    setShowEditLsxModal(true);
+  };
+
+  const handleEditLsxSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLsx) return;
+
+    await dbService.updateDocument('production_commands', selectedLsx.id, {
+      machineId: editMachineId,
+      shift: editShift,
+      operatorName: editOperatorName,
+      qtyToProduce: Number(editQtyToProduce),
+      notes: editNotes,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditLsxModal(false);
+    setSelectedLsx(null);
+    onRefresh();
+  };
+
+  const handleDeleteLsx = async (lsxId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa lệnh sản xuất này?'))) {
+      const lsx = productionCommands.find(l => l.id === lsxId);
+      await dbService.deleteDocument('production_commands', lsxId);
+      
+      if (lsx) {
+        const po = pos.find(p => p.id === lsx.poId);
+        if (po) {
+          const updatedLogs = [
+            ...po.historyLogs,
+            {
+              status: 'supplier_confirmed',
+              updatedBy: currentUser.displayName,
+              updatedAt: new Date().toISOString(),
+              note: `Đã hủy lệnh sản xuất ${lsx.lsxCode}. Trạng thái PO quay lại chờ sản xuất.`
+            }
+          ];
+          await dbService.updateDocument('pos', po.id, {
+            status: 'supplier_confirmed',
+            historyLogs: updatedLogs
+          });
+        }
+      }
+
+      setSelectedLsx(null);
+      onRefresh();
+    }
+  };
+
   const handleCompleteLsx = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLsx) return;
@@ -105,7 +172,9 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       status: 'completed',
       scrapQty: Number(scrapQty),
       notes: `${selectedLsx.notes || ''} | Ghi chú hoàn thành: ${completionNotes}`,
-      completedAt: now
+      completedAt: now,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: now
     });
 
     // Update PO status to "production_done"
@@ -140,8 +209,6 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     }
 
     // AUTO WAREHOUSE DEDUCTION FOR MATERIALS USED
-    // In our simplified ERP logic, running an LSX uses decal and ink:
-    // Decal = quantity * 0.02 sqm, Ink = quantity * 0.0001 kg.
     const invList = await dbService.getCollection('inventory');
     const decalQtyNeeded = Math.round(selectedLsx.qtyToProduce * 0.015); // e.g. 150sqm for 10k items
     const inkQtyNeeded = Math.round(selectedLsx.qtyToProduce * 0.0002 * 10) / 10; // e.g. 2kg
@@ -222,13 +289,23 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                     }`}>{cmd.status === 'completed' ? t('Đã hoàn thành') : t('Đang in')}</span>
                   </td>
                   <td>
-                    {cmd.status !== 'completed' && (currentUser.role === 'admin' || currentUser.role === 'producer') ? (
-                      <button className="btn btn-sm btn-success" onClick={(e) => { e.stopPropagation(); setSelectedLsx(cmd); }}>
-                        {t('Báo Cáo Hoàn Thành')}
-                      </button>
-                    ) : (
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>{t('Chi Tiết')}</button>
-                    )}
+                    <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                      {cmd.status !== 'completed' && (currentUser.role === 'admin' || currentUser.role === 'producer') ? (
+                        <>
+                          <button className="btn btn-sm btn-success" onClick={() => setSelectedLsx(cmd)}>
+                            {t('Báo Cáo Hoàn Thành')}
+                          </button>
+                          <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditLsx(cmd)}>
+                            {t('Sửa')}
+                          </button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDeleteLsx(cmd.id)}>
+                            {t('Xóa')}
+                          </button>
+                        </>
+                      ) : (
+                        <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>{t('Chi Tiết')}</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -323,13 +400,84 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
         </div>
       )}
 
+      {/* EDIT LSX DIALOG */}
+      {showEditLsxModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Chỉnh Sửa Lệnh Sản Xuất')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditLsxModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditLsxSubmit}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Máy In Phân Công *')}</label>
+                    <select value={editMachineId} onChange={e => setEditMachineId(e.target.value)}>
+                      <option value="Máy Flexo 8 màu OMET">{t('Máy Flexo 8 màu OMET')}</option>
+                      <option value="Máy Flexo 4 màu Gallus">{t('Máy Flexo 4 màu Gallus')}</option>
+                      <option value="Máy in Offset Heidelberg">{t('Máy in Offset Heidelberg')}</option>
+                      <option value="Máy in Kỹ thuật số Konica">{t('Máy in Kỹ thuật số Konica')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Ca Sản Xuất *')}</label>
+                    <select value={editShift} onChange={e => setEditShift(e.target.value)}>
+                      <option value="Ca Sáng (08:00 - 18:00)">{t('Ca Sáng (08:00 - 18:00)')}</option>
+                      <option value="Ca Đêm (18:00 - 04:00)">{t('Ca Đêm (18:00 - 04:00)')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Số Lượng Tem Cần In *')}</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={editQtyToProduce} 
+                      onChange={e => setEditQtyToProduce(Number(e.target.value))} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Người Đứng Máy Vận Hành')}</label>
+                    <input type="text" value={editOperatorName} onChange={e => setEditOperatorName(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Ghi Chú Kỹ Thuật Máy / Bế / Cán màng')}</label>
+                  <textarea 
+                    value={editNotes} 
+                    onChange={e => setEditNotes(e.target.value)} 
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditLsxModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* LSX DETAILS AND COMPLETION MODAL */}
-      {selectedLsx && (
+      {selectedLsx && !showEditLsxModal && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT LỆNH SẢN XUẤT')}: {selectedLsx.lsxCode}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {selectedLsx.status === 'producing' && (currentUser.role === 'admin' || currentUser.role === 'producer') && (
+                  <>
+                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditLsx(selectedLsx)}>{t('Sửa')}</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteLsx(selectedLsx.id)}>{t('Xóa')}</button>
+                  </>
+                )}
+                <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>
+              </div>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -340,6 +488,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   <div><span style={{ fontWeight: 600 }}>{t('Ca Kíp Máy')}:</span> {t(selectedLsx.shift)}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Người Vận Hành')}:</span> {selectedLsx.operatorName}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Số Lượng Cần In')}:</span> {selectedLsx.qtyToProduce.toLocaleString()} {t('tem')}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Ghi chú')}:</span> {selectedLsx.notes || t('Không có')}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Ngày Lập Lệnh')}:</span> {new Date(selectedLsx.startedAt).toLocaleString('vi-VN')}</div>
                   {selectedLsx.completedAt && (
                     <div>
@@ -391,6 +540,14 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   </button>
                 </form>
               )}
+
+              {/* Audit trail */}
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div>{t('Tạo bởi:')} {selectedLsx.createdBy || t('Không xác định')} {selectedLsx.createdAt && `(${new Date(selectedLsx.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                {selectedLsx.updatedBy && (
+                  <div>{t('Cập nhật bởi:')} {selectedLsx.updatedBy} ({new Date(selectedLsx.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                )}
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>

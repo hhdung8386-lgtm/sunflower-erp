@@ -29,8 +29,14 @@ function App() {
   const [inventory, setInventory] = useState<any[]>([]);
 
   // Login form states
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState(() => {
+    return localStorage.getItem('erp_remembered_username') || '';
+  });
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('erp_remember_me') === 'true';
+  });
   const [errorMsg, setErrorMsg] = useState('');
 
   // Handle Authentication State Change
@@ -74,7 +80,14 @@ function App() {
     e.preventDefault();
     setErrorMsg('');
     try {
-      await authService.login(email, password);
+      await authService.login(username, password);
+      if (rememberMe) {
+        localStorage.setItem('erp_remembered_username', username);
+        localStorage.setItem('erp_remember_me', 'true');
+      } else {
+        localStorage.removeItem('erp_remembered_username');
+        localStorage.removeItem('erp_remember_me');
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Đăng nhập không thành công.');
     }
@@ -151,68 +164,193 @@ function App() {
   // Render Login Page
   if (!user) {
     return (
-      <div className="login-container" style={{ position: 'relative' }}>
-        {/* Floating globe language switcher in login */}
-        <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
-          <button 
-            className="lang-toggle-btn" 
-            onClick={() => setLanguage(language === 'vi' ? 'en' : 'vi')}
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-            </svg>
-            <span>{language === 'vi' ? 'English' : 'Tiếng Việt'}</span>
-          </button>
+      <div className="login-split-container">
+        {/* Left Panel: Slogans, Image, Flow, Grid */}
+        <div className="login-left-banner">
+          <div className="login-left-content">
+            <div className="login-brand-header">
+              <span className="brand-logo-icon">🌻</span>
+              <span className="brand-name">SUNFLOWER</span>
+            </div>
+            <h1 className="login-banner-title">{t('SUNFLOWER LABEL MANUFACTURING')}</h1>
+            <p className="login-banner-subtitle">{t('Hệ Thống Quản Trị Sản Xuất Tem Nhãn')}</p>
+            
+            <div className="printing-image-container">
+              <img 
+                src="/src/assets/printing_machine.png" 
+                alt="Flexo Printing Machine" 
+                className="printing-machine-img" 
+                decoding="async"
+                loading="eager"
+              />
+            </div>
+
+            {/* 6-step flow */}
+            <div className="timeline-flow-container">
+              <h3 className="timeline-title">{t('Quy Trình Hoạt Động Cốt Lõi')}</h3>
+              <div className="timeline-flow">
+                <div className="timeline-step">
+                  <div className="step-num">1</div>
+                  <div className="step-text">{t('Khách Hàng & CRM')}</div>
+                </div>
+                <div className="timeline-step">
+                  <div className="step-num">2</div>
+                  <div className="step-text">{t('Tiếp Nhận PO')}</div>
+                </div>
+                <div className="timeline-step">
+                  <div className="step-num">3</div>
+                  <div className="step-text">{t('Thiết Kế & Duyệt')}</div>
+                </div>
+                <div className="timeline-step">
+                  <div className="step-num">4</div>
+                  <div className="step-text">{t('Mua Hàng & NCC')}</div>
+                </div>
+                <div className="timeline-step">
+                  <div className="step-num">5</div>
+                  <div className="step-text">{t('Lệnh Sản Xuất')}</div>
+                </div>
+                <div className="timeline-step">
+                  <div className="step-num">6</div>
+                  <div className="step-text">{t('Giao Hàng & Ký')}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 8-box grid */}
+            <div className="feature-grid-container">
+              <h3 className="grid-title">{t('Hệ Thống Phân Hệ Chức Năng')}</h3>
+              <div className="feature-grid">
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Khách Hàng (CRM)')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Tiếp Nhận Đơn (Sale PO)')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Thiết Kế & Layout')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Mua Hàng & NCC')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Kho Nguyên Vật Tư')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Lệnh Sản Xuất (LSX)')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Kế Hoạch Giao Hàng')}</div>
+                </div>
+                <div className="grid-item">
+                  <div className="grid-item-name">{t('Kế Toán & Lãi Gộp')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="login-card">
-          <div className="login-title">SUNFLOWER</div>
-          <div className="login-subtitle">{t('Hệ Thống Quản Trị Sản Xuất Tem Nhãn')}</div>
-          
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div className="form-group">
-              <label>{t('Địa Chỉ Email Văn Phòng')}</label>
-              <input 
-                type="email" 
-                placeholder="sale@sunflower.com, admin@..." 
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>{t('Mật Khẩu Đăng Nhập')}</label>
-              <input 
-                type="password" 
-                placeholder="Ví dụ: admin123, sale123..." 
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {errorMsg && (
-              <div style={{ color: 'var(--color-danger)', fontSize: '12.5px', textAlign: 'center', backgroundColor: 'var(--color-danger-bg)', padding: '6px', borderRadius: '4px', border: '1px solid var(--color-danger-border)' }}>
-                {errorMsg}
-              </div>
-            )}
-
-            <button type="submit" className="btn btn-primary" style={{ marginTop: '10px' }}>
-              {t('Đăng Nhập Vào Hệ Thống')}
+        {/* Right Panel: Login card */}
+        <div className="login-right-pane">
+          <div className="login-right-header">
+            <button 
+              className="lang-toggle-btn" 
+              onClick={() => setLanguage(language === 'vi' ? 'en' : 'vi')}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              <span>{language === 'vi' ? 'English' : 'Tiếng Việt'}</span>
             </button>
-          </form>
+          </div>
 
-          <div style={{ marginTop: '10px', fontSize: '11.5px', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px' }}>
-            <strong>{t('Tài khoản Demo thử nghiệm nhanh:')}</strong>
-            <div style={{ marginTop: '4px' }}>
-              • {t('Giám đốc')}: <code>admin@sunflower.com</code> / {t('mật khẩu')} <code>admin123</code><br />
-              • Sale: <code>sale@sunflower.com</code> / {t('mật khẩu')} <code>sale123</code><br />
-              • {t('Thiết kế')}: <code>designer@sunflower.com</code> / {t('mật khẩu')} <code>design123</code><br />
-              • {t('Mua hàng')}: <code>purchase@sunflower.com</code> / {t('mật khẩu')} <code>purchase123</code><br />
-              • {t('Sản xuất')}: <code>produce@sunflower.com</code> / {t('mật khẩu')} <code>produce123</code><br />
-              • {t('Kế toán')}: <code>accountant@sunflower.com</code> / {t('mật khẩu')} <code>account123</code>
+          <div className="login-right-card">
+            <h2 className="login-card-title">{t('Chào mừng đến với SUNFLOWER')}</h2>
+            <p className="login-card-subtitle">{t('Đăng nhập để bắt đầu phiên làm việc')}</p>
+
+            <form onSubmit={handleLogin} className="login-form">
+              <div className="form-group">
+                <label>{t('Tên đăng nhập')}</label>
+                <div className="input-wrapper">
+                  <input 
+                    type="text" 
+                    placeholder={t('Nhập tên đăng nhập hoặc email')} 
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    required
+                    className="login-input"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>{t('Mật Khẩu Đăng Nhập')}</label>
+                <div className="input-wrapper password-input-wrapper">
+                  <input 
+                    type={showPassword ? "text" : "password"}
+                    placeholder={t('Mật khẩu của bạn')}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    className="login-input"
+                  />
+                  <button 
+                    type="button" 
+                    className="password-toggle-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label="Toggle password visibility"
+                  >
+                    {showPassword ? (
+                      /* Eye Off Icon */
+                      <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </svg>
+                    ) : (
+                      /* Eye Icon */
+                      <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="login-options">
+                <label className="remember-me">
+                  <input 
+                    type="checkbox" 
+                    checked={rememberMe} 
+                    onChange={e => setRememberMe(e.target.checked)} 
+                  />
+                  <span>{t('Ghi nhớ đăng nhập')}</span>
+                </label>
+              </div>
+
+              {errorMsg && (
+                <div className="login-error-alert">
+                  {errorMsg}
+                </div>
+              )}
+
+              <button type="submit" className="login-btn-submit">
+                {t('Đăng Nhập')}
+              </button>
+            </form>
+
+            {/* Demo Credentials Section */}
+            <div className="demo-credentials">
+              <h4>{t('Tài khoản Demo thử nghiệm nhanh:')}</h4>
+              <ul>
+                <li><strong>{t('Giám đốc')}:</strong> <code>admin</code> / <code>admin123</code></li>
+                <li><strong>Sale:</strong> <code>sale</code> / <code>sale123</code></li>
+                <li><strong>{t('Thiết kế')}:</strong> <code>designer</code> / <code>design123</code></li>
+                <li><strong>{t('Mua hàng')}:</strong> <code>purchase</code> / <code>purchase123</code></li>
+                <li><strong>{t('Sản xuất')}:</strong> <code>produce</code> / <code>produce123</code></li>
+                <li><strong>{t('Kế toán')}:</strong> <code>accountant</code> / <code>account123</code></li>
+              </ul>
             </div>
           </div>
         </div>

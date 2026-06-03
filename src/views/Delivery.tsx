@@ -12,6 +12,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   const { t } = useLanguage();
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [showAddTripModal, setShowAddTripModal] = useState(false);
+  const [showEditTripModal, setShowEditTripModal] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
   
   // Signature Modal states
@@ -30,6 +31,13 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   const [deliveryDate, setDeliveryDate] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
+  // Edit form states
+  const [editRegion, setEditRegion] = useState('Hải Dương');
+  const [editDriverName, setEditDriverName] = useState('Lê Văn Tài');
+  const [editVehiclePlate, setEditVehiclePlate] = useState('34C-888.99');
+  const [editDeliveryDate, setEditDeliveryDate] = useState('');
+  const [editSelectedOrderIds, setEditSelectedOrderIds] = useState<string[]>([]);
+
   // Refresh delivery trips list
   const fetchDeliveries = async () => {
     const list = await dbService.getCollection('deliveries');
@@ -47,14 +55,13 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   };
 
   // Grouping logic: Get packed orders that matches selected region
-  const getPackedOrdersInRegion = () => {
+  const getPackedOrdersInRegion = (reg: string) => {
     return pos.filter(po => {
       const isPacked = po.status === 'packed';
-      // Mapped address match (simple keyword match)
-      const matchesRegion = po.customerName.toLowerCase().includes(region.toLowerCase()) || 
-                            po.notes.toLowerCase().includes(region.toLowerCase()) ||
-                            (region === 'Hải Dương' && (po.customerName.includes('AQUA') || po.customerName.includes('Brother') || po.customerName.includes('Trancy')));
-      return isPacked || (po.status === 'producing' && matchesRegion); // Allow planning producing ones as well
+      const matchesRegion = po.customerName.toLowerCase().includes(reg.toLowerCase()) || 
+                            po.notes.toLowerCase().includes(reg.toLowerCase()) ||
+                            (reg === 'Hải Dương' && (po.customerName.includes('AQUA') || po.customerName.includes('Brother') || po.customerName.includes('Trancy')));
+      return isPacked || (po.status === 'producing' && matchesRegion);
     });
   };
 
@@ -67,15 +74,14 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
 
     const delCode = `DEL-${new Date().toISOString().substring(2,7).replace('-','')}-${Math.floor(1000 + Math.random() * 9000)}`;
     
-    // Group orders structure
     const tripOrders = selectedOrderIds.map(poId => {
       const po = pos.find(p => p.id === poId);
       return {
         poId,
-        customerId: po.customerId,
-        customerName: po.customerName,
-        deliveryAddress: po.notes.includes('địa chỉ') ? po.notes : 'Kho Khách Hàng (Theo hồ sơ CRM)',
-        deliveredQty: po.items[0]?.quantity || 0,
+        customerId: po?.customerId || '',
+        customerName: po?.customerName || '',
+        deliveryAddress: po?.notes.includes('địa chỉ') ? po.notes : 'Kho Khách Hàng (Theo hồ sơ CRM)',
+        deliveredQty: po?.items[0]?.quantity || 0,
         status: 'pending',
         signatureImage: '',
         note: ''
@@ -90,12 +96,14 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
       vehiclePlate,
       assignedSaleId,
       status: 'planning',
-      orders: tripOrders
+      orders: tripOrders,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
     };
 
     await dbService.addDocument('deliveries', newTrip);
 
-    // Update customer PO statuses in the database to "delivering"
+    // Update customer PO statuses to "delivering"
     for (const poId of selectedOrderIds) {
       const po = pos.find(p => p.id === poId);
       if (po) {
@@ -120,8 +128,93 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     onRefresh();
   };
 
+  const handleOpenEditTrip = (trip: any) => {
+    setSelectedTrip(trip);
+    setEditRegion(trip.region);
+    setEditDriverName(trip.driverName);
+    setEditVehiclePlate(trip.vehiclePlate);
+    setEditDeliveryDate(new Date(trip.deliveryDate).toISOString().split('T')[0]);
+    setEditSelectedOrderIds(trip.orders.map((o: any) => o.poId));
+    setShowEditTripModal(true);
+  };
+
+  const handleEditTripSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTrip) return;
+    if (editSelectedOrderIds.length === 0) {
+      alert('Vui lòng chọn ít nhất một đơn hàng để giao!');
+      return;
+    }
+
+    const tripOrders = editSelectedOrderIds.map(poId => {
+      const po = pos.find(p => p.id === poId);
+      const existingOrder = selectedTrip.orders.find((o: any) => o.poId === poId);
+      return {
+        poId,
+        customerId: po?.customerId || existingOrder?.customerId || '',
+        customerName: po?.customerName || existingOrder?.customerName || '',
+        deliveryAddress: po?.notes.includes('địa chỉ') ? po.notes : 'Kho Khách Hàng (Theo hồ sơ CRM)',
+        deliveredQty: po?.items[0]?.quantity || existingOrder?.deliveredQty || 0,
+        status: existingOrder?.status || 'pending',
+        signatureImage: existingOrder?.signatureImage || '',
+        note: existingOrder?.note || ''
+      };
+    });
+
+    await dbService.updateDocument('deliveries', selectedTrip.id, {
+      region: editRegion,
+      driverName: editDriverName,
+      vehiclePlate: editVehiclePlate,
+      deliveryDate: new Date(editDeliveryDate).toISOString(),
+      orders: tripOrders,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditTripModal(false);
+    setSelectedTrip(null);
+    fetchDeliveries();
+    onRefresh();
+  };
+
+  const handleDeleteTrip = async (tripId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa chuyến xe giao hàng này?'))) {
+      const trip = deliveries.find(d => d.id === tripId);
+      await dbService.deleteDocument('deliveries', tripId);
+      
+      if (trip) {
+        for (const ord of trip.orders) {
+          const po = pos.find(p => p.id === ord.poId);
+          if (po && po.status === 'delivering') {
+            const updatedLogs = [
+              ...po.historyLogs,
+              {
+                status: 'packed',
+                updatedBy: currentUser.displayName,
+                updatedAt: new Date().toISOString(),
+                note: `Đã hủy chuyến giao hàng ${trip.delCode}. Trạng thái PO quay lại chờ xe giao.`
+              }
+            ];
+            await dbService.updateDocument('pos', po.id, {
+              status: 'packed',
+              historyLogs: updatedLogs
+            });
+          }
+        }
+      }
+
+      setSelectedTrip(null);
+      fetchDeliveries();
+      onRefresh();
+    }
+  };
+
   const updateTripStatus = async (tripId: string, newStatus: string) => {
-    await dbService.updateDocument('deliveries', tripId, { status: newStatus });
+    await dbService.updateDocument('deliveries', tripId, { 
+      status: newStatus,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
     setSelectedTrip((prev: any) => prev ? { ...prev, status: newStatus } : null);
     fetchDeliveries();
     onRefresh();
@@ -134,7 +227,6 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Coordinates relative to canvas
     const rect = canvas.getBoundingClientRect();
     ctx.beginPath();
     ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
@@ -165,15 +257,12 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // Save drawing canvas to Base64 and confirm order delivered
   const saveSignature = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !selectedTrip) return;
 
-    // Convert Canvas drawing directly into Base64 String
     const signatureBase64 = canvas.toDataURL('image/png');
     
-    // Update order state inside the current delivery trip
     const updatedOrders = selectedTrip.orders.map((ord: any) => {
       if (ord.poId === signingOrderPoId) {
         return {
@@ -190,7 +279,6 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
       orders: updatedOrders
     });
 
-    // Also update the actual Customer PO status to "delivered" (this auto-creates invoice!)
     const po = pos.find(p => p.id === signingOrderPoId);
     if (po) {
       const updatedLogs = [
@@ -203,13 +291,11 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         }
       ];
 
-      // Auto update PO status to delivered
       await dbService.updateDocument('pos', po.id, {
         status: 'delivered',
         historyLogs: updatedLogs
       });
 
-      // Create accounts receivable VAT invoice automatically!
       const invoiceCode = `VAT-${po.poCode.replace('PO-','')}`;
       await dbService.addDocument('invoices', {
         invoiceCode,
@@ -220,7 +306,9 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         amount: po.netAmount,
         paidAmount: 0,
         status: 'unpaid',
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        createdAt: new Date().toISOString()
       });
     }
 
@@ -233,7 +321,6 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   const handleOpenSignature = (poId: string) => {
     setSigningOrderPoId(poId);
     setShowSignatureModal(true);
-    // Timeout to clear canvas after DOM loads
     setTimeout(() => {
       const canvas = canvasRef.current;
       if (canvas) {
@@ -269,7 +356,6 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                 <th>{t('Khu Vực Tuyến Đường Giao Hàng *')}</th>
                 <th>{t('Tên Tài Xế Phụ Trách *')}</th>
                 <th>{t('Biển Số Xe Vận Chuyển *')}</th>
-                <th>{t('Nhân Viên Sale Đi Cùng (Nếu có)')}</th>
                 <th>{t('expectedDeliveryDate')}</th>
                 <th>{t('Số Đơn')}</th>
                 <th>{t('Trạng Thái')}</th>
@@ -283,7 +369,6 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                   <td style={{ fontWeight: 500 }}>{t(del.region)}</td>
                   <td>{del.driverName}</td>
                   <td>{del.vehiclePlate}</td>
-                  <td>{currentUser.displayName} ({t('Sale Phụ Trách')})</td>
                   <td>{new Date(del.deliveryDate).toLocaleDateString(t('vi-VN'))}</td>
                   <td>{del.orders.length} {t('đơn')}</td>
                   <td>
@@ -299,7 +384,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               ))}
               {deliveries.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có chuyến giao hàng nào.')}</td>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có chuyến giao hàng nào.')}</td>
                 </tr>
               )}
             </tbody>
@@ -314,7 +399,15 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
             <span className="card-title" style={{ color: 'var(--color-primary)' }}>
               {t('CHI TIẾT CHUYẾN ĐI')}: {selectedTrip.delCode} ({t(selectedTrip.region)})
             </span>
-            <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(null)}>{t('Đóng chi tiết')}</button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {selectedTrip.status === 'planning' && (currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
+                <>
+                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditTrip(selectedTrip)}>{t('Sửa')}</button>
+                  <button className="btn btn-sm btn-danger" onClick={() => handleDeleteTrip(selectedTrip.id)}>{t('Xóa')}</button>
+                </>
+              )}
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(null)}>{t('Đóng chi tiết')}</button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
@@ -325,23 +418,20 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
           </div>
 
           {selectedTrip.status === 'planning' && (
-            <div className="btn-group">
+            <div className="btn-group" style={{ marginTop: '12px' }}>
               <button className="btn btn-primary" onClick={() => updateTripStatus(selectedTrip.id, 'delivering')}>
                 {t('Đang Đi Giao')}
-              </button>
-              <button className="btn btn-danger" onClick={() => dbService.deleteDocument('deliveries', selectedTrip.id).then(() => { setSelectedTrip(null); fetchDeliveries(); })} style={{ width: 'auto' }}>
-                {t('Hủy')}
               </button>
             </div>
           )}
           
           {selectedTrip.status === 'delivering' && (
-            <button className="btn btn-success" onClick={() => updateTripStatus(selectedTrip.id, 'completed')}>
+            <button className="btn btn-success" onClick={() => updateTripStatus(selectedTrip.id, 'completed')} style={{ marginTop: '12px' }}>
               {t('Giao Thành Công')}
             </button>
           )}
 
-          <h3 style={{ fontSize: '14px', marginTop: '10px', color: 'var(--color-primary)' }}>{t('Chọn Các Đơn Hàng Sẵn Sàng Giao (QC Đã Duyệt)')}:</h3>
+          <h3 style={{ fontSize: '14px', marginTop: '20px', color: 'var(--color-primary)' }}>{t('Chi tiết đơn hàng thuộc chuyến')}:</h3>
           <div className="table-container">
             <table>
               <thead>
@@ -388,6 +478,14 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               </tbody>
             </table>
           </div>
+
+          {/* Audit trail */}
+          <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+            <div>{t('Tạo bởi:')} {selectedTrip.createdBy || t('Không xác định')} {selectedTrip.createdAt && `(${new Date(selectedTrip.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+            {selectedTrip.updatedBy && (
+              <div>{t('Cập nhật bởi:')} {selectedTrip.updatedBy} ({new Date(selectedTrip.updatedAt).toLocaleString(t('vi-VN'))})</div>
+            )}
+          </div>
         </div>
       )}
 
@@ -433,7 +531,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                 </h3>
 
                 <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '8px' }}>
-                  {getPackedOrdersInRegion().map(po => {
+                  {getPackedOrdersInRegion(region).map(po => {
                     const isChecked = selectedOrderIds.includes(po.id);
                     return (
                       <div key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 4px', borderBottom: '1px solid var(--color-border-light)' }}>
@@ -456,7 +554,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                       </div>
                     );
                   })}
-                  {getPackedOrdersInRegion().length === 0 && (
+                  {getPackedOrdersInRegion(region).length === 0 && (
                     <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>
                       {t('Không có lịch giao hàng sắp tới.')}
                     </div>
@@ -466,6 +564,87 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddTripModal(false)}>{t('Hủy')}</button>
                 <button type="submit" className="btn btn-primary">{t('Lưu Chuyến Xe')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TRIP MODAL */}
+      {showEditTripModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '700px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA CHUYẾN XE GIAO HÀNG')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditTripModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditTripSubmit}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Khu Vực Tuyến Đường Giao Hàng *')}</label>
+                    <select value={editRegion} onChange={e => setEditRegion(e.target.value)}>
+                      <option value="Hải Dương">{t('Tỉnh Hải Dương (GomAqua/Brother/Trancy)')}</option>
+                      <option value="Bắc Ninh">{t('Tỉnh Bắc Ninh (Samsung)')}</option>
+                      <option value="Hà Nội">{t('Thành Phố Hà Nội')}</option>
+                      <option value="Hưng Yên">{t('Tỉnh Hưng Yên')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
+                    <input type="date" value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Tên Tài Xế Phụ Trách *')}</label>
+                    <input type="text" value={editDriverName} onChange={e => setEditDriverName(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Biển Số Xe Vận Chuyển *')}</label>
+                    <input type="text" value={editVehiclePlate} onChange={e => setEditVehiclePlate(e.target.value)} required />
+                  </div>
+                </div>
+
+                <h3 style={{ fontSize: '13px', marginTop: '16px', marginBottom: '8px', color: 'var(--color-primary)' }}>
+                  {t('Chọn Các Đơn Hàng Sẵn Sàng Giao (QC Đã Duyệt)')} "{t(editRegion)}":
+                </h3>
+
+                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '8px' }}>
+                  {getPackedOrdersInRegion(editRegion).map(po => {
+                    const isChecked = editSelectedOrderIds.includes(po.id);
+                    return (
+                      <div key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 4px', borderBottom: '1px solid var(--color-border-light)' }}>
+                        <input 
+                          type="checkbox" 
+                          id={`edit-chk-${po.id}`}
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditSelectedOrderIds([...editSelectedOrderIds, po.id]);
+                            } else {
+                              setEditSelectedOrderIds(editSelectedOrderIds.filter(id => id !== po.id));
+                            }
+                          }}
+                          style={{ width: 'auto' }}
+                        />
+                        <label htmlFor={`edit-chk-${po.id}`} style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                          <strong>{po.poCode}</strong> - {po.customerName} | {t('Sản Phẩm')}: {po.items[0]?.productName} ({t('Số Lượng')}: {po.items[0]?.quantity?.toLocaleString()} {t('tem')})
+                        </label>
+                      </div>
+                    );
+                  })}
+                  {getPackedOrdersInRegion(editRegion).length === 0 && editSelectedOrderIds.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>
+                      {t('Không có lịch giao hàng sắp tới.')}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditTripModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
               </div>
             </form>
           </div>

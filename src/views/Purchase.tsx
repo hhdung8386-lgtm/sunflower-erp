@@ -16,8 +16,11 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   
   // Modal states
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [showEditSupplierModal, setShowEditSupplierModal] = useState(false);
   const [showAddPurModal, setShowAddPurModal] = useState(false);
+  const [showEditPurModal, setShowEditPurModal] = useState(false);
   const [selectedPur, setSelectedPur] = useState<any | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<any | null>(null);
 
   // Form states - Supplier
   const [supplierName, setSupplierName] = useState('');
@@ -25,6 +28,13 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
+
+  // Form states - Edit Supplier
+  const [editSupplierName, setEditSupplierName] = useState('');
+  const [editContactPerson, setEditContactPerson] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editAddress, setEditAddress] = useState('');
 
   // Form states - Purchase Order (PUR)
   const [supplierId, setSupplierId] = useState('');
@@ -34,6 +44,107 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   const [unit, setUnit] = useState('m²');
   const [unitPrice, setUnitPrice] = useState(10000);
   const [expectedReceiveDate, setExpectedReceiveDate] = useState('');
+
+  // Form states - Edit PUR
+  const [editSupplierId, setEditSupplierId] = useState('');
+  const [editLinkedPoId, setEditLinkedPoId] = useState('');
+  const [editMaterialName, setEditMaterialName] = useState('');
+  const [editQuantity, setEditQuantity] = useState(100);
+  const [editUnit, setEditUnit] = useState('m²');
+  const [editUnitPrice, setEditUnitPrice] = useState(10000);
+  const [editExpectedReceiveDate, setEditExpectedReceiveDate] = useState('');
+
+  const handleOpenEditSupplier = (sup: any) => {
+    setSelectedSupplier(sup);
+    setEditSupplierName(sup.supplierName);
+    setEditContactPerson(sup.contactPerson || '');
+    setEditPhone(sup.phone || '');
+    setEditEmail(sup.email || '');
+    setEditAddress(sup.address || '');
+    setShowEditSupplierModal(true);
+  };
+
+  const handleEditSupplierSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplier || !editSupplierName) return;
+
+    await dbService.updateDocument('suppliers', selectedSupplier.id, {
+      supplierName: editSupplierName,
+      contactPerson: editContactPerson,
+      phone: editPhone,
+      email: editEmail,
+      address: editAddress,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditSupplierModal(false);
+    setSelectedSupplier(null);
+    const updated = await dbService.getCollection('suppliers');
+    setSuppliers(updated);
+  };
+
+  const handleDeleteSupplier = async (supId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa nhà cung cấp này?'))) {
+      await dbService.deleteDocument('suppliers', supId);
+      const updated = await dbService.getCollection('suppliers');
+      setSuppliers(updated);
+    }
+  };
+
+  const handleOpenEditPur = (pur: any) => {
+    setSelectedPur(pur);
+    setEditSupplierId(pur.supplierId);
+    setEditLinkedPoId(pur.linkedPoId || '');
+    const item = pur.items[0] || {};
+    setEditMaterialName(item.materialName || '');
+    setEditQuantity(item.quantity || 100);
+    setEditUnit(item.unit || 'm²');
+    setEditUnitPrice(item.unitPrice || 10000);
+    setEditExpectedReceiveDate(new Date(pur.expectedReceiveDate).toISOString().split('T')[0]);
+    setShowEditPurModal(true);
+  };
+
+  const handleEditPurSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPur || !editSupplierId || !editMaterialName) return;
+
+    const supplier = suppliers.find(s => s.id === editSupplierId);
+    const linkedPo = pos.find(p => p.id === editLinkedPoId);
+    const subtotal = Number(editQuantity) * Number(editUnitPrice);
+
+    await dbService.updateDocument('purchase_orders', selectedPur.id, {
+      supplierId: editSupplierId,
+      supplierName: supplier?.supplierName || '',
+      linkedPoId: editLinkedPoId || '',
+      linkedPoCode: linkedPo?.poCode || 'Không có',
+      items: [
+        {
+          materialName: editMaterialName,
+          quantity: Number(editQuantity),
+          unit: editUnit,
+          unitPrice: Number(editUnitPrice),
+          totalPrice: subtotal
+        }
+      ],
+      totalPrice: subtotal,
+      expectedReceiveDate: new Date(editExpectedReceiveDate).toISOString(),
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditPurModal(false);
+    setSelectedPur(null);
+    onRefresh();
+  };
+
+  const handleDeletePur = async (purId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa đơn mua hàng này?'))) {
+      await dbService.deleteDocument('purchase_orders', purId);
+      setSelectedPur(null);
+      onRefresh();
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,7 +167,9 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
       contactPerson,
       phone,
       email,
-      address
+      address,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
     });
 
     setShowAddSupplierModal(false);
@@ -98,7 +211,9 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
       totalPrice: subtotal,
       status: 'ordered',
       expectedReceiveDate: new Date(expectedReceiveDate).toISOString(),
-      actualReceiveDate: ''
+      actualReceiveDate: '',
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
     };
 
     await dbService.addDocument('purchase_orders', newPur);
@@ -203,7 +318,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         )}
       </div>
 
-      <div className="details-grid" style={{ gridTemplateColumns: '1fr' }}>
+      <div className="details-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <div className="card">
           <span className="card-title">{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
           <div className="table-container">
@@ -241,6 +356,38 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
             </table>
           </div>
         </div>
+
+        <div className="card">
+          <span className="card-title">{t('Danh Sách Nhà Cung Cấp')}</span>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Tên Nhà Cung Cấp')}</th>
+                  <th>{t('Liên Hệ')}</th>
+                  <th>{t('Thao Tác')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suppliers.map(sup => (
+                  <tr key={sup.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedSupplier(sup)}>
+                    <td style={{ fontWeight: 600 }}>{sup.supplierName}</td>
+                    <td>
+                      <div>{sup.contactPerson || t('Chưa cung cấp')}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sup.phone}</div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                        <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditSupplier(sup)}>{t('Sửa')}</button>
+                        <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleDeleteSupplier(sup.id)}>{t('Xóa')}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* DETAILED PURCHASE DIALOG */}
@@ -249,7 +396,15 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
           <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT ĐƠN MUA HÀNG')}: {selectedPur.purCode}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+                  <>
+                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditPur(selectedPur)}>{t('Sửa')}</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeletePur(selectedPur.id)}>{t('Xóa')}</button>
+                  </>
+                )}
+                <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
+              </div>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
@@ -294,6 +449,14 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   </div>
                 </div>
               )}
+
+              {/* Audit trail */}
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div>{t('Tạo bởi:')} {selectedPur.createdBy || t('Không xác định')} {selectedPur.createdAt && `(${new Date(selectedPur.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                {selectedPur.updatedBy && (
+                  <div>{t('Cập nhật bởi:')} {selectedPur.updatedBy} ({new Date(selectedPur.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                )}
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
@@ -344,19 +507,61 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         </div>
       )}
 
-      {/* CREATE PURCHASE ORDER MODAL */}
-      {showAddPurModal && (
+      {/* EDIT SUPPLIER MODAL */}
+      {showEditSupplierModal && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Đóng')}</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA HỒ SƠ NHÀ CUNG CẤP')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditSupplierModal(false)}>{t('Đóng')}</button>
             </div>
-            <form onSubmit={handleCreatePur}>
+            <form onSubmit={handleEditSupplierSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Tên Nhà Cung Cấp')} *</label>
+                  <input type="text" value={editSupplierName} onChange={e => setEditSupplierName(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>{t('Người Liên Hệ')}</label>
+                  <input type="text" value={editContactPerson} onChange={e => setEditContactPerson(e.target.value)} />
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Điện Thoại')}</label>
+                    <input type="text" value={editPhone} onChange={e => setEditPhone(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Email:')}</label>
+                    <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Địa chỉ giao hàng:')}</label>
+                  <input type="text" value={editAddress} onChange={e => setEditAddress(e.target.value)} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditSupplierModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PURCHASE ORDER MODAL */}
+      {showEditPurModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA ĐƠN MUA HÀNG')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditPurModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditPurSubmit}>
               <div className="modal-body">
                 <div className="form-group">
                   <label>{t('Chọn Nhà Cung Cấp *')}</label>
-                  <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
+                  <select value={editSupplierId} onChange={e => setEditSupplierId(e.target.value)} required>
                     {suppliers.map(s => (
                       <option key={s.id} value={s.id}>{s.supplierName}</option>
                     ))}
@@ -365,7 +570,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 
                 <div className="form-group">
                   <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
-                  <select value={linkedPoId} onChange={e => setLinkedPoId(e.target.value)}>
+                  <select value={editLinkedPoId} onChange={e => setEditLinkedPoId(e.target.value)}>
                     <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
                     {pos.filter(p => !['delivered', 'debt_collected'].includes(p.status)).map(po => (
                       <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
@@ -379,8 +584,8 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                     <label>{t('Tên Vật Tư / Quy Cách')} *</label>
                     <input 
                       type="text" 
-                      value={materialName} 
-                      onChange={e => setMaterialName(e.target.value)} 
+                      value={editMaterialName} 
+                      onChange={e => setEditMaterialName(e.target.value)} 
                       placeholder={t('Ví dụ: Giấy decal Fasson AW0339F, Mực DIC Cyan...')} 
                       required 
                     />
@@ -388,11 +593,11 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   <div className="form-grid" style={{ marginTop: '8px' }}>
                     <div className="form-group">
                       <label>{t('Số Lượng')} *</label>
-                      <input type="number" min="1" value={quantity} onChange={e => setQuantity(Number(e.target.value))} required />
+                      <input type="number" min="1" value={editQuantity} onChange={e => setEditQuantity(Number(e.target.value))} required />
                     </div>
                     <div className="form-group">
                       <label>{t('Đơn Vị')} *</label>
-                      <select value={unit} onChange={e => setUnit(e.target.value)}>
+                      <select value={editUnit} onChange={e => setEditUnit(e.target.value)}>
                         <option value="m²">m²</option>
                         <option value="kg">kg</option>
                         <option value="cuộn">{t('cuộn')}</option>
@@ -402,7 +607,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   </div>
                   <div className="form-group" style={{ marginTop: '8px' }}>
                     <label>{t('Đơn Giá Nhập (đ) *')}</label>
-                    <input type="number" min="1" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} required />
+                    <input type="number" min="1" value={editUnitPrice} onChange={e => setEditUnitPrice(Number(e.target.value))} required />
                   </div>
                 </div>
 
@@ -410,17 +615,57 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   <label>{t('Ngày Nhận Hàng Dự Kiến *')}</label>
                   <input 
                     type="date" 
-                    value={expectedReceiveDate} 
-                    onChange={e => setExpectedReceiveDate(e.target.value)} 
+                    value={editExpectedReceiveDate} 
+                    onChange={e => setEditExpectedReceiveDate(e.target.value)} 
                     required 
                   />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Đơn Mua Hàng')}</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditPurModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUPPLIER DETAILS MODAL */}
+      {selectedSupplier && !showEditSupplierModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT NHÀ CUNG CẤP')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedSupplier(null)}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
+                <span style={{ fontWeight: 600 }}>{t('Tên NCC')}:</span>
+                <span>{selectedSupplier.supplierName}</span>
+                <span style={{ fontWeight: 600 }}>{t('Người Liên Hệ')}:</span>
+                <span>{selectedSupplier.contactPerson || t('Chưa cung cấp')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Điện Thoại')}:</span>
+                <span>{selectedSupplier.phone || t('Chưa cung cấp')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Email:')}:</span>
+                <span>{selectedSupplier.email || t('Chưa cung cấp')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Địa chỉ:')}:</span>
+                <span>{selectedSupplier.address || t('Chưa cung cấp')}</span>
+              </div>
+              
+              {/* Audit trail */}
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div>{t('Tạo bởi:')} {selectedSupplier.createdBy || t('Không xác định')} {selectedSupplier.createdAt && `(${new Date(selectedSupplier.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                {selectedSupplier.updatedBy && (
+                  <div>{t('Cập nhật bởi:')} {selectedSupplier.updatedBy} ({new Date(selectedSupplier.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+                <button className="btn btn-primary" onClick={() => handleOpenEditSupplier(selectedSupplier)}>{t('Sửa')}</button>
+              )}
+              <button className="btn btn-outline" onClick={() => setSelectedSupplier(null)}>{t('Đóng')}</button>
+            </div>
           </div>
         </div>
       )}

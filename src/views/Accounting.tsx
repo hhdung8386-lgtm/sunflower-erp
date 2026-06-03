@@ -15,6 +15,10 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'invoices' | 'costing'>('invoices');
   
+  // Dynamic collections
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+
   // Payment modal state
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
@@ -25,11 +29,40 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
   const [customCostModalPo, setCustomCostModalPo] = useState<any | null>(null);
   const [tempTransportCost, setTempTransportCost] = useState(0);
 
+  // CRUD states
+  const [showAddInvoiceModal, setShowAddInvoiceModal] = useState(false);
+  const [showEditInvoiceModal, setShowEditInvoiceModal] = useState(false);
+  const [showDetailsInvoiceModal, setShowDetailsInvoiceModal] = useState(false);
+
+  // Add form states
+  const [addInvoiceCode, setAddInvoiceCode] = useState('');
+  const [addPoId, setAddPoId] = useState('');
+  const [addPartnerId, setAddPartnerId] = useState('');
+  const [addPartnerName, setAddPartnerName] = useState('');
+  const [addType, setAddType] = useState<'receivable' | 'payable'>('receivable');
+  const [addAmount, setAddAmount] = useState(0);
+  const [addPaidAmount, setAddPaidAmount] = useState(0);
+  const [addDueDate, setAddDueDate] = useState('');
+
+  // Edit form states
+  const [editInvoiceCode, setEditInvoiceCode] = useState('');
+  const [editPoId, setEditPoId] = useState('');
+  const [editPartnerId, setEditPartnerId] = useState('');
+  const [editPartnerName, setEditPartnerName] = useState('');
+  const [editType, setEditType] = useState<'receivable' | 'payable'>('receivable');
+  const [editAmount, setEditAmount] = useState(0);
+  const [editPaidAmount, setEditPaidAmount] = useState(0);
+  const [editDueDate, setEditDueDate] = useState('');
+
   const fetchAccountingData = async () => {
     const invList = await dbService.getCollection('invoices');
     const purList = await dbService.getCollection('purchase_orders');
+    const custList = await dbService.getCollection('customers');
+    const supList = await dbService.getCollection('suppliers');
     setInvoices(invList);
     setPurchaseOrders(purList);
+    setCustomers(custList);
+    setSuppliers(supList);
   };
 
   useEffect(() => {
@@ -53,7 +86,9 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     // Update in database
     await dbService.updateDocument('invoices', selectedInvoice.id, {
       paidAmount: newPaid,
-      status: status
+      status: status,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
     });
 
     // If fully paid, optionally update PO status to debt_collected
@@ -84,11 +119,6 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
   // Costing calculations for PO
   const calculateCosting = (po: any) => {
     const revenue = po.netAmount || po.totalAmount || 0;
-    
-    // Estimate Raw Material Cost from BOM:
-    // Decal: 1.1 sqm per 10 sqm label, roughly 50,000 VND / sqm
-    // Ink: 0.05 kg per 10,000 labels, roughly 120,000 VND / kg
-    // Film: 1.05 sqm per 10 sqm, roughly 15,000 VND / sqm
     const quantity = po.items?.[0]?.quantity || 10000;
     const sizeStr = po.items?.[0]?.size || '100x100mm';
     
@@ -107,7 +137,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     const coreCost = Math.ceil(quantity / 5000) * 8000; // Core cost
     
     const materialCost = Math.round(decalCost + inkCost + filmCost + coreCost);
-    const transportCost = transportCosts[po.id] || 350000; // Default or customized transport cost
+    const transportCost = transportCosts[po.id] || 350000;
     const totalCost = materialCost + transportCost;
     
     const grossProfit = revenue - totalCost;
@@ -236,6 +266,113 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     printWindow.print();
   };
 
+  const handleAddInvoiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addInvoiceCode || !addAmount) return;
+
+    let partnerName = '';
+    if (addType === 'receivable') {
+      const c = customers.find(cust => cust.id === addPartnerId);
+      partnerName = c?.companyName || addPartnerName || t('Khách Hàng');
+    } else {
+      const s = suppliers.find(sup => sup.id === addPartnerId);
+      partnerName = s?.supplierName || addPartnerName || t('Nhà Cung Cấp');
+    }
+
+    const linkedPo = pos.find(p => p.id === addPoId);
+    const finalAmount = Number(addAmount);
+    const finalPaid = Number(addPaidAmount);
+    const finalStatus = finalPaid >= finalAmount ? 'paid' : finalPaid > 0 ? 'partially_paid' : 'unpaid';
+
+    await dbService.addDocument('invoices', {
+      invoiceCode: addInvoiceCode,
+      poId: addPoId || '',
+      poCode: linkedPo?.poCode || 'N/A',
+      customerId: addPartnerId || '',
+      companyName: partnerName,
+      type: addType,
+      amount: finalAmount,
+      paidAmount: finalPaid,
+      dueDate: new Date(addDueDate).toISOString(),
+      status: finalStatus,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
+    });
+
+    setShowAddInvoiceModal(false);
+    setAddInvoiceCode('');
+    setAddPoId('');
+    setAddPartnerId('');
+    setAddPartnerName('');
+    setAddAmount(0);
+    setAddPaidAmount(0);
+    setAddDueDate('');
+
+    fetchAccountingData();
+    onRefresh();
+  };
+
+  const handleOpenEditInvoice = (inv: any) => {
+    setSelectedInvoice(inv);
+    setEditInvoiceCode(inv.invoiceCode);
+    setEditPoId(inv.poId || '');
+    setEditPartnerId(inv.customerId || '');
+    setEditPartnerName(inv.companyName || '');
+    setEditType(inv.type);
+    setEditAmount(inv.amount);
+    setEditPaidAmount(inv.paidAmount || 0);
+    setEditDueDate(new Date(inv.dueDate).toISOString().split('T')[0]);
+    setShowEditInvoiceModal(true);
+  };
+
+  const handleEditInvoiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInvoice || !editInvoiceCode) return;
+
+    let partnerName = '';
+    if (editType === 'receivable') {
+      const c = customers.find(cust => cust.id === editPartnerId);
+      partnerName = c?.companyName || editPartnerName || t('Khách Hàng');
+    } else {
+      const s = suppliers.find(sup => sup.id === editPartnerId);
+      partnerName = s?.supplierName || editPartnerName || t('Nhà Cung Cấp');
+    }
+
+    const linkedPo = pos.find(p => p.id === editPoId);
+    const finalPaid = Number(editPaidAmount);
+    const finalAmount = Number(editAmount);
+    const finalStatus = finalPaid >= finalAmount ? 'paid' : finalPaid > 0 ? 'partially_paid' : 'unpaid';
+
+    await dbService.updateDocument('invoices', selectedInvoice.id, {
+      invoiceCode: editInvoiceCode,
+      poId: editPoId,
+      poCode: linkedPo?.poCode || 'N/A',
+      customerId: editPartnerId,
+      companyName: partnerName,
+      type: editType,
+      amount: finalAmount,
+      paidAmount: finalPaid,
+      dueDate: new Date(editDueDate).toISOString(),
+      status: finalStatus,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditInvoiceModal(false);
+    setSelectedInvoice(null);
+    fetchAccountingData();
+    onRefresh();
+  };
+
+  const handleDeleteInvoice = async (invId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa hóa đơn này khỏi hệ thống?'))) {
+      await dbService.deleteDocument('invoices', invId);
+      setSelectedInvoice(null);
+      fetchAccountingData();
+      onRefresh();
+    }
+  };
+
   // Compile costing profit margin percentage data for top 5 POs
   const profitMarginChartData = pos
     .map(po => {
@@ -275,6 +412,14 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       {/* TAB 1: INVOICES & AR/AP LEDGER */}
       {activeTab === 'invoices' && (
         <div className="card">
+          {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+              <button className="btn btn-primary" onClick={() => {
+                setAddDueDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                setShowAddInvoiceModal(true);
+              }}>{t('Tạo Hóa Đơn Thủ Công')}</button>
+            </div>
+          )}
           <div className="table-container">
             <table>
               <thead>
@@ -300,13 +445,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                   return (
                     <tr key={inv.id}>
                       <td style={{ fontWeight: 600 }}>{inv.invoiceCode}</td>
-                      <td>{linkedPo ? linkedPo.poCode : 'N/A'}</td>
-                      <td>
-                        {isReceivable ? 
-                          (linkedPo ? linkedPo.customerName : t('Khách Hàng')) : 
-                          t('Nhà Cung Cấp Vật Tư')
-                        }
-                      </td>
+                      <td>{linkedPo ? linkedPo.poCode : inv.poCode || 'N/A'}</td>
+                      <td>{inv.companyName}</td>
                       <td>
                         <span className={`badge ${isReceivable ? 'badge-info' : 'badge-warning'}`}>
                           {isReceivable ? t('Công Nợ Phải Thu') : t('Công Nợ Phải Trả')}
@@ -328,16 +468,23 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                         </span>
                       </td>
                       <td>
-                        {balance > 0 ? (
-                          <button 
-                            className="btn btn-sm btn-primary"
-                            onClick={() => { setSelectedInvoice(inv); setPaymentAmount(balance); }}
-                          >
-                            {isReceivable ? t('Thu Nợ') : t('Trả Tiền')}
-                          </button>
-                        ) : (
-                          <span style={{ color: 'var(--color-success)', fontSize: '12px', fontWeight: 600 }}>Xong</span>
-                        )}
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button className="btn btn-sm btn-outline" onClick={() => { setSelectedInvoice(inv); setShowDetailsInvoiceModal(true); }}>{t('Chi Tiết')}</button>
+                          {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
+                            <>
+                              <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditInvoice(inv)}>{t('Sửa')}</button>
+                              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteInvoice(inv.id)}>{t('Xóa')}</button>
+                            </>
+                          )}
+                          {balance > 0 && (
+                            <button 
+                              className="btn btn-sm btn-primary"
+                              onClick={() => { setSelectedInvoice(inv); setPaymentAmount(balance); }}
+                            >
+                              {isReceivable ? t('Thu Nợ') : t('Trả Tiền')}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -356,8 +503,6 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       {/* TAB 2: GROSS PROFIT COSTING ANALYTICS */}
       {activeTab === 'costing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Profit Margin Chart Section */}
           {profitMarginChartData.length > 0 && (
             <div className="card">
               <div className="card-header">
@@ -439,8 +584,219 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
         </div>
       )}
 
+      {/* MANUAL INVOICE CREATION MODAL */}
+      {showAddInvoiceModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Tạo Hóa Đơn Thủ Công')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddInvoiceModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleAddInvoiceSubmit}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Số Hóa Đơn')} *</label>
+                    <input type="text" value={addInvoiceCode} onChange={e => setAddInvoiceCode(e.target.value)} placeholder="VD: VAT-Manual-102" required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Loại Hóa Đơn')} *</label>
+                    <select value={addType} onChange={e => {
+                      setAddType(e.target.value as any);
+                      setAddPartnerId('');
+                      setAddPartnerName('');
+                    }}>
+                      <option value="receivable">{t('Phải thu (AR)')}</option>
+                      <option value="payable">{t('Phải trả (AP)')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Chọn Đơn Hàng PO (nếu có)')}</label>
+                    <select value={addPoId} onChange={e => setAddPoId(e.target.value)}>
+                      <option value="">-- Không có --</option>
+                      {pos.map(po => (
+                        <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hạn Nợ')} *</label>
+                    <input type="date" value={addDueDate} onChange={e => setAddDueDate(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{addType === 'receivable' ? t('Chọn Khách Hàng *') : t('Chọn Nhà Cung Cấp *')}</label>
+                  <select value={addPartnerId} onChange={e => setAddPartnerId(e.target.value)}>
+                    <option value="">-- Nhập thủ công phía dưới --</option>
+                    {addType === 'receivable' ? 
+                      customers.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>) :
+                      suppliers.map(s => <option key={s.id} value={s.id}>{s.supplierName}</option>)
+                    }
+                  </select>
+                </div>
+
+                {!addPartnerId && (
+                  <div className="form-group" style={{ marginTop: '10px' }}>
+                    <label>{t('Tên Đối Tác Nhập Thủ Công')}</label>
+                    <input type="text" value={addPartnerName} onChange={e => setAddPartnerName(e.target.value)} placeholder="VD: Công ty TNHH ABC" />
+                  </div>
+                )}
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Trị Giá Hóa Đơn (đ)')} *</label>
+                    <input type="number" min="0" value={addAmount} onChange={e => setAddAmount(Number(e.target.value))} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đã Thanh Toán (đ)')}</label>
+                    <input type="number" min="0" value={addPaidAmount} onChange={e => setAddPaidAmount(Number(e.target.value))} />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddInvoiceModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT INVOICE MODAL */}
+      {showEditInvoiceModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Chỉnh Sửa Hóa Đơn')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditInvoiceModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditInvoiceSubmit}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Số Hóa Đơn')} *</label>
+                    <input type="text" value={editInvoiceCode} onChange={e => setEditInvoiceCode(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Loại Hóa Đơn')} *</label>
+                    <select value={editType} onChange={e => {
+                      setEditType(e.target.value as any);
+                      setEditPartnerId('');
+                    }}>
+                      <option value="receivable">{t('Phải thu (AR)')}</option>
+                      <option value="payable">{t('Phải trả (AP)')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Chọn Đơn Hàng PO')}</label>
+                    <select value={editPoId} onChange={e => setEditPoId(e.target.value)}>
+                      <option value="">-- Không có --</option>
+                      {pos.map(po => (
+                        <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hạn Nợ')} *</label>
+                    <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{editType === 'receivable' ? t('Chọn Khách Hàng') : t('Chọn Nhà Cung Cấp')}</label>
+                  <select value={editPartnerId} onChange={e => setEditPartnerId(e.target.value)}>
+                    <option value="">-- Nhập thủ công phía dưới --</option>
+                    {editType === 'receivable' ? 
+                      customers.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>) :
+                      suppliers.map(s => <option key={s.id} value={s.id}>{s.supplierName}</option>)
+                    }
+                  </select>
+                </div>
+
+                {!editPartnerId && (
+                  <div className="form-group" style={{ marginTop: '10px' }}>
+                    <label>{t('Tên Đối Tác Nhập Thủ Công')}</label>
+                    <input type="text" value={editPartnerName} onChange={e => setEditPartnerName(e.target.value)} />
+                  </div>
+                )}
+
+                <div className="form-grid" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Trị Giá Hóa Đơn (đ)')} *</label>
+                    <input type="number" min="0" value={editAmount} onChange={e => setEditAmount(Number(e.target.value))} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đã Thanh Toán (đ)')}</label>
+                    <input type="number" min="0" value={editPaidAmount} onChange={e => setEditPaidAmount(Number(e.target.value))} />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditInvoiceModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* INVOICE DETAILS MODAL */}
+      {showDetailsInvoiceModal && selectedInvoice && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT HÓA ĐƠN')}: {selectedInvoice.invoiceCode}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowDetailsInvoiceModal(false)}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
+                <span style={{ fontWeight: 600 }}>{t('Số Hóa Đơn')}:</span>
+                <span>{selectedInvoice.invoiceCode}</span>
+                <span style={{ fontWeight: 600 }}>{t('Mã PO')}:</span>
+                <span>{selectedInvoice.poCode || 'N/A'}</span>
+                <span style={{ fontWeight: 600 }}>{t('Đối Tác')}:</span>
+                <span>{selectedInvoice.companyName}</span>
+                <span style={{ fontWeight: 600 }}>{t('Loại')}:</span>
+                <span>{selectedInvoice.type === 'receivable' ? t('Công Nợ Phải Thu') : t('Công Nợ Phải Trả')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Trị Giá')}:</span>
+                <span style={{ fontWeight: 700 }}>{selectedInvoice.amount.toLocaleString()} đ</span>
+                <span style={{ fontWeight: 600 }}>{t('Đã Thanh Toán')}:</span>
+                <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>{(selectedInvoice.paidAmount || 0).toLocaleString()} đ</span>
+                <span style={{ fontWeight: 600 }}>{t('Cần Thu / Cần Trả')}:</span>
+                <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>{(selectedInvoice.amount - (selectedInvoice.paidAmount || 0)).toLocaleString()} đ</span>
+                <span style={{ fontWeight: 600 }}>{t('Hạn Nợ')}:</span>
+                <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Trạng Thái')}:</span>
+                <span>{t(selectedInvoice.status.toUpperCase())}</span>
+              </div>
+              
+              {/* Audit trail */}
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div>{t('Tạo bởi:')} {selectedInvoice.createdBy || t('Không xác định')} {selectedInvoice.createdAt && `(${new Date(selectedInvoice.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                {selectedInvoice.updatedBy && (
+                  <div>{t('Cập nhật bởi:')} {selectedInvoice.updatedBy} ({new Date(selectedInvoice.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
+                <button className="btn btn-primary" onClick={() => { setShowDetailsInvoiceModal(false); handleOpenEditInvoice(selectedInvoice); }}>{t('Sửa')}</button>
+              )}
+              <button className="btn btn-outline" onClick={() => setShowDetailsInvoiceModal(false)}>{t('Đóng')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* INVOICE PAYMENT RECORD MODAL */}
-      {selectedInvoice && (
+      {selectedInvoice && !showEditInvoiceModal && !showDetailsInvoiceModal && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">

@@ -20,6 +20,13 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
   const [newAiLink, setNewAiLink] = useState('');
   const [newCorelLink, setNewCorelLink] = useState('');
   const [newComment, setNewComment] = useState('');
+
+  // Edit version form state
+  const [showEditVersionModal, setShowEditVersionModal] = useState(false);
+  const [editAiLink, setEditAiLink] = useState('');
+  const [editCorelLink, setEditCorelLink] = useState('');
+  const [editComment, setEditComment] = useState('');
+  const [editBase64Preview, setEditBase64Preview] = useState('');
   
   // Feedback state
   const [feedbackText, setFeedbackText] = useState('');
@@ -32,6 +39,127 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
     };
     fetchDesigns();
   }, [pos]);
+
+  const handleOpenEditVersionModal = (ver: any) => {
+    setEditAiLink(ver.aiLink || '');
+    setEditCorelLink(ver.corelLink || '');
+    setEditComment(ver.comment || '');
+    setEditBase64Preview(ver.previewImage || '');
+    setShowEditVersionModal(true);
+  };
+
+  const handleEditVersionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDesign) return;
+    
+    const activeVer = selectedDesign.selectedVer || (selectedDesign.versions && selectedDesign.versions[selectedDesign.versions.length - 1]);
+    if (!activeVer) return;
+
+    const updatedVersions = selectedDesign.versions.map((ver: any) => {
+      if (ver.versionNumber === activeVer.versionNumber) {
+        return {
+          ...ver,
+          aiLink: editAiLink,
+          corelLink: editCorelLink,
+          comment: editComment,
+          previewImage: editBase64Preview,
+          updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return ver;
+    });
+
+    await dbService.updateDocument('designs', selectedDesign.id, {
+      versions: updatedVersions
+    });
+
+    setShowEditVersionModal(false);
+    
+    // Refresh
+    const updatedList = await dbService.getCollection('designs');
+    setDesigns(updatedList);
+    setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
+    onRefresh();
+  };
+
+  const handleDeleteLastVersion = async () => {
+    if (!selectedDesign || !selectedDesign.versions || selectedDesign.versions.length === 0) return;
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa phiên bản thiết kế này?'))) {
+      const updatedVersions = [...selectedDesign.versions];
+      updatedVersions.pop(); // Remove last version
+      const nextVersionNumber = updatedVersions.length;
+      
+      await dbService.updateDocument('designs', selectedDesign.id, {
+        versions: updatedVersions,
+        currentVersion: nextVersionNumber,
+        status: nextVersionNumber === 0 ? 'pending' : 'client_pending'
+      });
+
+      // Also revert PO status if needed
+      const po = pos.find(p => p.id === selectedDesign.poId);
+      if (po) {
+        const updatedLogs = [
+          ...po.historyLogs,
+          {
+            status: nextVersionNumber === 0 ? 'receive_po' : 'design_sent',
+            updatedBy: currentUser.displayName,
+            updatedAt: new Date().toISOString(),
+            note: `Xóa phiên bản thiết kế v${selectedDesign.currentVersion} bởi ${currentUser.displayName}.`
+          }
+        ];
+        await dbService.updateDocument('pos', po.id, {
+          status: nextVersionNumber === 0 ? 'receive_po' : 'design_sent',
+          historyLogs: updatedLogs
+        });
+      }
+
+      // Refresh list
+      const updatedList = await dbService.getCollection('designs');
+      setDesigns(updatedList);
+      setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
+      onRefresh();
+    }
+  };
+
+  const handleEditPreviewFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const base64 = canvas.toDataURL('image/jpeg', 0.7);
+        setEditBase64Preview(base64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Design status colors mapping
   const getStatusBadge = (status: string) => {
@@ -99,6 +227,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       corelLink: newCorelLink,
       comment: newComment,
       createdAt: new Date().toISOString(),
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       feedbackFromClient: '',
       feedbackAt: ''
     };
@@ -341,13 +470,21 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="card-header" style={{ paddingBottom: '8px' }}>
-                    <span className="card-title" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-                      {t('Phiên bản')} v{activeVer.versionNumber}
-                    </span>
-                    <span className="badge badge-info">
-                      {t('Trạng Thái')}: {t(PO_STATES.find((s: any) => s.value === pos.find((p: any) => p.id === selectedDesign.poId)?.status)?.label || '')}
-                    </span>
+                  <div className="card-header" style={{ paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span className="card-title" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
+                        {t('Phiên bản')} v{activeVer.versionNumber}
+                      </span>
+                      <span className="badge badge-info">
+                        {t('Trạng Thái')}: {t(PO_STATES.find((s: any) => s.value === pos.find((p: any) => p.id === selectedDesign.poId)?.status)?.label || '')}
+                      </span>
+                    </div>
+                    {(currentUser.role === 'admin' || currentUser.role === 'designer') && activeVer.versionNumber === selectedDesign.currentVersion && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-sm btn-primary" onClick={() => handleOpenEditVersionModal(activeVer)}>{t('Sửa')}</button>
+                        <button className="btn btn-sm btn-danger" onClick={handleDeleteLastVersion}>{t('Xóa')}</button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="details-grid">
@@ -409,9 +546,13 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                         </div>
                       )}
 
-                      <div style={{ padding: '12px', borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f1f5f9' }}>
+                      <div style={{ padding: '12px', borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f1f5f9', fontSize: '13px' }}>
                         <span style={{ fontWeight: 600, display: 'block', fontSize: '12.5px' }}>{t('Ý Kiến Thiết Kế / Ghi Chú')} (v{activeVer.versionNumber}):</span>
-                        <p style={{ fontSize: '13px' }}>{activeVer.comment || t('Không có ghi chú')}</p>
+                        <p style={{ margin: '4px 0' }}>{activeVer.comment || t('Không có ghi chú')}</p>
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed var(--color-border)', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                          <div><strong>{t('Tạo bởi:')}</strong> {activeVer.createdBy || t('Không xác định')} {activeVer.createdAt && `(${new Date(activeVer.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                          {activeVer.updatedBy && <div><strong>{t('Cập nhật bởi:')}</strong> {activeVer.updatedBy} {activeVer.updatedAt && `(${new Date(activeVer.updatedAt).toLocaleString(t('vi-VN'))})`}</div>}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -458,6 +599,47 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddVersionModal(false)}>{t('Hủy')}</button>
                 <button type="submit" className="btn btn-primary">{t('Lưu Thiết Kế')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT VERSION MODAL */}
+      {showEditVersionModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN PHIÊN BẢN')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditVersionModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditVersionSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Bản Vẽ Layout Duyệt Màu (Ảnh)')}</label>
+                  <div className="image-upload-box">
+                    <input type="file" accept="image/*" onChange={handleEditPreviewFileChange} style={{ display: 'block', margin: '10px auto' }} />
+                    {editBase64Preview && (
+                      <img src={editBase64Preview} alt="Preview" className="image-preview-thumbnail" />
+                    )}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
+                  <input type="url" value={editAiLink} onChange={e => setEditAiLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
+                </div>
+                <div className="form-group">
+                  <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
+                  <input type="url" value={editCorelLink} onChange={e => setEditCorelLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
+                </div>
+                <div className="form-group">
+                  <label>{t('Ý Kiến Thiết Kế / Ghi Chú')} *</label>
+                  <textarea value={editComment} onChange={e => setEditComment(e.target.value)} required />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditVersionModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
               </div>
             </form>
           </div>

@@ -19,6 +19,27 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
   const [adjustQty, setAdjustQty] = useState(0);
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
 
+  // CRUD modals and lists
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+
+  // Add form states
+  const [addName, setAddName] = useState('');
+  const [addCategory, setAddCategory] = useState<'paper' | 'ink' | 'film' | 'others'>('paper');
+  const [addQty, setAddQty] = useState(0);
+  const [addMinAlert, setAddMinAlert] = useState(50);
+  const [addUnit, setAddUnit] = useState('m²');
+  const [addSupplierId, setAddSupplierId] = useState('');
+
+  // Edit form states
+  const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState<'paper' | 'ink' | 'film' | 'others'>('paper');
+  const [editMinAlert, setEditMinAlert] = useState(50);
+  const [editUnit, setEditUnit] = useState('m²');
+  const [editSupplierId, setEditSupplierId] = useState('');
+
   const fetchInventory = async () => {
     const data = await dbService.getCollection('inventory');
     setInventoryList(data);
@@ -26,6 +47,11 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
 
   useEffect(() => {
     fetchInventory();
+    const fetchSuppliers = async () => {
+      const supList = await dbService.getCollection('suppliers');
+      setSuppliers(supList);
+    };
+    fetchSuppliers();
   }, []);
 
   const handleOpenAdjust = (item: any) => {
@@ -48,12 +74,79 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
 
     await dbService.updateDocument('inventory', selectedItem.id, {
       qtyInStock: newQty,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       updatedAt: new Date().toISOString()
     });
 
     setShowAdjustModal(false);
     fetchInventory();
     onRefresh();
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addName) return;
+
+    await dbService.addDocument('inventory', {
+      materialName: addName,
+      category: addCategory,
+      qtyInStock: Number(addQty),
+      qtyReserved: 0,
+      minQtyAlert: Number(addMinAlert),
+      unit: addUnit,
+      defaultSupplierId: addSupplierId || '',
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
+    });
+
+    setShowAddModal(false);
+    setAddName('');
+    setAddCategory('paper');
+    setAddQty(0);
+    setAddMinAlert(50);
+    setAddUnit('m²');
+    setAddSupplierId('');
+    
+    fetchInventory();
+    onRefresh();
+  };
+
+  const handleOpenEdit = (item: any) => {
+    setSelectedItem(item);
+    setEditName(item.materialName);
+    setEditCategory(item.category);
+    setEditMinAlert(item.minQtyAlert);
+    setEditUnit(item.unit);
+    setEditSupplierId(item.defaultSupplierId || '');
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem || !editName) return;
+
+    await dbService.updateDocument('inventory', selectedItem.id, {
+      materialName: editName,
+      category: editCategory,
+      minQtyAlert: Number(editMinAlert),
+      unit: editUnit,
+      defaultSupplierId: editSupplierId || '',
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditModal(false);
+    setSelectedItem(null);
+    fetchInventory();
+    onRefresh();
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa vật tư này khỏi danh mục kho?'))) {
+      await dbService.deleteDocument('inventory', itemId);
+      fetchInventory();
+      onRefresh();
+    }
   };
 
   const getCategoryLabel = (cat: string) => {
@@ -79,6 +172,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
           <h1 className="page-title">{t('KHO NGUYÊN VẬT LIỆU & TỒN KHO')}</h1>
           <p className="page-subtitle">{t('Quản lý số lượng tồn kho khả dụng của decal cuộn, mực in, màng cán và tự động cảnh báo tồn kho thấp.')}</p>
         </div>
+        {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>{t('Thêm Vật Tư Mới')}</button>
+        )}
       </div>
 
       <div className="card">
@@ -142,11 +238,24 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                       )}
                     </td>
                     <td>
-                      {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                        <button className="btn btn-sm btn-outline" onClick={() => handleOpenAdjust(item)}>
-                          {t('Cập Nhật Tồn Kho')}
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn btn-sm btn-outline" onClick={() => { setSelectedItem(item); setShowDetailsModal(true); }}>
+                          {t('Chi Tiết')}
                         </button>
-                      )}
+                        {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+                          <>
+                            <button className="btn btn-sm btn-outline" onClick={() => handleOpenAdjust(item)}>
+                              {t('Cập Nhật Tồn Kho')}
+                            </button>
+                            <button className="btn btn-sm btn-outline" onClick={() => handleOpenEdit(item)}>
+                              {t('Sửa')}
+                            </button>
+                            <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleDeleteItem(item.id)}>
+                              {t('Xóa')}
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -200,6 +309,160 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                 <button type="submit" className="btn btn-primary">{t('Cập Nhật Kho')}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD MATERIAL MODAL */}
+      {showAddModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Thêm Vật Tư Mới')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleAddSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Tên Vật Tư')} *</label>
+                  <input type="text" value={addName} onChange={e => setAddName(e.target.value)} placeholder={t('Ví dụ: Decal nhựa Fasson...')} required />
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Phân Nhóm')} *</label>
+                    <select value={addCategory} onChange={e => setAddCategory(e.target.value as any)}>
+                      <option value="paper">{t('Giấy decal cuộn')}</option>
+                      <option value="ink">{t('Mực in Flexo')}</option>
+                      <option value="film">{t('Màng bóng/mờ')}</option>
+                      <option value="others">{t('Vật tư phụ / Khác')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đơn Vị')} *</label>
+                    <input type="text" value={addUnit} onChange={e => setAddUnit(e.target.value)} placeholder="m², kg, cuộn, hộp" required />
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Số Lượng Nhập Ban Đầu')}</label>
+                    <input type="number" min="0" value={addQty} onChange={e => setAddQty(Number(e.target.value))} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Ngưỡng Cảnh Báo Tối Thiểu')}</label>
+                    <input type="number" min="0" value={addMinAlert} onChange={e => setAddMinAlert(Number(e.target.value))} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Nhà Cung Cấp Mặc Định')}</label>
+                  <select value={addSupplierId} onChange={e => setAddSupplierId(e.target.value)}>
+                    <option value="">{t('-- Chọn nhà cung cấp --')}</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.supplierName}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT MATERIAL MODAL */}
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Chỉnh Sửa Vật Tư')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Tên Vật Tư')} *</label>
+                  <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required />
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Phân Nhóm')} *</label>
+                    <select value={editCategory} onChange={e => setEditCategory(e.target.value as any)}>
+                      <option value="paper">{t('Giấy decal cuộn')}</option>
+                      <option value="ink">{t('Mực in Flexo')}</option>
+                      <option value="film">{t('Màng bóng/mờ')}</option>
+                      <option value="others">{t('Vật tư phụ / Khác')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đơn Vị')} *</label>
+                    <input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} required />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Ngưỡng Cảnh Báo Tối Thiểu')}</label>
+                  <input type="number" min="0" value={editMinAlert} onChange={e => setEditMinAlert(Number(e.target.value))} />
+                </div>
+                <div className="form-group">
+                  <label>{t('Nhà Cung Cấp Mặc Định')}</label>
+                  <select value={editSupplierId} onChange={e => setEditSupplierId(e.target.value)}>
+                    <option value="">{t('-- Chọn nhà cung cấp --')}</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.supplierName}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ITEM DETAILS MODAL */}
+      {showDetailsModal && selectedItem && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT VẬT TƯ')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowDetailsModal(false)}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
+                <span style={{ fontWeight: 600 }}>{t('Tên Vật Tư')}:</span>
+                <span>{selectedItem.materialName}</span>
+                <span style={{ fontWeight: 600 }}>{t('Phân Nhóm')}:</span>
+                <span>{getCategoryLabel(selectedItem.category)}</span>
+                <span style={{ fontWeight: 600 }}>{t('Tồn Kho Thực Tế')}:</span>
+                <span>{selectedItem.qtyInStock} {selectedItem.unit}</span>
+                <span style={{ fontWeight: 600 }}>{t('Giữ Chỗ Cho LSX')}:</span>
+                <span>{selectedItem.qtyReserved || 0} {selectedItem.unit}</span>
+                <span style={{ fontWeight: 600 }}>{t('Tồn Khả Dụng')}:</span>
+                <span>{selectedItem.qtyInStock - (selectedItem.qtyReserved || 0)} {selectedItem.unit}</span>
+                <span style={{ fontWeight: 600 }}>{t('Ngưỡng Tối Thiểu')}:</span>
+                <span>{selectedItem.minQtyAlert} {selectedItem.unit}</span>
+                <span style={{ fontWeight: 600 }}>{t('Nhà Cung Cấp Mặc Định')}:</span>
+                <span>{suppliers.find(s => s.id === selectedItem.defaultSupplierId)?.supplierName || t('Chưa gán')}</span>
+              </div>
+              
+              {/* Audit trail */}
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                <div>{t('Tạo bởi:')} {selectedItem.createdBy || t('Không xác định')} {selectedItem.createdAt && `(${new Date(selectedItem.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                {selectedItem.updatedBy && (
+                  <div>{t('Cập nhật bởi:')} {selectedItem.updatedBy} ({new Date(selectedItem.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+                <button className="btn btn-primary" onClick={() => { setShowDetailsModal(false); handleOpenEdit(selectedItem); }}>{t('Sửa')}</button>
+              )}
+              <button className="btn btn-outline" onClick={() => setShowDetailsModal(false)}>{t('Đóng')}</button>
+            </div>
           </div>
         </div>
       )}

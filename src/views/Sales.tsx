@@ -32,21 +32,20 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const { t } = useLanguage();
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Form fields
+  // Form fields (Create PO)
   const [customerId, setCustomerId] = useState('');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
   
-  // Product item fields (single item for simplicity, extensible)
+  // Product item fields
   const [productName, setProductName] = useState('');
   const [size, setSize] = useState('');
   const [material, setMaterial] = useState('Decal giấy');
   const [quantity, setQuantity] = useState(1000);
   const [price, setPrice] = useState(1000);
-  
-  // Base64 Image Preview
   const [base64Image, setBase64Image] = useState<string>('');
   
   // External drive links
@@ -56,6 +55,145 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const [corelLink, setCorelLink] = useState('');
   const [contractLink, setContractLink] = useState('');
   const [quoteLink, setQuoteLink] = useState('');
+
+  // Edit PO Form States
+  const [editExpectedDeliveryDate, setEditExpectedDeliveryDate] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editProductName, setEditProductName] = useState('');
+  const [editSize, setEditSize] = useState('');
+  const [editMaterial, setEditMaterial] = useState('Decal giấy');
+  const [editQuantity, setEditQuantity] = useState(1000);
+  const [editPrice, setEditPrice] = useState(1000);
+  const [editBase64Image, setEditBase64Image] = useState('');
+  const [editPdfLink, setEditPdfLink] = useState('');
+  const [editExcelLink, setEditExcelLink] = useState('');
+  const [editAiLink, setEditAiLink] = useState('');
+  const [editCorelLink, setEditCorelLink] = useState('');
+  const [editContractLink, setEditContractLink] = useState('');
+  const [editQuoteLink, setEditQuoteLink] = useState('');
+
+  const handleOpenEditModal = (po: any) => {
+    setEditExpectedDeliveryDate(new Date(po.expectedDeliveryDate).toISOString().split('T')[0]);
+    setEditNotes(po.notes || '');
+    const item = po.items[0] || {};
+    setEditProductName(item.productName || '');
+    setEditSize(item.size || '');
+    setEditMaterial(item.material || 'Decal giấy');
+    setEditQuantity(item.quantity || 1000);
+    setEditPrice(item.price || 1000);
+    setEditBase64Image(item.previewImage || '');
+    setEditPdfLink(po.links?.pdfLink || '');
+    setEditExcelLink(po.links?.excelLink || '');
+    setEditAiLink(po.links?.aiLink || '');
+    setEditCorelLink(po.links?.corelLink || '');
+    setEditContractLink(po.links?.contractLink || '');
+    setEditQuoteLink(po.links?.quoteLink || '');
+    setSelectedPO(po);
+    setShowEditModal(true);
+  };
+
+  const handleEditPO = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPO || !editProductName || !editQuantity || !editPrice) return;
+
+    const subtotal = Number(editQuantity) * Number(editPrice);
+    const customer = customers.find(c => c.id === selectedPO.customerId);
+    const discountRate = customer ? customer.discountRate : 0;
+    const discountAmount = Math.round(subtotal * (discountRate / 100));
+    const netAmount = subtotal - discountAmount;
+
+    const updatedLogs = [
+      ...selectedPO.historyLogs,
+      {
+        status: selectedPO.status,
+        updatedBy: currentUser.displayName,
+        updatedAt: new Date().toISOString(),
+        note: `${t('Chỉnh sửa thông số đơn hàng')} (SL: ${editQuantity}, ĐG: ${editPrice})`
+      }
+    ];
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      expectedDeliveryDate: new Date(editExpectedDeliveryDate).toISOString(),
+      notes: editNotes,
+      items: [
+        {
+          ...selectedPO.items[0],
+          productName: editProductName,
+          size: editSize,
+          material: editMaterial,
+          quantity: Number(editQuantity),
+          price: Number(editPrice),
+          totalAmount: subtotal,
+          previewImage: editBase64Image
+        }
+      ],
+      totalAmount: subtotal,
+      discountAmount,
+      netAmount,
+      links: {
+        pdfLink: editPdfLink,
+        excelLink: editExcelLink,
+        aiLink: editAiLink,
+        corelLink: editCorelLink,
+        contractLink: editContractLink,
+        quoteLink: editQuoteLink
+      },
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString(),
+      historyLogs: updatedLogs
+    });
+
+    setShowEditModal(false);
+    setSelectedPO(null);
+    onRefresh();
+  };
+
+  const handleDeletePO = async (poId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa đơn hàng PO này?'))) {
+      await dbService.deleteDocument('pos', poId);
+      setSelectedPO(null);
+      onRefresh();
+    }
+  };
+
+  const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 600;
+        const MAX_HEIGHT = 600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        setEditBase64Image(compressedBase64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Logic to process file uploads on client and convert to Base64 String
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -163,6 +301,10 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         quoteLink
       },
       notes,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString(),
+      updatedBy: '',
+      updatedAt: '',
       historyLogs: [
         {
           status: 'receive_po',
@@ -306,7 +448,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               <span className="card-title" style={{ fontSize: '18px', color: 'var(--color-primary)' }}>
                 {t('CHI TIẾT TIẾN ĐỘ PO')}: {selectedPO.poCode} - {selectedPO.customerName}
               </span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>{t('Đóng chi tiết')}</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                  <>
+                    <button className="btn btn-sm btn-primary" onClick={() => handleOpenEditModal(selectedPO)}>{t('Sửa')}</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeletePO(selectedPO.id)}>{t('Xóa')}</button>
+                  </>
+                )}
+                <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>{t('Đóng chi tiết')}</button>
+              </div>
             </div>
 
             {/* Status changer for authorized roles */}
@@ -430,6 +580,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div><strong>{t('Tạo bởi:')}</strong> {selectedPO.createdBy || t('Không xác định')} {selectedPO.createdAt && `(${new Date(selectedPO.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                  <div><strong>{t('Cập nhật bởi:')}</strong> {selectedPO.updatedBy || t('Chưa cập nhật')} {selectedPO.updatedAt && `(${new Date(selectedPO.updatedAt).toLocaleString(t('vi-VN'))})`}</div>
                 </div>
               </div>
             </div>
@@ -562,6 +717,122 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
                 <button type="submit" className="btn btn-primary">{t('Lưu Đơn Hàng PO')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* EDIT PO MODAL */}
+      {showEditModal && selectedPO && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '800px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN PO')}: {selectedPO.poCode}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditPO}>
+              <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Thông tin chung')}</h4>
+                    <div className="form-group">
+                      <label>{t('Khách Hàng')}</label>
+                      <input type="text" value={selectedPO.customerName} disabled style={{ backgroundColor: '#f1f5f9' }} />
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Ngày Giao Hàng Dự Kiến *')} *</label>
+                      <input type="date" value={editExpectedDeliveryDate} onChange={(e) => setEditExpectedDeliveryDate(e.target.value)} required />
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Ghi chú y/c riêng của khách')}</label>
+                      <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} placeholder={t('Nhập ghi chú hoặc địa chỉ giao hàng riêng...')} />
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px', textAlign: 'center' }}>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)', textAlign: 'left' }}>{t('Hình Ảnh Nhãn Mẫu')}</h4>
+                    {editBase64Image && (
+                      <img src={editBase64Image} alt="Preview" style={{ maxWidth: '100%', maxHeight: '120px', display: 'block', margin: '0 auto 10px', borderRadius: '4px' }} />
+                    )}
+                    <input type="file" accept="image/*" onChange={handleEditImageChange} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Quy cách & Giá bán')}</h4>
+                    <div className="form-group">
+                      <label>{t('Tên Sản Phẩm Nhãn *')} *</label>
+                      <input type="text" value={editProductName} onChange={(e) => setEditProductName(e.target.value)} required placeholder="Ví dụ: Nhãn Aqua 500ml" />
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Kích Thước Quy Cách *')} *</label>
+                        <input type="text" value={editSize} onChange={(e) => setEditSize(e.target.value)} required placeholder="Ví dụ: 100x80mm" />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Nguyên Vật Liệu *')} *</label>
+                        <select value={editMaterial} onChange={(e) => setEditMaterial(e.target.value)}>
+                          <option value="Decal Giấy Fasson AW0339F">{t('Decal Giấy Fasson AW0339F')}</option>
+                          <option value="Decal Nhựa PVC Avery Dennison">{t('Decal Nhựa PVC Avery Dennison')}</option>
+                          <option value="Decal Bạc/Nhôm bóng">{t('Decal Bạc/Nhôm bóng')}</option>
+                          <option value="Tem QR vỡ/giấy">{t('Tem QR vỡ/giấy')}</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Số Lượng Đặt In *')} *</label>
+                        <input type="number" min="1" value={editQuantity} onChange={(e) => setEditQuantity(Number(e.target.value))} required />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Đơn Giá In *')} *</label>
+                        <input type="number" min="1" value={editPrice} onChange={(e) => setEditPrice(Number(e.target.value))} required />
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '12px', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)' }}>
+                      {t('Giá trị chưa VAT')}: {(editQuantity * editPrice).toLocaleString()} đ
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Liên Kết File Bản Vẽ Gốc & Tài Liệu Lớn (Google Drive / OneDrive)')}</h4>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn File PDF Đơn Hàng')}</label>
+                        <input type="url" value={editPdfLink} onChange={(e) => setEditPdfLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn File Excel Báo Giá')}</label>
+                        <input type="url" value={editExcelLink} onChange={(e) => setEditExcelLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
+                        <input type="url" value={editAiLink} onChange={(e) => setEditAiLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
+                        <input type="url" value={editCorelLink} onChange={(e) => setEditCorelLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn Hợp Đồng / Văn Bản Ký')}</label>
+                        <input type="url" value={editContractLink} onChange={(e) => setEditContractLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Đường dẫn File Excel Báo Giá')}</label>
+                        <input type="url" value={editQuoteLink} onChange={(e) => setEditQuoteLink(e.target.value)} placeholder="https://drive.google.com/..." />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
               </div>
             </form>
           </div>

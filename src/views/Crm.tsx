@@ -86,7 +86,11 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       debtLimit: Number(debtLimit),
       paymentTerms,
       note,
-      lastOrderAt: null
+      lastOrderAt: null,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString(),
+      updatedBy: '',
+      updatedAt: ''
     });
 
     setShowAddModal(false);
@@ -109,7 +113,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       discountRate: Number(discountRate),
       debtLimit: Number(debtLimit),
       paymentTerms,
-      note
+      note,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
     });
 
     setShowEditModal(false);
@@ -321,6 +327,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Ghi chú kinh doanh:')}</span>
                 <span>{selectedCustomer.note || t('Không có ghi chú')}</span>
+
+                <span style={{ gridColumn: '1 / -1', borderBottom: '1px dashed var(--color-border-light)', margin: '8px 0' }}></span>
+
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Tạo bởi:')}</span>
+                <span style={{ fontSize: '12px' }}>{selectedCustomer.createdBy || t('Không xác định')} {selectedCustomer.createdAt && `(${new Date(selectedCustomer.createdAt).toLocaleString(t('vi-VN'))})`}</span>
+
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Cập nhật bởi:')}</span>
+                <span style={{ fontSize: '12px' }}>{selectedCustomer.updatedBy || t('Chưa cập nhật')} {selectedCustomer.updatedAt && `(${new Date(selectedCustomer.updatedAt).toLocaleString(t('vi-VN'))})`}</span>
               </div>
             </div>
           </div>
