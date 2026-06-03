@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SalesProps {
   pos: any[];
@@ -28,6 +29,7 @@ export const PO_STATES = [
 ];
 
 export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -229,11 +231,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     <div className="sales-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">TIẾP NHẬN ĐƠN HÀNG (SALES PO)</h1>
-          <p className="page-subtitle">Nhập đơn hàng mới, upload ảnh mẫu nén Base64, quản lý tệp đính kèm và theo dõi timeline tiến độ đơn hàng.</p>
+          <h1 className="page-title">{t('TIẾP NHẬN ĐƠN HÀNG (SALES PO)')}</h1>
+          <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary" onClick={handleOpenAddModal}>Tạo Đơn Hàng PO Mới</button>
+          <button className="btn btn-primary" onClick={handleOpenAddModal}>{t('TẠO ĐƠN HÀNG PO MỚI')}</button>
         )}
       </div>
 
@@ -241,26 +243,26 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         <div style={{ display: 'flex', gap: '12px' }}>
           <input 
             type="text" 
-            placeholder="Tìm kiếm mã PO, tên khách hàng, sản phẩm..." 
+            placeholder={t('Nhập mã PO, tên sản phẩm hoặc khách hàng...')} 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ maxWidth: '400px' }}
           />
-          <button className="btn btn-outline" onClick={() => setSearchTerm('')}>Xóa Lọc</button>
+          <button className="btn btn-outline" onClick={() => setSearchTerm('')}>{t('Xóa Tìm Kiếm')}</button>
         </div>
 
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>Mã PO</th>
-                <th>Khách Hàng</th>
-                <th>Sản Phẩm</th>
-                <th>SL Đặt</th>
-                <th>Tổng Tiền (Net)</th>
-                <th>Ngày Giao Dự Kiến</th>
-                <th>Trạng Thái Hiện Tại</th>
-                <th>Thao Tác</th>
+                <th>{t('Mã PO')}</th>
+                <th>{t('Tên Công Ty')}</th>
+                <th>{t('Sản Phẩm')}</th>
+                <th>{t('Số Lượng')}</th>
+                <th>{t('Thành Tiền')}</th>
+                <th>{t('Ngày Giao Dự Kiến')}</th>
+                <th>{t('Trạng Thái')}</th>
+                <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
@@ -273,22 +275,22 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     <td style={{ fontWeight: 500 }}>{item.productName}</td>
                     <td>{item.quantity?.toLocaleString()}</td>
                     <td>{po.netAmount?.toLocaleString()} đ</td>
-                    <td>{new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}</td>
+                    <td>{new Date(po.expectedDeliveryDate).toLocaleDateString(t('vi-VN'))}</td>
                     <td>
                       <span className={`badge ${
                         po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
                         po.status === 'producing' ? 'badge-info' : 'badge-warning'
-                      }`}>{PO_STATES.find(s => s.value === po.status)?.label}</span>
+                      }`}>{t(PO_STATES.find(s => s.value === po.status)?.label || '')}</span>
                     </td>
                     <td>
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(po)}>Chi Tiết Timeline</button>
+                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(po)}>{t('Chi Tiết')}</button>
                     </td>
                   </tr>
                 );
               })}
               {filteredPOs.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>Không có đơn hàng nào khớp với tìm kiếm.</td>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy đơn hàng PO nào.')}</td>
                 </tr>
               )}
             </tbody>
@@ -302,25 +304,25 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <div className="card">
             <div className="card-header">
               <span className="card-title" style={{ fontSize: '18px', color: 'var(--color-primary)' }}>
-                CHI TIẾT TIẾN ĐỘ PO: {selectedPO.poCode} - {selectedPO.customerName}
+                {t('CHI TIẾT TIẾN ĐỘ PO')}: {selectedPO.poCode} - {selectedPO.customerName}
               </span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>Đóng chi tiết</button>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>{t('Đóng chi tiết')}</button>
             </div>
 
             {/* Status changer for authorized roles */}
             {(currentUser.role === 'admin' || currentUser.role === 'sale' || currentUser.role === 'producer') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
-                <span style={{ fontWeight: 600 }}>Cập nhật nhanh tiến độ PO:</span>
+                <span style={{ fontWeight: 600 }}>{t('Cập nhật nhanh tiến độ PO:')}</span>
                 <select 
                   value={selectedPO.status} 
                   onChange={(e) => updatePOStatus(selectedPO.id, e.target.value)}
                   style={{ width: '220px' }}
                 >
                   {PO_STATES.map(state => (
-                    <option key={state.value} value={state.value}>{state.label}</option>
+                    <option key={state.value} value={state.value}>{t(state.label)}</option>
                   ))}
                 </select>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>* Sẽ tự động ghi lại nhật ký xử lý đơn</span>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{t('* Sẽ tự động ghi lại nhật ký xử lý đơn')}</span>
               </div>
             )}
 
@@ -338,7 +340,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       className={`timeline-step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
                     >
                       <div className="step-bubble">{isCompleted ? '✓' : idx + 1}</div>
-                      <span className="step-label">{state.label}</span>
+                      <span className="step-label">{t(state.label)}</span>
                     </div>
                   );
                 })}
@@ -349,33 +351,33 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               {/* Product specifications and mock preview */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
-                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>Thông tin kỹ thuật sản phẩm</h3>
+                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Thông số kỹ thuật đơn hàng:')}</h3>
                   <table style={{ border: 'none' }}>
                     <tbody>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Tên tem nhãn:</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Tên Sản Phẩm Nhãn *')}:</td>
                         <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.productName}</td>
                       </tr>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Kích thước:</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Kích Thước Quy Cách *')}:</td>
                         <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.size}</td>
                       </tr>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Chất liệu decal:</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Nguyên Vật Liệu *')}:</td>
                         <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.material}</td>
                       </tr>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Số lượng:</td>
-                        <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.quantity?.toLocaleString()} tem</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Số Lượng Đặt In *')}:</td>
+                        <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.quantity?.toLocaleString()} {t('tem')}</td>
                       </tr>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Đơn giá:</td>
-                        <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.price?.toLocaleString()} đ/tem</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Đơn Giá In *')}:</td>
+                        <td style={{ border: 'none', padding: '6px 0' }}>{selectedPO.items[0]?.price?.toLocaleString()} đ/{t('tem')}</td>
                       </tr>
                       <tr>
-                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>Trị giá PO (Sau chiết khấu):</td>
+                        <td style={{ fontWeight: 600, border: 'none', padding: '6px 0' }}>{t('Thành Tiền Sau Chiết Khấu')}:</td>
                         <td style={{ fontWeight: 700, color: 'var(--color-primary)', border: 'none', padding: '6px 0' }}>
-                          {selectedPO.netAmount?.toLocaleString()} đ (Đã trừ {selectedPO.discountAmount?.toLocaleString()} đ chiết khấu)
+                          {selectedPO.netAmount?.toLocaleString()} đ ({t('Đã áp dụng chiết khấu tự động từ hồ sơ khách hàng.')})
                         </td>
                       </tr>
                     </tbody>
@@ -384,15 +386,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
                 {/* File link manager */}
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
-                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>Thư mục file dùng chung (Liên kết Google Drive)</h3>
+                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Liên Kết File Bản Vẽ Gốc & Tài Liệu Lớn (Google Drive / OneDrive)')}</h3>
                   <div className="file-links-list">
-                    {selectedPO.links.pdfLink && <a href={selectedPO.links.pdfLink} target="_blank" rel="noopener noreferrer" className="file-link-item">File Đính Kèm PDF</a>}
-                    {selectedPO.links.excelLink && <a href={selectedPO.links.excelLink} target="_blank" rel="noopener noreferrer" className="file-link-item">File Excel Nhu Cầu</a>}
-                    {selectedPO.links.aiLink && <a href={selectedPO.links.aiLink} target="_blank" rel="noopener noreferrer" className="file-link-item">File Thiết Kế Gốc AI</a>}
-                    {selectedPO.links.corelLink && <a href={selectedPO.links.corelLink} target="_blank" rel="noopener noreferrer" className="file-link-item">File Thiết Kế Corel</a>}
-                    {selectedPO.links.contractLink && <a href={selectedPO.links.contractLink} target="_blank" rel="noopener noreferrer" className="file-link-item">Hợp Đồng PO</a>}
-                    {selectedPO.links.quoteLink && <a href={selectedPO.links.quoteLink} target="_blank" rel="noopener noreferrer" className="file-link-item">Báo Giá Gửi Khách</a>}
-                    {!Object.values(selectedPO.links).some(Boolean) && <span>Chưa đính kèm bất kỳ liên kết ngoài nào cho đơn này.</span>}
+                    {selectedPO.links.pdfLink && <a href={selectedPO.links.pdfLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn File PDF Đơn Hàng')}</a>}
+                    {selectedPO.links.excelLink && <a href={selectedPO.links.excelLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn File Excel Báo Giá')}</a>}
+                    {selectedPO.links.aiLink && <a href={selectedPO.links.aiLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</a>}
+                    {selectedPO.links.corelLink && <a href={selectedPO.links.corelLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</a>}
+                    {selectedPO.links.contractLink && <a href={selectedPO.links.contractLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn Hợp Đồng / Văn Bản Ký')}</a>}
+                    {selectedPO.links.quoteLink && <a href={selectedPO.links.quoteLink} target="_blank" rel="noopener noreferrer" className="file-link-item">{t('Đường dẫn File Excel Báo Giá')}</a>}
+                    {!Object.values(selectedPO.links).some(Boolean) && <span>{t('Chưa đính kèm bất kỳ liên kết ngoài nào cho đơn này.')}</span>}
                   </div>
                 </div>
               </div>
@@ -400,7 +402,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               {/* Design Preview and Activity Log */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px', textAlign: 'center' }}>
-                  <h3 style={{ marginBottom: '12px', textAlign: 'left', color: 'var(--color-primary)' }}>Hình ảnh mẫu duyệt</h3>
+                  <h3 style={{ marginBottom: '12px', textAlign: 'left', color: 'var(--color-primary)' }}>{t('Hình Ảnh Nhãn Mẫu')}</h3>
                   {selectedPO.items[0]?.previewImage ? (
                     <img 
                       src={selectedPO.items[0].previewImage} 
@@ -409,20 +411,20 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     />
                   ) : (
                     <div style={{ padding: '40px 0', color: 'var(--color-text-muted)', backgroundColor: '#f8fafc', border: '1px dashed var(--color-border)' }}>
-                      Không có ảnh mẫu Base64 nào được upload.
+                      {t('Không có ảnh mẫu Base64 nào được upload.')}
                     </div>
                   )}
                 </div>
 
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
-                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>Nhật ký xử lý đơn hàng</h3>
+                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('LỊCH SỬ TRẠNG THÁI')}</h3>
                   <div className="timeline" style={{ maxHeight: '200px', overflowY: 'auto' }}>
                     {selectedPO.historyLogs.map((log: any, idx: number) => (
                       <div key={idx} className="timeline-item">
                         <div className="timeline-marker"></div>
                         <div className="timeline-content">
-                          <span className="timeline-title">{PO_STATES.find(s => s.value === log.status)?.label || log.status}</span>
-                          <span className="timeline-date">{new Date(log.updatedAt).toLocaleString('vi-VN')} - Bởi: {log.updatedBy}</span>
+                          <span className="timeline-title">{t(PO_STATES.find(s => s.value === log.status)?.label || log.status)}</span>
+                          <span className="timeline-date">{new Date(log.updatedAt).toLocaleString(t('vi-VN'))} - {t('Nhân Sự Thực Hiện')}: {log.updatedBy}</span>
                           <span style={{ fontSize: '12px' }}>{log.note}</span>
                         </div>
                       </div>
@@ -440,33 +442,33 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '800px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleCreatePO}>
               <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div className="form-group">
-                    <label>Khách Hàng Đặt Hàng *</label>
+                    <label>{t('Chọn Khách Hàng *')}</label>
                     <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
                       {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.companyName} (Chiết khấu: {c.discountRate}%)</option>
+                        <option key={c.id} value={c.id}>{c.companyName} ({t('Chiết khấu')}: {c.discountRate}%)</option>
                       ))}
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Ngày Giao Hàng Dự Kiến *</label>
+                    <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
                     <input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} required />
                   </div>
                   <div className="form-group">
-                    <label>Ghi Chú Yêu Cầu Của Khách Hàng</label>
-                    <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Chi tiết yêu cầu in, gia công, bế cuộn/tờ..." />
+                    <label>{t('Ghi Chú Đơn Hàng')}</label>
+                    <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('Chi tiết yêu cầu in, gia công, bế cuộn/tờ...')} />
                   </div>
 
                   <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px', marginTop: '10px' }}>
-                    <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>Ảnh mẫu thiết kế / Tem nhãn (Base64)</h4>
+                    <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Hình Ảnh Nhãn Mẫu')}</h4>
                     <div className="image-upload-box">
-                      <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>Nhấn vào để chọn ảnh tải lên</span>
+                      <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>{t('Chọn ảnh mẫu')}</span>
                       <input 
                         type="file" 
                         accept="image/*" 
@@ -486,71 +488,71 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>Chi tiết sản phẩm đặt in</h4>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Chi tiết sản phẩm đặt in')}</h4>
                     <div className="form-group">
-                      <label>Tên Sản Phẩm Tem Nhãn *</label>
-                      <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="Ví dụ: Tem barcode, tem nước rửa chén..." required />
+                      <label>{t('Tên Sản Phẩm Nhãn *')}</label>
+                      <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)} placeholder={t('ví dụ: Tem barcode, tem nước rửa chén...')} required />
                     </div>
                     <div className="form-grid" style={{ marginTop: '8px' }}>
                       <div className="form-group">
-                        <label>Kích Thước *</label>
+                        <label>{t('Kích Thước Quy Cách *')}</label>
                         <input type="text" value={size} onChange={(e) => setSize(e.target.value)} placeholder="VD: 50x30mm" required />
                       </div>
                       <div className="form-group">
-                        <label>Chất Liệu Decal *</label>
+                        <label>{t('Nguyên Vật Liệu *')}</label>
                         <select value={material} onChange={(e) => setMaterial(e.target.value)}>
-                          <option value="Decal giấy Fasson">Decal giấy Fasson</option>
-                          <option value="Decal nhựa đục">Decal nhựa đục</option>
-                          <option value="Decal nhựa trong">Decal nhựa trong</option>
-                          <option value="Decal bạc (PET)">Decal bạc (PET)</option>
-                          <option value="Tem QR vỡ/giấy">Tem QR vỡ/giấy</option>
+                          <option value="Decal giấy Fasson">{t('Decal Giấy Fasson AW0339F')}</option>
+                          <option value="Decal nhựa đục">{t('Decal Nhựa PVC Avery Dennison')}</option>
+                          <option value="Decal nhựa trong">{t('Decal nhựa trong')}</option>
+                          <option value="Decal bạc (PET)">{t('Decal bạc (PET)')}</option>
+                          <option value="Tem QR vỡ/giấy">{t('Tem QR vỡ/giấy')}</option>
                         </select>
                       </div>
                     </div>
                     <div className="form-grid" style={{ marginTop: '8px' }}>
                       <div className="form-group">
-                        <label>Số Lượng (Cái/Tem) *</label>
+                        <label>{t('Số Lượng Đặt In *')} *</label>
                         <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} required />
                       </div>
                       <div className="form-group">
-                        <label>Đơn Giá (đ/Tem) *</label>
+                        <label>{t('Đơn Giá In *')} *</label>
                         <input type="number" min="1" value={price} onChange={(e) => setPrice(Number(e.target.value))} required />
                       </div>
                     </div>
                     <div style={{ marginTop: '12px', fontWeight: 600, fontSize: '13px', color: 'var(--color-text-main)' }}>
-                      Giá trị chưa VAT: {(quantity * price).toLocaleString()} đ
+                      {t('Giá trị chưa VAT')}: {(quantity * price).toLocaleString()} đ
                     </div>
                   </div>
 
                   <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
-                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>Đường dẫn file thiết kế (Google Drive Link)</h4>
+                    <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Liên Kết File Bản Vẽ Gốc & Tài Liệu Lớn (Google Drive / OneDrive)')}</h4>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label>Link File PDF</label>
+                        <label>{t('Đường dẫn File PDF Đơn Hàng')}</label>
                         <input type="url" value={pdfLink} onChange={(e) => setPdfLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                       <div className="form-group">
-                        <label>Link File Excel BOM</label>
+                        <label>{t('Đường dẫn File Excel Báo Giá')}</label>
                         <input type="url" value={excelLink} onChange={(e) => setExcelLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                     </div>
                     <div className="form-grid" style={{ marginTop: '8px' }}>
                       <div className="form-group">
-                        <label>Link File Thiết Kế AI</label>
+                        <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
                         <input type="url" value={aiLink} onChange={(e) => setAiLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                       <div className="form-group">
-                        <label>Link File Corel (CDR)</label>
+                        <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
                         <input type="url" value={corelLink} onChange={(e) => setCorelLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                     </div>
                     <div className="form-grid" style={{ marginTop: '8px' }}>
                       <div className="form-group">
-                        <label>Link Hợp Đồng</label>
+                        <label>{t('Đường dẫn Hợp Đồng / Văn Bản Ký')}</label>
                         <input type="url" value={contractLink} onChange={(e) => setContractLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                       <div className="form-group">
-                        <label>Link Báo Giá</label>
+                        <label>{t('Đường dẫn File Excel Báo Giá')}</label>
                         <input type="url" value={quoteLink} onChange={(e) => setQuoteLink(e.target.value)} placeholder="https://drive.google.com/..." />
                       </div>
                     </div>
@@ -558,8 +560,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Lưu Đơn Hàng PO</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Đơn Hàng PO')}</button>
               </div>
             </form>
           </div>

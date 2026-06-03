@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ProductionProps {
   pos: any[];
@@ -9,6 +10,7 @@ interface ProductionProps {
 }
 
 export const Production: React.FC<ProductionProps> = ({ pos, productionCommands, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [showAddLsxModal, setShowAddLsxModal] = useState(false);
   const [selectedLsx, setSelectedLsx] = useState<any | null>(null);
 
@@ -177,30 +179,30 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     <div className="production-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">QUẢN LÝ SẢN XUẤT ( LSX )</h1>
-          <p className="page-subtitle">Nhận lệnh in ấn từ phòng kinh doanh, thiết lập phân ca sản xuất đứng máy và ghi nhận sản lượng thực tế/hao hụt nguyên vật liệu.</p>
+          <h1 className="page-title">{t('LỆNH SẢN XUẤT (LSX)')}</h1>
+          <p className="page-subtitle">{t('Phát hành lệnh sản xuất, phân bổ máy in, ca máy, thợ in và ghi nhận sản lượng hoàn thành, hao hụt.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'producer') && (
-          <button className="btn btn-primary" onClick={handleOpenAddLsx}>Phát Hành Lệnh Sản Xuất (LSX)</button>
+          <button className="btn btn-primary" onClick={handleOpenAddLsx}>{t('PHÁT HÀNH LỆNH SẢN XUẤT (LSX) MỚI')}</button>
         )}
       </div>
 
       <div className="card">
-        <span className="card-title">Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong</span>
+        <span className="card-title">{t('Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong')}</span>
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>Mã LSX</th>
-                <th>Mã PO</th>
-                <th>Tên Tem Nhãn</th>
-                <th>Máy Sản Xuất</th>
-                <th>Ca Máy</th>
-                <th>Thợ Đứng Máy</th>
-                <th>SL Đặt</th>
-                <th>Hao Hụt (Phế phẩm)</th>
-                <th>Trạng Thái</th>
-                <th>Thao Tác</th>
+                <th>{t('Mã LSX')}</th>
+                <th>{t('Mã PO')}</th>
+                <th>{t('Tên Tem Nhãn')}</th>
+                <th>{t('Máy Sản Xuất')}</th>
+                <th>{t('Ca Máy')}</th>
+                <th>{t('Thợ Đứng Máy')}</th>
+                <th>{t('SL Đặt')}</th>
+                <th>{t('Hao Hụt (Phế phẩm)')}</th>
+                <th>{t('Trạng Thái')}</th>
+                <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
@@ -209,30 +211,30 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   <td style={{ fontWeight: 600 }}>{cmd.lsxCode}</td>
                   <td>{cmd.poCode}</td>
                   <td style={{ fontWeight: 500 }}>{cmd.productName}</td>
-                  <td>{cmd.machineId}</td>
-                  <td>{cmd.shift}</td>
+                  <td>{t(cmd.machineId)}</td>
+                  <td>{t(cmd.shift)}</td>
                   <td>{cmd.operatorName}</td>
                   <td>{cmd.qtyToProduce.toLocaleString()}</td>
-                  <td>{cmd.scrapQty ? `${cmd.scrapQty.toLocaleString()} tem` : '0'}</td>
+                  <td>{cmd.scrapQty ? `${cmd.scrapQty.toLocaleString()} ${t('tem')}` : '0'}</td>
                   <td>
                     <span className={`badge ${
                       cmd.status === 'completed' ? 'badge-success' : 'badge-info'
-                    }`}>{cmd.status === 'completed' ? 'Đã hoàn thành' : 'Đang in'}</span>
+                    }`}>{cmd.status === 'completed' ? t('Đã hoàn thành') : t('Đang in')}</span>
                   </td>
                   <td>
                     {cmd.status !== 'completed' && (currentUser.role === 'admin' || currentUser.role === 'producer') ? (
                       <button className="btn btn-sm btn-success" onClick={(e) => { e.stopPropagation(); setSelectedLsx(cmd); }}>
-                        Báo Cáo Hoàn Thành
+                        {t('Báo Cáo Hoàn Thành')}
                       </button>
                     ) : (
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>Chi Tiết</button>
+                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>{t('Chi Tiết')}</button>
                     )}
                   </td>
                 </tr>
               ))}
               {productionCommands.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>Không có lệnh sản xuất nào được khởi tạo.</td>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có lệnh sản xuất nào được ghi nhận.')}</td>
                 </tr>
               )}
             </tbody>
@@ -245,13 +247,13 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>PHÁT HÀNH LỆNH SẢN XUẤT MỚI (LSX)</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddLsxModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('PHÁT HÀNH LỆNH SẢN XUẤT (LSX) MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddLsxModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleCreateLsx}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Chọn Đơn Hàng PO Chờ Sản Xuất *</label>
+                  <label>{t('Chọn Đơn Hàng PO Chờ Sản Xuất *')}</label>
                   <select 
                     value={linkedPoId} 
                     onChange={e => {
@@ -269,26 +271,26 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Máy In Phân Công *</label>
+                    <label>{t('Máy In Phân Công *')}</label>
                     <select value={machineId} onChange={e => setMachineId(e.target.value)}>
-                      <option value="Máy Flexo 8 màu OMET">Máy Flexo 8 màu OMET</option>
-                      <option value="Máy Flexo 4 màu Gallus">Máy Flexo 4 màu Gallus</option>
-                      <option value="Máy in Offset Heidelberg">Máy in Offset Heidelberg</option>
-                      <option value="Máy in Kỹ thuật số Konica">Máy in Kỹ thuật số Konica</option>
+                      <option value="Máy Flexo 8 màu OMET">{t('Máy Flexo 8 màu OMET')}</option>
+                      <option value="Máy Flexo 4 màu Gallus">{t('Máy Flexo 4 màu Gallus')}</option>
+                      <option value="Máy in Offset Heidelberg">{t('Máy in Offset Heidelberg')}</option>
+                      <option value="Máy in Kỹ thuật số Konica">{t('Máy in Kỹ thuật số Konica')}</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Ca Sản Xuất *</label>
+                    <label>{t('Ca Sản Xuất *')}</label>
                     <select value={shift} onChange={e => setShift(e.target.value)}>
-                      <option value="Ca Sáng (08:00 - 18:00)">Ca Sáng (08:00 - 18:00)</option>
-                      <option value="Ca Đêm (18:00 - 04:00)">Ca Đêm (18:00 - 04:00)</option>
+                      <option value="Ca Sáng (08:00 - 18:00)">{t('Ca Sáng (08:00 - 18:00)')}</option>
+                      <option value="Ca Đêm (18:00 - 04:00)">{t('Ca Đêm (18:00 - 04:00)')}</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="form-grid" style={{ marginTop: '10px' }}>
                   <div className="form-group">
-                    <label>Số Lượng Tem Cần In *</label>
+                    <label>{t('Số Lượng Tem Cần In *')}</label>
                     <input 
                       type="number" 
                       min="1" 
@@ -298,23 +300,23 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                     />
                   </div>
                   <div className="form-group">
-                    <label>Người Đứng Máy Vận Hành</label>
+                    <label>{t('Người Đứng Máy Vận Hành')}</label>
                     <input type="text" value={operatorName} onChange={e => setOperatorName(e.target.value)} />
                   </div>
                 </div>
 
                 <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>Ghi Chú Kỹ Thuật Máy / Bế / Cán màng</label>
+                  <label>{t('Ghi Chú Kỹ Thuật Máy / Bế / Cán màng')}</label>
                   <textarea 
                     value={notes} 
                     onChange={e => setNotes(e.target.value)} 
-                    placeholder="Ví dụ: Cán màng OPP mờ, bế cuộn phi 76 hướng tem ra ngoài..." 
+                    placeholder={t('Ví dụ: Cán màng OPP mờ, bế cuộn phi 76 hướng tem ra ngoài...')} 
                   />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddLsxModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Khởi Chạy Máy (Phát Lệnh)</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddLsxModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Phát Hành Lệnh')}</button>
               </div>
             </form>
           </div>
@@ -326,28 +328,28 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>CHI TIẾT LỆNH SẢN XUẤT: {selectedLsx.lsxCode}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(null)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT LỆNH SẢN XUẤT')}: {selectedLsx.lsxCode}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                  <div><span style={{ fontWeight: 600 }}>Tên Tem Nhãn:</span> {selectedLsx.productName}</div>
-                  <div><span style={{ fontWeight: 600 }}>Mã PO Gốc:</span> {selectedLsx.poCode}</div>
-                  <div><span style={{ fontWeight: 600 }}>Máy Phân Công:</span> {selectedLsx.machineId}</div>
-                  <div><span style={{ fontWeight: 600 }}>Ca Kíp Máy:</span> {selectedLsx.shift}</div>
-                  <div><span style={{ fontWeight: 600 }}>Người Vận Hành:</span> {selectedLsx.operatorName}</div>
-                  <div><span style={{ fontWeight: 600 }}>Số Lượng Cần In:</span> {selectedLsx.qtyToProduce.toLocaleString()} tem</div>
-                  <div><span style={{ fontWeight: 600 }}>Ngày Lập Lệnh:</span> {new Date(selectedLsx.startedAt).toLocaleString('vi-VN')}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Tên Tem Nhãn')}:</span> {selectedLsx.productName}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Mã PO Gốc')}:</span> {selectedLsx.poCode}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Máy Phân Công')}:</span> {t(selectedLsx.machineId)}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Ca Kíp Máy')}:</span> {t(selectedLsx.shift)}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Người Vận Hành')}:</span> {selectedLsx.operatorName}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Số Lượng Cần In')}:</span> {selectedLsx.qtyToProduce.toLocaleString()} {t('tem')}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Ngày Lập Lệnh')}:</span> {new Date(selectedLsx.startedAt).toLocaleString('vi-VN')}</div>
                   {selectedLsx.completedAt && (
                     <div>
-                      <span style={{ fontWeight: 600 }}>Ngày Hoàn Thành:</span> {new Date(selectedLsx.completedAt).toLocaleString('vi-VN')}
+                      <span style={{ fontWeight: 600 }}>{t('Ngày Hoàn Thành')}:</span> {new Date(selectedLsx.completedAt).toLocaleString('vi-VN')}
                     </div>
                   )}
                 </div>
 
                 <div style={{ textAlign: 'center', border: '1px solid var(--color-border-light)', padding: '6px', borderRadius: '4px' }}>
-                  <h4 style={{ textAlign: 'left', fontSize: '11px', marginBottom: '6px', fontWeight: 600 }}>Mẫu màu in kỹ thuật:</h4>
+                  <h4 style={{ textAlign: 'left', fontSize: '11px', marginBottom: '6px', fontWeight: 600 }}>{t('Mẫu màu in kỹ thuật')}:</h4>
                   {getPOItemImage(selectedLsx.poId) ? (
                     <img 
                       src={getPOItemImage(selectedLsx.poId)} 
@@ -355,16 +357,16 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                       style={{ maxWidth: '100%', maxHeight: '160px', objectFit: 'contain' }}
                     />
                   ) : (
-                    <div style={{ padding: '40px 0', backgroundColor: '#f8fafc', color: 'var(--color-text-muted)', fontSize: '12px' }}>Không có ảnh mẫu</div>
+                    <div style={{ padding: '40px 0', backgroundColor: '#f8fafc', color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Không có ảnh mẫu')}</div>
                   )}
                 </div>
               </div>
 
               {selectedLsx.status === 'producing' && (currentUser.role === 'admin' || currentUser.role === 'producer') && (
                 <form onSubmit={handleCompleteLsx} style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px', marginTop: '16px', backgroundColor: '#f8fafc' }}>
-                  <h3 style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--color-success)' }}>Báo cáo kết quả hoàn thành sản xuất:</h3>
+                  <h3 style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--color-success)' }}>{t('Báo cáo kết quả hoàn thành sản xuất')}:</h3>
                   <div className="form-group">
-                    <label>Số Lượng Phế Phẩm / Hao Hụt Phát Sinh (Cái)*</label>
+                    <label>{t('Số Lượng Phế Phẩm / Hao Hụt Phát Sinh (Cái)*')}</label>
                     <input 
                       type="number" 
                       min="0" 
@@ -372,26 +374,26 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                       onChange={e => setScrapQty(Number(e.target.value))} 
                       required 
                     />
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>* Lượng tem in hỏng trong quá trình canh chỉnh chồng màu và bế decal</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{t('* Lượng tem in hỏng trong quá trình canh chỉnh chồng màu và bế decal')}</span>
                   </div>
 
                   <div className="form-group" style={{ marginTop: '10px' }}>
-                    <label>Ghi Chú Kết Quả Vận Hành (Hao hụt giấy, mực...)</label>
+                    <label>{t('Ghi Chú Kết Quả Vận Hành (Hao hụt giấy, mực...)')}</label>
                     <textarea 
                       value={completionNotes} 
                       onChange={e => setCompletionNotes(e.target.value)} 
-                      placeholder="VD: Chạy máy tốt, hao hụt 120 tem trong lúc set-up dao bế."
+                      placeholder={t('VD: Chạy máy tốt, hao hụt 120 tem trong lúc set-up dao bế.')}
                     />
                   </div>
 
                   <button type="submit" className="btn btn-success" style={{ width: '100%', marginTop: '12px' }}>
-                    Xác Nhận Sản Xuất Xong (Tự Động Trừ Kho & Bàn Giao QC)
+                    {t('Xác Nhận Sản Xuất Xong (Tự Động Trừ Kho & Bàn Giao QC)')}
                   </button>
                 </form>
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setSelectedLsx(null)}>Đóng</button>
+              <button className="btn btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>
             </div>
           </div>
         </div>

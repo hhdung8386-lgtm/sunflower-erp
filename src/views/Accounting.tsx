@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
+import { BarChart } from '../components/VisualCharts';
 
 interface AccountingProps {
   pos: any[];
@@ -8,6 +10,7 @@ interface AccountingProps {
 }
 
 export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'invoices' | 'costing'>('invoices');
@@ -33,368 +36,397 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     fetchAccountingData();
   }, [pos]);
 
-  const handleOpenPayment = (inv: any) => {
-    setSelectedInvoice(inv);
-    setPaymentAmount(Number(inv.amount) - Number(inv.paidAmount));
-    setPaymentMethod('bank_transfer');
-  };
-
-  const handleRecordPayment = async (e: React.FormEvent) => {
+  // Handle invoice payment
+  const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInvoice || paymentAmount <= 0) return;
+    if (!selectedInvoice) return;
 
-    const newPaid = Number(selectedInvoice.paidAmount) + Number(paymentAmount);
-    const totalAmount = Number(selectedInvoice.amount);
+    const currentPaid = Number(selectedInvoice.paidAmount) || 0;
+    const newPaid = currentPaid + Number(paymentAmount);
+    const invoiceTotal = Number(selectedInvoice.amount);
     
-    let newStatus = 'partially_paid';
-    if (newPaid >= totalAmount) {
-      newStatus = 'paid';
+    let status = 'partially_paid';
+    if (newPaid >= invoiceTotal) {
+      status = 'paid';
     }
 
+    // Update in database
     await dbService.updateDocument('invoices', selectedInvoice.id, {
       paidAmount: newPaid,
-      status: newStatus
+      status: status
     });
 
-    // If fully paid and type is receivable, update corresponding PO status to "debt_collected"
-    if (newStatus === 'paid' && selectedInvoice.type === 'receivable') {
-      const po = pos.find(p => p.id === selectedInvoice.poId);
-      if (po) {
-        const updatedLogs = [
-          ...po.historyLogs,
-          {
-            status: 'debt_collected',
-            updatedBy: currentUser.displayName,
-            updatedAt: new Date().toISOString(),
-            note: 'Bộ phận kế toán ghi nhận thanh toán hoàn tất từ khách hàng. Kết thúc công nợ đơn.'
-          }
-        ];
-        await dbService.updateDocument('pos', po.id, {
-          status: 'debt_collected',
-          historyLogs: updatedLogs
+    // If fully paid, optionally update PO status to debt_collected
+    if (status === 'paid') {
+      const linkedPo = pos.find(p => p.id === selectedInvoice.poId);
+      if (linkedPo) {
+        await dbService.updateDocument('pos', linkedPo.id, {
+          status: 'debt_collected'
         });
+        // Log history
+        const logs = linkedPo.historyLogs || [];
+        logs.push({
+          status: 'debt_collected',
+          updatedBy: currentUser.displayName,
+          updatedAt: new Date().toISOString(),
+          note: t('Đã hoàn thành thu hồi công nợ hóa đơn')
+        });
+        await dbService.updateDocument('pos', linkedPo.id, { historyLogs: logs });
       }
     }
 
     setSelectedInvoice(null);
+    setPaymentAmount(0);
     fetchAccountingData();
     onRefresh();
   };
 
-  const saveTransportCost = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customCostModalPo) return;
-    setTransportCosts(prev => ({
-      ...prev,
-      [customCostModalPo.id]: Number(tempTransportCost)
-    }));
-    setCustomCostModalPo(null);
-  };
-
-  // ----------------------------------------------------
-  // REAL COSTING & GROSS PROFIT CALCULATOR
-  // ----------------------------------------------------
+  // Costing calculations for PO
   const calculateCosting = (po: any) => {
-    const item = po.items[0] || {};
-    const qty = item.quantity || 0;
+    const revenue = po.netAmount || po.totalAmount || 0;
     
-    // 1. Material Paper Cost Estimation: 
-    // Decal = qty * 0.015 sqm * standard cost 22,000 đ/sqm
-    const decalCost = Math.round(qty * 0.015 * 22000);
-
-    // 2. Ink Cost Estimation:
-    // Ink = qty * 0.0002 kg * standard cost 150,000 đ/kg
-    const inkCost = Math.round(qty * 0.0002 * 150000);
-
-    // 3. Finishing & Cores Cost:
-    // Cores/Cán màng/Khác = qty * 5 đ
-    const otherMaterialCost = Math.round(qty * 5);
-
-    const totalMaterialsCost = decalCost + inkCost + otherMaterialCost;
+    // Estimate Raw Material Cost from BOM:
+    // Decal: 1.1 sqm per 10 sqm label, roughly 50,000 VND / sqm
+    // Ink: 0.05 kg per 10,000 labels, roughly 120,000 VND / kg
+    // Film: 1.05 sqm per 10 sqm, roughly 15,000 VND / sqm
+    const quantity = po.items?.[0]?.quantity || 10000;
+    const sizeStr = po.items?.[0]?.size || '100x100mm';
     
-    // 4. Transportation cost (from state or default 5% of net value)
-    const transportCost = transportCosts[po.id] !== undefined ? transportCosts[po.id] : Math.round(po.netAmount * 0.05);
-
-    const totalCost = totalMaterialsCost + transportCost;
-    const grossProfit = po.netAmount - totalCost;
-    const margin = po.netAmount > 0 ? (grossProfit / po.netAmount) * 100 : 0;
+    // Calculate square meters
+    let w = 100, h = 100;
+    const parts = sizeStr.toLowerCase().replace('mm', '').split('x');
+    if (parts.length === 2) {
+      w = parseInt(parts[0]) || 100;
+      h = parseInt(parts[1]) || 100;
+    }
+    const sqm = (w * h * quantity) / 1000000;
+    
+    const decalCost = sqm * 32000; // Average cost of paper decal
+    const inkCost = (quantity / 1000) * 1500; // Ink cost
+    const filmCost = po.items?.[0]?.material.includes('nhựa') ? sqm * 12000 : 0;
+    const coreCost = Math.ceil(quantity / 5000) * 8000; // Core cost
+    
+    const materialCost = Math.round(decalCost + inkCost + filmCost + coreCost);
+    const transportCost = transportCosts[po.id] || 350000; // Default or customized transport cost
+    const totalCost = materialCost + transportCost;
+    
+    const grossProfit = revenue - totalCost;
+    const marginPercent = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
     return {
-      decalCost,
-      inkCost,
-      otherMaterialCost,
-      totalMaterialsCost,
+      revenue,
+      materialCost,
       transportCost,
       totalCost,
       grossProfit,
-      margin
+      marginPercent
     };
   };
 
-  // ----------------------------------------------------
-  // EXPORT CSV UTILITY (Excel file simulation)
-  // ----------------------------------------------------
-  const handleExportCSV = (type: 'pos' | 'debt') => {
-    let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // UTF-8 BOM
-    
-    if (type === 'pos') {
-      csvContent += "Mã PO,Khách Hàng,Doanh Thu Net,Chi Phí Vật Tư,Vận Chuyển,Lợi Nhuận Gộp,Tỷ Lệ Lợi Nhuận\n";
-      pos.forEach(po => {
-        const cost = calculateCosting(po);
-        csvContent += `"${po.poCode}","${po.customerName}",${po.netAmount},${cost.totalMaterialsCost},${cost.transportCost},${cost.grossProfit},"${cost.margin.toFixed(1)}%"\n`;
+  const handleOpenCostModal = (po: any) => {
+    setCustomCostModalPo(po);
+    setTempTransportCost(transportCosts[po.id] || 350000);
+  };
+
+  const handleSaveCustomCost = () => {
+    if (customCostModalPo) {
+      setTransportCosts({
+        ...transportCosts,
+        [customCostModalPo.id]: Number(tempTransportCost)
       });
-    } else {
-      csvContent += "Mã Hóa Đơn,Khách Hàng,Tổng Tiền Phải Thu,Đã Thu,Còn Nợ,Ngày Hạn Thanh Toán,Trạng Thái\n";
-      invoices.forEach(inv => {
-        const customer = pos.find(p => p.id === inv.poId)?.customerName || 'Nhà Cung Cấp';
-        const remaining = Number(inv.amount) - Number(inv.paidAmount);
-        csvContent += `"${inv.invoiceCode}","${customer}",${inv.amount},${inv.paidAmount},${remaining},"${new Date(inv.dueDate).toLocaleDateString('vi-VN')}","${inv.status}"\n`;
-      });
+      setCustomCostModalPo(null);
     }
+  };
+
+  // CSV Export for Accountant
+  const handleExportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "Mã PO,Khách Hàng,Doanh Thu (đ),Chi Phí Vật Tư (đ),Vận Chuyển (đ),Tổng Chi Phí (đ),Lợi Nhuận (đ),Tỷ Suất Lãi Gộp (%)\n";
+    
+    pos.forEach(po => {
+      const c = calculateCosting(po);
+      csvContent += `${po.poCode},${po.customerName},${c.revenue},${c.materialCost},${c.transportCost},${c.totalCost},${c.grossProfit},${c.marginPercent.toFixed(1)}%\n`;
+    });
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", type === 'pos' ? "bao_cao_doanh_thu_lai_gop.csv" : "bao_cao_cong_no.csv");
+    link.setAttribute("download", `Bao_Cao_Lai_Gop_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ----------------------------------------------------
-  // PRINT PDF FUNCTION (Native browser layout print)
-  // ----------------------------------------------------
-  const handlePrintDocument = (po: any) => {
-    // Write dynamic styles for standard print view
+  const printWorkOrder = (po: any) => {
+    const c = calculateCosting(po);
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const cost = calculateCosting(po);
-    const item = po.items[0] || {};
-
-    const content = `
+    printWindow.document.write(`
       <html>
         <head>
-          <title>Phiếu Sản Xuất - ${po.poCode}</title>
+          <title>${t('In Phiếu SX')} - ${po.poCode}</title>
           <style>
             body { font-family: sans-serif; padding: 30px; line-height: 1.6; color: #333; }
-            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-            .title { font-size: 24px; font-weight: bold; margin: 0; }
-            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
-            .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            .table th, .table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-            .table th { background-color: #f2f2f2; }
-            .notes { margin-top: 30px; border-top: 1px solid #ddd; padding-top: 15px; font-style: italic; }
-            .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 50px; text-align: center; }
-            .sig-box { height: 80px; }
+            .header { text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 20px; }
+            .title { font-size: 22px; font-weight: bold; color: #1e3a8a; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .footer { margin-top: 40px; display: flex; justify-content: space-between; }
+            .sig-box { width: 200px; height: 100px; border: 1px dashed #999; margin-top: 10px; text-align: center; line-height: 100px; color: #999; }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="title">LỆNH SẢN XUẤT KIÊM PHIẾU GIAO VIỆC</div>
-            <div>Mã Đơn Hàng: ${po.poCode} | Ngày Lập: ${new Date(po.orderDate).toLocaleDateString('vi-VN')}</div>
+            <div class="title">PHIẾU YÊU CẦU SẢN XUẤT VÀ TÍNH PHÍ</div>
+            <div>Mã PO: ${po.poCode} | Ngày in: ${new Date().toLocaleDateString('vi-VN')}</div>
           </div>
-          <div class="meta-grid">
+          <div class="grid">
             <div>
               <strong>Khách Hàng:</strong> ${po.customerName}<br>
+              <strong>Ngày Đặt PO:</strong> ${new Date(po.orderDate).toLocaleDateString('vi-VN')}<br>
               <strong>Ngày Giao Dự Kiến:</strong> ${new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}
             </div>
             <div>
-              <strong>Phụ Trách Kinh Doanh:</strong> Nam Nguyễn (Sale)<br>
-              <strong>Tiến Độ Đơn:</strong> Đang in ấn/Gia công
+              <strong>Trạng Thái Sản Xuất:</strong> ${po.status.toUpperCase()}<br>
+              <strong>Ghi Chú Đơn Hàng:</strong> ${po.notes || 'Không có'}
             </div>
           </div>
-          <h3>Chi tiết sản phẩm sản xuất</h3>
-          <table class="table">
+          <h3>Thông số tem nhãn và định phí</h3>
+          <table>
             <thead>
               <tr>
-                <th>Tên Sản Phẩm Tem Nhãn</th>
-                <th>Kích Thước</th>
-                <th>Decal Chất Liệu</th>
-                <th>Số Lượng Cần In</th>
+                <th>Tên sản phẩm</th>
+                <th>Quy cách</th>
+                <th>Vật liệu</th>
+                <th>Số lượng đặt</th>
+                <th>Ước tính Chi Phí</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>${item.productName}</td>
-                <td>${item.size}</td>
-                <td>${item.material}</td>
-                <td style="font-weight: bold;">${item.quantity?.toLocaleString()} tem</td>
+                <td>${po.items?.[0]?.productName}</td>
+                <td>${po.items?.[0]?.size}</td>
+                <td>${po.items?.[0]?.material}</td>
+                <td>${po.items?.[0]?.quantity.toLocaleString()} tem</td>
+                <td>${c.totalCost.toLocaleString()} đ</td>
               </tr>
             </tbody>
           </table>
-          
-          <div class="notes">
-            <strong>Ghi chú kỹ thuật xưởng in:</strong><br>
-            ${po.notes || 'Không có ghi chú đặc biệt.'}
-          </div>
-
-          <div class="signatures">
+          <div class="footer">
             <div>
-              <strong>Người Lập Phiếu</strong>
-              <div class="sig-box"></div>
-              <span>(Ký, ghi rõ họ tên)</span>
+              <div>Đại Diện Bán Hàng</div>
+              <div class="sig-box">Ký tên</div>
             </div>
             <div>
-              <strong>Quản Đốc Xưởng</strong>
-              <div class="sig-box"></div>
-              <span>(Ký, ghi rõ họ tên)</span>
+              <div>Quản Đốc Phân Xưởng</div>
+              <div class="sig-box">Ký tên</div>
             </div>
             <div>
-              <strong>Thợ Vận Hành Máy</strong>
-              <div class="sig-box"></div>
-              <span>(Ký, ghi rõ họ tên)</span>
+              <div>Kế Toán Trưởng</div>
+              <div class="sig-box">Ký tên</div>
             </div>
           </div>
-
-          <script>
-            window.onload = function() { window.print(); window.close(); }
-          </script>
         </body>
       </html>
-    `;
-
-    printWindow.document.write(content);
+    `);
     printWindow.document.close();
+    printWindow.print();
   };
+
+  // Compile costing profit margin percentage data for top 5 POs
+  const profitMarginChartData = pos
+    .map(po => {
+      const calc = calculateCosting(po);
+      return {
+        label: po.poCode,
+        value: Math.max(0, Math.round(calc.marginPercent))
+      };
+    })
+    .slice(0, 5);
 
   return (
     <div className="accounting-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">KẾ TOÁN, CÔNG NỢ & LÃI GỘP</h1>
-          <p className="page-subtitle">Xuất hóa đơn, theo dõi lịch sử thanh toán nợ của khách hàng (AR) / nhà cung cấp (AP) và tính toán lãi gộp tự động.</p>
+          <h1 className="page-title">{t('KẾ TOÁN & CÔNG NỢ - LÃI GỘP')}</h1>
+          <p className="page-subtitle">{t('Theo dõi công nợ phải thu (AR) / phải trả (AP), hóa đơn VAT, phân tích lãi gộp của từng PO thực tế.')}</p>
         </div>
       </div>
 
+      {/* Tabs */}
       <div className="tab-container">
         <button 
           className={`tab-btn ${activeTab === 'invoices' ? 'active' : ''}`}
           onClick={() => setActiveTab('invoices')}
         >
-          Theo Dõi Hóa Đơn & Công Nợ
+          {t('Công Nợ Phải Thu')} ({invoices.filter(i => i.type === 'receivable').length}) & Phải Trả ({invoices.filter(i => i.type === 'payable').length})
         </button>
         <button 
           className={`tab-btn ${activeTab === 'costing' ? 'active' : ''}`}
           onClick={() => setActiveTab('costing')}
         >
-          Phân Tích Lãi Gộp & Giá Thành
+          {t('Báo Cáo Lãi Gộp Đơn Hàng')} ({pos.length})
         </button>
       </div>
 
-      {/* TAB 1: INVOICES & DEBTS */}
+      {/* TAB 1: INVOICES & AR/AP LEDGER */}
       {activeTab === 'invoices' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="card">
-            <div style={{ display: 'flex', justifySelf: 'space-between', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="card-title">Danh Sách Hóa Đơn VAT và Tình Trạng Thanh Toán</span>
-              <button className="btn btn-outline" onClick={() => handleExportCSV('debt')}>
-                Xuất File Công Nợ (Excel CSV)
-              </button>
-            </div>
-            <div className="table-container">
-              <table>
-                <thead>
+        <div className="card">
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Số Hóa Đơn')}</th>
+                  <th>{t('Mã PO')}</th>
+                  <th>{t('Khách Hàng')} / {t('Nhà Cung Cấp')}</th>
+                  <th>{t('Loại')}</th>
+                  <th>{t('Trị Giá')}</th>
+                  <th>{t('Đã Thanh Toán')}</th>
+                  <th>{t('Cần Thu')} / {t('Cần Trả')}</th>
+                  <th>{t('Hạn Nợ')}</th>
+                  <th>{t('Trạng Thái')}</th>
+                  <th>{t('Thao Tác')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map(inv => {
+                  const linkedPo = pos.find(p => p.id === inv.poId);
+                  const isReceivable = inv.type === 'receivable';
+                  const balance = Number(inv.amount) - (Number(inv.paidAmount) || 0);
+                  
+                  return (
+                    <tr key={inv.id}>
+                      <td style={{ fontWeight: 600 }}>{inv.invoiceCode}</td>
+                      <td>{linkedPo ? linkedPo.poCode : 'N/A'}</td>
+                      <td>
+                        {isReceivable ? 
+                          (linkedPo ? linkedPo.customerName : t('Khách Hàng')) : 
+                          t('Nhà Cung Cấp Vật Tư')
+                        }
+                      </td>
+                      <td>
+                        <span className={`badge ${isReceivable ? 'badge-info' : 'badge-warning'}`}>
+                          {isReceivable ? t('Công Nợ Phải Thu') : t('Công Nợ Phải Trả')}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{inv.amount.toLocaleString()} đ</td>
+                      <td style={{ color: 'var(--color-success)' }}>{(inv.paidAmount || 0).toLocaleString()} đ</td>
+                      <td style={{ color: balance > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 700 }}>
+                        {balance.toLocaleString()} đ
+                      </td>
+                      <td>{new Date(inv.dueDate).toLocaleDateString('vi-VN')}</td>
+                      <td>
+                        <span className={`badge ${
+                          inv.status === 'paid' ? 'badge-success' :
+                          inv.status === 'partially_paid' ? 'badge-warning' : 'badge-danger'
+                        }`}>
+                          {inv.status === 'paid' ? t('Đã thanh toán') :
+                           inv.status === 'partially_paid' ? t('Thanh toán 1 phần') : t('Quá Hạn')}
+                        </span>
+                      </td>
+                      <td>
+                        {balance > 0 ? (
+                          <button 
+                            className="btn btn-sm btn-primary"
+                            onClick={() => { setSelectedInvoice(inv); setPaymentAmount(balance); }}
+                          >
+                            {isReceivable ? t('Thu Nợ') : t('Trả Tiền')}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--color-success)', fontSize: '12px', fontWeight: 600 }}>Xong</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {invoices.length === 0 && (
                   <tr>
-                    <th>Mã Hóa Đơn</th>
-                    <th>Khách Hàng</th>
-                    <th>Loại Công Nợ</th>
-                    <th>Giá Trị</th>
-                    <th>Đã Thanh Toán</th>
-                    <th>Còn Phải Thu/Trả</th>
-                    <th>Hạn Thanh Toán</th>
-                    <th>Trạng Thái</th>
-                    <th>Thao Tác</th>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có hóa đơn kế toán nào.')}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {invoices.map(inv => {
-                    const remaining = Number(inv.amount) - Number(inv.paidAmount);
-                    return (
-                      <tr key={inv.id}>
-                        <td style={{ fontWeight: 600 }}>{inv.invoiceCode}</td>
-                        <td>{pos.find(p => p.id === inv.poId)?.customerName || 'Nhà Cung Cấp'}</td>
-                        <td>{inv.type === 'receivable' ? 'Phải Thu (Khách hàng)' : 'Phải Trả (NCC)'}</td>
-                        <td style={{ fontWeight: 600 }}>{inv.amount.toLocaleString()} đ</td>
-                        <td style={{ color: 'var(--color-success)', fontWeight: 500 }}>{inv.paidAmount.toLocaleString()} đ</td>
-                        <td style={{ color: remaining > 0 ? 'var(--color-danger)' : 'var(--color-text-main)', fontWeight: 600 }}>
-                          {remaining.toLocaleString()} đ
-                        </td>
-                        <td>{new Date(inv.dueDate).toLocaleDateString('vi-VN')}</td>
-                        <td>
-                          <span className={`badge ${
-                            inv.status === 'paid' ? 'badge-success' : 'badge-warning'
-                          }`}>{inv.status === 'paid' ? 'Đã thu xong' : 'Còn nợ'}</span>
-                        </td>
-                        <td>
-                          {inv.status !== 'paid' && (currentUser.role === 'admin' || currentUser.role === 'accountant') && (
-                            <button className="btn btn-sm btn-primary" onClick={() => handleOpenPayment(inv)}>
-                              Thu Tiền / Thanh Toán
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* TAB 2: COSTING & GROSS PROFIT */}
+      {/* TAB 2: GROSS PROFIT COSTING ANALYTICS */}
       {activeTab === 'costing' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="card">
-            <div style={{ display: 'flex', justifySelf: 'space-between', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="card-title">Phân Tích Lãi Gộp Trên Từng Đơn Hàng PO</span>
-              <button className="btn btn-outline" onClick={() => handleExportCSV('pos')}>
-                Xuất File Lãi Gộp (Excel CSV)
-              </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Profit Margin Chart Section */}
+          {profitMarginChartData.length > 0 && (
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">{t('Tỷ Suất Lãi Gộp (%) - Top 5 Đơn Hàng PO')}</span>
+              </div>
+              <BarChart data={profitMarginChartData} yAxisSuffix="%" height={220} />
             </div>
-            
+          )}
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">{t('Báo Cáo Lãi Gộp Đơn Hàng')}</span>
+              <div className="btn-group">
+                <button className="btn btn-primary" onClick={handleExportCSV}>{t('Xuất Excel Báo Cáo')}</button>
+              </div>
+            </div>
             <div className="table-container">
               <table>
                 <thead>
                   <tr>
-                    <th>Mã PO</th>
-                    <th>Khách Hàng</th>
-                    <th>Doanh Thu Net</th>
-                    <th>Chi Phí Vật Tư (Giấy/Mực)</th>
-                    <th>Chi Phí Vận Chuyển</th>
-                    <th>Tổng Chi Phí</th>
-                    <th>Lợi Nhuận Lãi Gộp</th>
-                    <th>Tỷ Lệ Biên Lợi Nhuận</th>
-                    <th>Thao Tác</th>
+                    <th>{t('Mã PO')}</th>
+                    <th>{t('Khách Hàng')}</th>
+                    <th>{t('Doanh Thu')}</th>
+                    <th>{t('Chi Phí Nguyên Vật Liệu')}</th>
+                    <th>{t('Chi Phí Khác (Vận chuyển/Ngoài)')}</th>
+                    <th>{t('Lợi Nhuận Lãi Gộp')}</th>
+                    <th>{t('Tỷ Suất Lãi Gộp (%)')}</th>
+                    <th>{t('Thao Tác')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pos.map(po => {
-                    const costing = calculateCosting(po);
+                    const c = calculateCosting(po);
+                    const isEstimated = !['delivered', 'debt_collected'].includes(po.status);
+                    
                     return (
                       <tr key={po.id}>
                         <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                         <td>{po.customerName}</td>
-                        <td style={{ fontWeight: 600 }}>{po.netAmount.toLocaleString()} đ</td>
-                        <td>{costing.totalMaterialsCost.toLocaleString()} đ</td>
-                        <td>{costing.transportCost.toLocaleString()} đ</td>
-                        <td>{costing.totalCost.toLocaleString()} đ</td>
-                        <td style={{ color: 'var(--color-success)', fontWeight: 700 }}>
-                          {costing.grossProfit.toLocaleString()} đ
+                        <td style={{ fontWeight: 600 }}>{c.revenue.toLocaleString()} đ</td>
+                        <td style={{ color: 'var(--color-text-muted)' }}>{c.materialCost.toLocaleString()} đ</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{c.transportCost.toLocaleString()} đ</span>
+                            <button 
+                              className="btn btn-sm btn-outline" 
+                              onClick={() => handleOpenCostModal(po)}
+                              style={{ padding: '2px 6px', fontSize: '10.5px' }}
+                            >
+                              Sửa
+                            </button>
+                          </div>
                         </td>
-                        <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>
-                          {costing.margin.toFixed(1)}%
+                        <td style={{ color: 'var(--color-success)', fontWeight: 700 }}>{c.grossProfit.toLocaleString()} đ</td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 'bold', color: c.marginPercent > 30 ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                              {c.marginPercent.toFixed(1)}%
+                            </span>
+                            {isEstimated && (
+                              <span style={{ fontSize: '9.5px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                ({t('Chưa Giao Hàng (Lãi dự kiến)')})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <div className="btn-group">
-                            <button className="btn btn-sm btn-outline" onClick={() => {
-                              setCustomCostModalPo(po);
-                              setTempTransportCost(costing.transportCost);
-                            }}>Sửa Chi Phí</button>
-                            <button className="btn btn-sm btn-outline" onClick={() => handlePrintDocument(po)}>
-                              In Phiếu SX (PDF)
-                            </button>
+                            <button className="btn btn-sm btn-outline" onClick={() => printWorkOrder(po)}>{t('In Phiếu SX')}</button>
                           </div>
                         </td>
                       </tr>
@@ -407,89 +439,82 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
         </div>
       )}
 
-      {/* RECORD PAYMENT MODAL */}
+      {/* INVOICE PAYMENT RECORD MODAL */}
       {selectedInvoice && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '450px' }}>
+          <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>GHI NHẬN THANH TOÁN HÓA ĐƠN</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedInvoice(null)}>Đóng</button>
+              <span style={{ fontWeight: 700 }}>{t('Thu / Chi Công Nợ Hóa Don')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedInvoice(null)}>{t('Đóng')}</button>
             </div>
-            <form onSubmit={handleRecordPayment}>
+            <form onSubmit={handlePaymentSubmit}>
               <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', marginBottom: '12px' }}>
-                  <span style={{ fontWeight: 600 }}>Mã hóa đơn:</span>
-                  <span>{selectedInvoice.invoiceCode}</span>
-                  <span style={{ fontWeight: 600 }}>Cần thanh toán:</span>
-                  <span style={{ fontWeight: 700, color: 'var(--color-danger)' }}>
-                    {(Number(selectedInvoice.amount) - Number(selectedInvoice.paidAmount)).toLocaleString()} đ
-                  </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', fontSize: '13px' }}>
+                  <strong>{t('Số Hóa Đơn')}:</strong> <span>{selectedInvoice.invoiceCode}</span>
+                  <strong>{t('Loại')}:</strong> <span>{selectedInvoice.type === 'receivable' ? t('Thu Nợ từ Khách') : t('Chi Trả mua vật tư')}</span>
+                  <strong>{t('Hạn nợ thanh toán:')}</strong> <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
+                  <strong>{t('Trị Giá')}:</strong> <span style={{ fontWeight: 700 }}>{selectedInvoice.amount.toLocaleString()} đ</span>
+                  <strong>{t('Đã Thanh Toán')}:</strong> <span style={{ color: 'var(--color-success)' }}>{(selectedInvoice.paidAmount || 0).toLocaleString()} đ</span>
                 </div>
-
+                
+                <hr style={{ border: 'none', borderTop: '1px solid var(--color-border-light)', margin: '10px 0' }} />
+                
                 <div className="form-group">
-                  <label>Số Tiền Đóng (đ) *</label>
+                  <label>{t('Số tiền thanh toán lần này *')}</label>
                   <input 
                     type="number" 
                     min="1" 
-                    max={Number(selectedInvoice.amount) - Number(selectedInvoice.paidAmount)}
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                    max={Number(selectedInvoice.amount) - (Number(selectedInvoice.paidAmount) || 0)}
+                    value={paymentAmount} 
+                    onChange={e => setPaymentAmount(Number(e.target.value))} 
                     required 
                   />
                 </div>
 
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>Phương Thức Thanh Toán</label>
+                <div className="form-group">
+                  <label>{t('Điều Khoản Thanh Toán')}</label>
                   <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option value="bank_transfer">Chuyển khoản ngân hàng</option>
-                    <option value="cash">Tiền mặt</option>
+                    <option value="bank_transfer">{t('Chuyển khoản Ngân hàng')}</option>
+                    <option value="cash">{t('Tiền mặt')}</option>
                   </select>
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setSelectedInvoice(null)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Xác Nhận Thu Tiền</button>
+                <button type="button" className="btn btn-outline" onClick={() => setSelectedInvoice(null)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Giao Dịch')}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* EDIT COST MODAL */}
+      {/* CUSTOM TRANSPORT COST ADJUSTMENT MODAL */}
       {customCostModalPo && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '400px' }}>
+          <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>CHỈNH SỬA CHI PHÍ VẬN CHUYỂN / KHÁC</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setCustomCostModalPo(null)}>Đóng</button>
+              <span style={{ fontWeight: 700 }}>CẬP NHẬT CHI PHÍ VẬN CHUYỂN / PHÁT SINH</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setCustomCostModalPo(null)}>{t('Đóng')}</button>
             </div>
-            <form onSubmit={saveTransportCost}>
-              <div className="modal-body">
-                <p style={{ fontSize: '12.5px', marginBottom: '10px', color: 'var(--color-text-muted)' }}>
-                  Nhập chi phí vận chuyển hoặc chi phí phát sinh ngoài (gia công, khuôn bế...) để tính lãi gộp chính xác cho PO {customCostModalPo.poCode}.
-                </p>
-                <div className="form-group">
-                  <label>Chi Phí Phát Sinh (đ) *</label>
-                  <input 
-                    type="number" 
-                    min="0" 
-                    value={tempTransportCost} 
-                    onChange={e => setTempTransportCost(Number(e.target.value))} 
-                    required 
-                  />
-                </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '13px' }}>Điều chỉnh chi phí vận chuyển hoặc thuê gia công ngoài cho đơn hàng: <strong>{customCostModalPo.poCode}</strong></p>
+              <div className="form-group">
+                <label>Chi phí vận chuyển & gia công phát sinh (đ)*</label>
+                <input 
+                  type="number" 
+                  value={tempTransportCost} 
+                  onChange={e => setTempTransportCost(Number(e.target.value))} 
+                  required 
+                />
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setCustomCostModalPo(null)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Lưu Thay Đổi</button>
-              </div>
-            </form>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setCustomCostModalPo(null)}>{t('Hủy')}</button>
+              <button type="button" className="btn btn-primary" onClick={handleSaveCustomCost}>{t('Cập Nhật')}</button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 };
-// Quick hotfix for modal overlap in rendering: we mapped 'showSignatureModal' to 'showPaymentModal' internally, 
-// let's ensure the render conditions match. In the component code: 'showSignatureModal' was used in payment check, 
-// let's replace it with a dedicated 'selectedInvoice' boolean display check, which is more robust.

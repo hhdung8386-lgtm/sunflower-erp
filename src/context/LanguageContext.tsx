@@ -1,0 +1,450 @@
+import React, { createContext, useContext, useState } from 'react';
+
+type Language = 'vi' | 'en';
+
+interface LanguageContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: (key: string) => string;
+}
+
+const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+
+export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguage] = useState<Language>(() => {
+    return (localStorage.getItem('erp_lang') as Language) || 'vi';
+  });
+
+  const changeLanguage = (lang: Language) => {
+    setLanguage(lang);
+    localStorage.setItem('erp_lang', lang);
+  };
+
+  // Detailed Vietnamese to English Translation Dictionary
+  const dict: { [key: string]: string } = {
+    // Brand & Sidebar Logo
+    'SUNFLOWER ERP': 'SUNFLOWER',
+    'SUNFLOWER LABEL MANUFACTURING ERP': 'SUNFLOWER LABEL MANUFACTURING',
+
+    // Sidebar items
+    'Tổng Quan Dashboards': 'Dashboard Overview',
+    'Khách Hàng (CRM)': 'Customers (CRM)',
+    'Tiếp Nhận Đơn (Sale PO)': 'Sales Orders (PO)',
+    'Thiết Kế & Layout': 'Design & Layout',
+    'Mua Hàng & NCC': 'Purchasing & Suppliers',
+    'Kho Nguyên Vật Tư': 'Material Inventory',
+    'Lệnh Sản Xuất (LSX)': 'Production Commands',
+    'Kế Hoạch Giao Hàng': 'Delivery Schedule',
+    'Kế Toán & Lãi Gộp': 'Accounting & Gross Profit',
+    'Quản Lý Tài Khoản': 'User Management',
+    'Đăng Xuất': 'Sign Out',
+
+    // Header
+    'Chuyển nhanh vai trò:': 'Quick Switch Role:',
+    'Giám Đốc': 'Director',
+    'Nhân Viên Sale': 'Sales Staff',
+    'Thiết Kế': 'Designer',
+    'Mua Vật Tư': 'Procurement',
+    'Sản Xuất': 'Production',
+    'Kế Toán': 'Accountant',
+
+    // Login Page
+    'Hệ Thống Quản Trị Sản Xuất Tem Nhãn': 'Label Production Management System',
+    'Địa Chỉ Email Văn Phòng': 'Office Email Address',
+    'Mật Khẩu Đăng Nhập': 'Sign-in Password',
+    'Đăng Nhập Vào Hệ Thống': 'Sign In to System',
+    'Tài khoản Demo thử nghiệm nhanh:': 'Quick Demo Accounts:',
+    'Giám đốc:': 'Director:',
+    'mật khẩu': 'password',
+    'Sale:': 'Sales:',
+    'Thiết kế:': 'Designer:',
+    'Mua hàng:': 'Purchasing:',
+    'Sản xuất:': 'Production:',
+    'Kế toán:': 'Accountant:',
+
+    // Dashboard Overview
+    'BẢNG ĐIỀU KHIỂN TỔNG QUAN': 'DASHBOARD OVERVIEW',
+    'Xin chào,': 'Welcome,',
+    'Vai trò:': 'Role:',
+    'DOANH THU ĐÃ THU': 'COLLECTED REVENUE',
+    'CÔNG NỢ PHẢI THU (AR)': 'ACCOUNTS RECEIVABLE (AR)',
+    'CÔNG NỢ PHẢI TRẢ (AP)': 'ACCOUNTS PAYABLE (AP)',
+    'ĐƠN ĐANG XỬ LÝ': 'ACTIVE ORDERS',
+    'đơn': 'orders',
+    'Cơ Cấu Doanh Thu & Công Nợ': 'Revenue & Debt Structure',
+    'Tiến Độ Các Đơn Hàng PO Hiện Tại': 'Progress of Current POs',
+    'Cần Chăm Sóc (Khách > 30 ngày chưa đặt đơn)': 'Customers Requiring Relationship Care (No order > 30 days)',
+    'Đơn Hàng Sắp Giao Trong Tuần': 'Deliveries Scheduled This Week',
+    'Xem chi tiết': 'View details',
+    'Xem chuyến đi': 'View trips',
+    'Tên Công Ty': 'Company Name',
+    'Người Liên Hệ': 'Contact Person',
+    'Ngày Đặt Cuối': 'Last Order Date',
+    'Trạng Thái': 'Status',
+    'Mã Chuyến': 'Trip Code',
+    'Khu Vực': 'Region',
+    'Ngày Giao': 'Delivery Date',
+    'Trạng Trạng Thái': 'Trip Status',
+    'Không có khách hàng nào quá hạn đặt hàng.': 'No inactive customers.',
+    'Không có lịch giao hàng sắp tới.': 'No upcoming deliveries scheduled.',
+
+    // CRM Page
+    'QUẢN LÝ KHÁCH HÀNG (CRM)': 'CUSTOMER RELATIONSHIP MANAGEMENT (CRM)',
+    'Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.': 'Manage customer list, contact logs, credit limits, and relationship alerts.',
+    'Thêm Khách Hàng Mới': 'Add New Customer',
+    'Tìm tên công ty, liên hệ, SĐT...': 'Search company, contact, phone...',
+    'Xóa Tìm Kiếm': 'Clear Search',
+    'Tất Cả Khách Hàng': 'All Customers',
+    'Cần Chăm Sóc (>30 ngày chưa đặt)': 'Needs Care (>30 days inactive)',
+    'Điện Thoại': 'Phone',
+    'Chiết Khấu': 'Discount',
+    'Hạn Mức Nợ': 'Credit Limit',
+    'Đơn Cuối Cùng': 'Last Order',
+    'Thao Tác': 'Actions',
+    'Chi Tiết': 'Details',
+    'Sửa': 'Edit',
+    'Xóa': 'Delete',
+    'Không tìm thấy khách hàng nào.': 'No customers found.',
+    'HỒ SƠ KHÁCH HÀNG:': 'CUSTOMER PROFILE:',
+    'Đóng chi tiết': 'Close Details',
+    'Mã số thuế:': 'Tax Code:',
+    'Chưa cung cấp': 'Not provided',
+    'Địa chỉ giao hàng:': 'Delivery Address:',
+    'Email:': 'Email:',
+    'Sale phụ trách:': 'Assigned Sales:',
+    'Chưa phân công': 'Unassigned',
+    'Điều khoản nợ:': 'Debt Terms:',
+    'Tần suất đặt hàng:': 'Order Frequency:',
+    'đơn/tháng': 'orders/month',
+    'Ghi chú kinh doanh:': 'Business Notes:',
+    'Không có ghi chú': 'No notes available',
+    'LỊCH SỬ ĐƠN HÀNG (PO)': 'SALES ORDER (PO) HISTORY',
+    'Ngày Đặt': 'Order Date',
+    'Trị Giá (Net)': 'Net Value',
+    'Tiến Độ': 'Progress',
+    'Chưa phát sinh đơn hàng nào.': 'No sales orders created yet.',
+
+    // CRM Modal
+    'THÊM KHÁCH HÀNG MỚI': 'ADD NEW CUSTOMER',
+    'CHỈNH SỬA HỒ SƠ KHÁCH HÀNG': 'EDIT CUSTOMER PROFILE',
+    'Tên Công Ty *': 'Company Name *',
+    'Số Điện Thoại': 'Phone Number',
+    'Mã Số Thuế': 'Tax ID / Tax Code',
+    'Địa Chỉ Giao Hàng': 'Delivery Address',
+    'Chiết Khấu Mặc Định (%)': 'Default Discount (%)',
+    'Hạn Mức Công Nợ (đ)': 'Credit Debt Limit (VND)',
+    'Điều Khoản Thanh Toán': 'Payment Terms',
+    'Thanh toán trước': 'Prepayment',
+    'Thanh toán khi nhận hàng': 'Cash on Delivery (COD)',
+    '30 ngày kể từ khi giao hàng': '30 days net',
+    '45 ngày kể từ khi giao hàng': '45 days net',
+    '60 ngày kể từ khi giao hàng': '60 days net',
+    '30 ngày': '30 days net',
+    '45 ngày': '45 days net',
+    '60 ngày': '60 days net',
+    'Sale Phụ Trách': 'Assigned Sales Agent',
+    'Ghi Chú Yêu Cầu Riêng': 'Special Client Requests / Notes',
+    'Lưu Khách Hàng': 'Save Customer',
+    'Cập Nhật': 'Update Info',
+    'Hủy': 'Cancel',
+    'Đóng': 'Close',
+
+    // PO Sales Page
+    'TIẾP NHẬN ĐƠN HÀNG (SALES PO)': 'SALES ORDER MANAGEMENT (PO)',
+    'Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.': 'Create new orders, monitor 15 production statuses, and manage design files.',
+    'Nhập mã PO, tên sản phẩm hoặc khách hàng...': 'Search by PO code, product or client...',
+    'Đang Sản Xuất': 'In Production',
+    'Đã Giao Hàng': 'Delivered',
+    'Mới Nhận PO': 'PO Received',
+    'Mã PO': 'PO Code',
+    'Sản Phẩm': 'Product',
+    'Quy Cách': 'Specification',
+    'Vật Tư': 'Material',
+    'Số Lượng': 'Quantity',
+    'Đơn Giá': 'Unit Price',
+    'Thành Tiền': 'Total Value',
+    'Mẫu': 'Sample',
+    'Tải Files': 'Open Files',
+    'Lịch Sử Trạng Thái': 'Status History',
+    'Thời Gian': 'Timestamp',
+    'Nhân Sự Thực Hiện': 'Updated By',
+    'Nội Dung Cập Nhật': 'Update Log Details',
+    'Không tìm thấy đơn hàng PO nào.': 'No sales orders found.',
+
+    // PO Modal
+    'TẠO ĐƠN HÀNG PO MỚI': 'CREATE NEW SALES ORDER (PO)',
+    'Chọn Khách Hàng *': 'Select Customer *',
+    '-- Chọn khách hàng --': '-- Select Customer --',
+    'Tên Sản Phẩm Nhãn *': 'Product Label Name *',
+    'Kích Thước Quy Cách *': 'Size / Dimensions *',
+    'ví dụ: 100x80mm': 'e.g. 100x80mm',
+    'Nguyên Vật Liệu *': 'Raw Material *',
+    'Decal Giấy Fasson AW0339F': 'Fasson Paper Decal AW0339F',
+    'Decal Nhựa PVC Avery Dennison': 'PVC Plastic Decal Avery Dennison',
+    'Số Lượng Đặt In *': 'Print Quantity *',
+    'Đơn Giá In *': 'Unit Price *',
+    'Tỷ Lệ Chiết Khấu Khách Hàng (%)': 'Client Discount Rate (%)',
+    'Đã áp dụng chiết khấu tự động từ hồ sơ khách hàng.': 'Automatically loaded discount rate from client profile.',
+    'Thành Tiền Sau Chiết Khấu': 'Net Value After Discount',
+    'Hình Ảnh Nhãn Mẫu': 'Sample Label Image',
+    'Chọn ảnh mẫu': 'Select sample image',
+    'Ảnh mẫu sẽ được nén Base64 tự động để lưu trữ an toàn dưới 100KB.': 'Sample image is auto-resized & compressed under 100KB as Base64.',
+    'Liên Kết File Bản Vẽ Gốc & Tài Liệu Lớn (Google Drive / OneDrive)': 'Source Files & Documents Shared Links (Google Drive / OneDrive)',
+    'Đường dẫn File PDF Đơn Hàng': 'PDF File Link',
+    'Đường dẫn File Excel Báo Giá': 'Excel File Link',
+    'Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)': 'AI Source File Link',
+    'Đường dẫn Thiết kế Corel Draw (.cdr)': 'Corel Draw File Link',
+    'Đường dẫn Hợp Đồng / Văn Bản Ký': 'Contract Document Link',
+    'Ghi Chú Đơn Hàng': 'Order Notes & Instructions',
+    'Lưu Đơn Hàng PO': 'Create Order',
+
+    // Design View
+    'QUẢN LÝ THIẾT KẾ & DUYỆT MẪU': 'DESIGN & COLOR PROOFING',
+    'Tải lên bản vẽ layout duyệt màu (Base64) và liên kết file thiết kế gốc (AI, Corel) trên Google Drive.': 'Upload design color proof layout (Base64) and link source design files.',
+    'Nhập mã PO hoặc sản phẩm...': 'Search PO code or product...',
+    'Đợi Thiết Kế': 'Pending Design',
+    'Chờ Khách Duyệt': 'Pending Client Approval',
+    'Đã Duyệt Màu': 'Color Proof Approved',
+    'Phác Thảo': 'Draft layout',
+    'Phiên bản': 'Version',
+    'Bản Vẽ Thiết Kế Duyệt Màu': 'Color Proof Design Layout',
+    'Phản Hồi Duyệt Màu Từ Khách Hàng / Sale': 'Color Proof Client/Sale Feedbacks',
+    'Không có phản hồi nào': 'No feedback comments available',
+    'File Thiết Kế Gốc': 'Source Design Files',
+    'Chưa tải lên file gốc': 'No source files linked',
+    'CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI': 'UPLOAD NEW DESIGN VERSION',
+    'Bản Vẽ Layout Duyệt Màu (Ảnh)*': 'Color Proof Layout (Image)*',
+    'Ý Kiến Thiết Kế / Ghi Chú': 'Designer Notes / Remarks',
+    'Lưu Thiết Kế': 'Save Design Version',
+    'ĐỒNG Ý PHÊ DUYỆT CHỐT LAYOUT MÀU SẮC': 'APPROVE DESIGN COLOR PROOF',
+    'Ý kiến phê duyệt hoặc yêu cầu chỉnh sửa của khách hàng:': 'Client feedback or correction requests:',
+    'Nhập nội dung ý kiến tại đây...': 'Enter client comments here...',
+    'Phê Duyệt Chốt Layout': 'Approve Layout',
+    'Yêu Cầu Sửa Lại': 'Request Revisions',
+
+    // Purchase Page
+    'MUA HÀNG VÀ ĐẶT HÀNG NCC': 'MATERIAL PROCUREMENT & BUYING',
+    'Tạo yêu cầu mua decal, mực in, màng từ NCC, đối chiếu BOM và theo dõi tiến độ giao hàng của NCC.': 'Issue procurement orders, cross-reference BOM, and track vendor deliveries.',
+    'Mã Đơn Mua': 'Purchase Order Code',
+    'Nhà Cung Cấp': 'Supplier',
+    'PO Liên Kết': 'Linked Sales PO',
+    'expectedReceiveDate': 'Expected Delivery Date',
+    'Đã Đặt Hàng': 'Ordered',
+    'Đang Giao': 'Shipping',
+    'Đã Nhận Kho': 'Goods Received',
+    'Chi Tiết Đơn Mua Hàng': 'Purchase Order Details',
+    'Nhập kho thành công! Số lượng vật tư đã được cộng vào Kho tồn hiện tại.': 'Received successfully! Inventory balances updated.',
+    'Báo Nhận Kho': 'Log Receipt',
+    'Chưa có đơn mua hàng nào.': 'No purchase orders recorded.',
+    'TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI': 'CREATE VENDOR PURCHASE ORDER',
+    'Chọn Nhà Cung Cấp *': 'Select Supplier *',
+    '-- Chọn nhà cung cấp --': '-- Select Supplier --',
+    'Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)': 'Link Sales PO for Material Planning (Reconcile BOM)',
+    '-- Không liên kết PO (Mua tồn kho dự phòng) --': '-- Standalone Purchase (Replenish general stock) --',
+    'Chi tiết vật tư cần mua': 'Procurement Materials List',
+    'Mực Flexo DIC Process Black': 'DIC Process Black Flexo Ink',
+    'Mực Flexo DIC Process Cyan': 'DIC Process Cyan Flexo Ink',
+    'Màng BOPP bóng 12mic': 'BOPP Gloss Film 12mic',
+    'Lõi Giấy phi 76mm': 'Paper Core 76mm diameter',
+    'Đơn Giá (đ)*': 'Unit Price (VND)*',
+    'Ngày Nhận Hàng Dự Kiến *': 'Expected Arrival Date *',
+    'Lưu Đơn Mua Hàng': 'Save Purchase Order',
+
+    // Inventory Page
+    'KHO NGUYÊN VẬT LIỆU & TỒN KHO': 'RAW MATERIAL INVENTORY & BALANCES',
+    'Quản lý số lượng tồn kho khả dụng của decal cuộn, mực in, màng cán và tự động cảnh báo tồn kho thấp.': 'Manage available balances of roll stock, inks, films, and trace alerts.',
+    'Cảnh Báo Tồn Kho Thấp': 'Low Stock Alert',
+    'Nhập tên vật tư cần tìm...': 'Search raw material name...',
+    'Tất Cả Danh Mục': 'All Categories',
+    'Giấy decal cuộn': 'Paper Decal rolls',
+    'Mực in Flexo': 'Flexo Inks',
+    'Màng bóng/mờ': 'Film Laminates',
+    'Vật tư phụ / Khác': 'Consumables / Others',
+    'Tên Vật Tư / Quy Cách': 'Material Name & Specification',
+    'Phân Loại': 'Category',
+    'Tồn Kho Thực Tế': 'In-Stock Qty',
+    'Giữ Đơn PO': 'Reserved Qty',
+    'Khả Dụng': 'Available Qty',
+    'Định Mức Cảnh Báo': 'Min Alert Level',
+    'Đơn Vị': 'Unit',
+    'Cập Nhật Cuối': 'Last Updated',
+    'Không tìm thấy nguyên vật liệu nào.': 'No raw materials found.',
+    'CẬP NHẬT TỒN KHO VẬT TƯ': 'UPDATE STOCK BALANCE',
+    'Số lượng tồn thực tế mới *': 'New Actual Stock Balance *',
+    'Số lượng định mức cảnh báo thấp *': 'Min Qty for Alert Trigger *',
+    'Cập Nhật Kho': 'Update Stock Level',
+
+    // Production Page
+    'LỆNH SẢN XUẤT (LSX)': 'PRODUCTION COMMANDS (LSX)',
+    'Phát hành lệnh sản xuất, phân bổ máy in, ca máy, thợ in và ghi nhận sản lượng hoàn thành, hao hụt.': 'Issue production orders, allocate printers, shifts, crews, and log outputs.',
+    'Mã LSX': 'LSX Code',
+    'Máy In': 'Printers',
+    'Ca In': 'Production Shift',
+    'Thợ In Phụ Trách': 'Operator In Charge',
+    'Chưa Chạy': 'Not Started',
+    'Đang Chạy Máy': 'In Production',
+    'Đã Hoàn Thành': 'Completed',
+    'Báo Cáo Sản Lượng Hoàn Thành': 'Production Output Report',
+    'Lệnh sản xuất đã hoàn thành! Dữ liệu tồn kho decal, mực in, màng đã tự động bị trừ tương ứng.': 'Command completed! Material balances subtracted from inventory database.',
+    'Số lượng in hoàn thành đạt QC *': 'Completed Output Qty (QC Passed) *',
+    'Số lượng phế liệu hao hụt (tem hỏng) *': 'Scrap / Defective Label Qty *',
+    'Nhập Ghi Chú Ca Máy (Ví dụ: Sự cố máy, hết mực...)': 'Operator Shift Log / Shift Remarks (e.g. printer errors, runouts)',
+    'Lưu Báo Cáo': 'Save Production Report',
+    'Không có lệnh sản xuất nào được ghi nhận.': 'No production commands issued.',
+
+    // Production Modal
+    'PHÁT HÀNH LỆNH SẢN XUẤT (LSX) MỚI': 'ISSUE NEW PRODUCTION COMMAND (LSX)',
+    'Chọn Đơn Hàng PO Chờ Sản Xuất *': 'Select Sales PO Waiting Production *',
+    '-- Chọn đơn hàng PO --': '-- Select Sales PO --',
+    'Tự động bóc tách Định mức NVL (BOM)': 'Automatic Bill of Materials (BOM) Calculation',
+    'Thông số kỹ thuật đơn hàng:': 'Sales order specifications:',
+    'Kích thước tem:': 'Label Size:',
+    'Chất liệu decal:': 'Material:',
+    'Số lượng nhãn đặt:': 'Sales Order Qty:',
+    'Định mức nguyên vật liệu dự tính cần dùng:': 'Estimated material consumption required:',
+    'Decal cuộn cần dùng:': 'Estimated Roll Decal:',
+    'Mực in Black cần dùng:': 'Estimated Black Ink:',
+    'Mực in Cyan cần dùng:': 'Estimated Cyan Ink:',
+    'Màng cán cần dùng:': 'Estimated Film Laminate:',
+    'Lõi giấy cần dùng:': 'Estimated Paper Cores:',
+    'Lõi': 'cores',
+    'Chỉ Định Máy In *': 'Assign Printing Machine *',
+    'Máy Flexo 8 màu': '8-color Flexo Press',
+    'Máy Flexo 6 màu': '6-color Flexo Press',
+    'Máy in Tem phẳng': 'Flatbed Label Press',
+    'Máy in Barcode / Digital': 'Digital/Barcode Press',
+    'Chỉ Định Ca Sản Xuất *': 'Assign Production Shift *',
+    'Ca Sáng (08:00 - 18:00)': 'Morning Shift (08:00 - 18:00)',
+    'Ca Đêm (18:00 - 06:00)': 'Night Shift (18:00 - 06:00)',
+    'Chỉ Định Thợ In *': 'Assign Operator In Charge *',
+    '-- Chọn thợ máy --': '-- Select Operator --',
+    'Ghi Chú Kỹ Thuật Khi Chạy Máy': 'Technical Specifications & Press Setup Notes',
+    'Phát Hành Lệnh': 'Issue Production Command',
+
+    // Delivery Page
+    'ĐIỀU HÀNH & KẾ HOẠCH GIAO HÀNG': 'DELIVERY PLANNING & LOGISTICS',
+    'Gom đơn hàng đã đóng gói theo khu vực, lập chuyến xe và ký xác nhận giao nhận trực tuyến (Base64).': 'Consolidate packed orders by destination, assign vehicles, and capture digital sign-offs.',
+    'expectedDeliveryDate': 'Delivery Date',
+    'driverName': 'Driver',
+    'vehiclePlate': 'Vehicle Plate',
+    'Lập Chuyến': 'Plan Route',
+    'Đang Đi Giao': 'Out for Delivery',
+    'Giao Thành Công': 'Delivered Successfully',
+    'XÁC NHẬN KÝ NHẬN GIAO HÀNG': 'CONFIRM DELIVERY & CAPTURE SIGNATURE',
+    'Đơn hàng:': 'Order:',
+    'Khách hàng:': 'Customer:',
+    'Số lượng giao:': 'Delivery Qty:',
+    'Địa chỉ giao:': 'Destination:',
+    'Bấm chuột/Vẽ ngón tay lên khung dưới đây để ký nhận biên bản:': 'Please draw signature on the box below to sign receipt:',
+    'Xóa Chữ Ký': 'Clear Drawing',
+    'Xác Nhận Đã Giao': 'Confirm Delivery',
+    'Không có chuyến giao hàng nào.': 'No delivery trips planned.',
+
+    // Delivery Modal
+    'LẬP CHUYẾN XE GIAO HÀNG MỚI': 'PLAN NEW DELIVERY ROUTE',
+    'Ngày Giao Hàng Dự Kiến *': 'Scheduled Delivery Date *',
+    'Khu Vực Tuyến Đường Giao Hàng *': 'Delivery Region / Route *',
+    'Tên Tài Xế Phụ Trách *': 'Driver Name *',
+    'Biển Số Xe Vận Chuyển *': 'Vehicle License Plate *',
+    'Nhân Viên Sale Đi Cùng (Nếu có)': 'Sales Representative Escort (If any)',
+    '-- Không có --': '-- None --',
+    'Chọn Các Đơn Hàng Sẵn Sàng Giao (QC Đã Duyệt)': 'Select Ready Orders to Load (QC Passed)',
+    'Chọn': 'Load',
+    'Hàng': 'item',
+    'Lưu Chuyến Xe': 'Save Delivery Route',
+
+    // Accounting Page
+    'KẾ TOÁN & CÔNG NỢ - LÃI GỘP': 'FINANCES, DEBTS & PROFITS',
+    'Theo dõi công nợ phải thu (AR) / phải trả (AP), hóa đơn VAT, phân tích lãi gộp của từng PO thực tế.': 'Track AR/AP ledgers, VAT invoices, and evaluate PO gross profits.',
+    'Công Nợ Phải Thu': 'Accounts Receivable (AR)',
+    'Công Nợ Phải Trả': 'Accounts Payable (AP)',
+    'Báo Cáo Lãi Gộp Đơn Hàng': 'Sales Order Gross Profit Report',
+    'Số Hóa Đơn': 'Invoice ID',
+    'Loại': 'Type',
+    'Trị Giá': 'Amount',
+    'Đã Thanh Toán': 'Paid Amount',
+    'Cần Thu': 'Balance Due',
+    'Hạn Nợ': 'Due Date',
+    'Thu Nợ': 'Receive Payment',
+    'Trả Tiền': 'Pay Invoice',
+    'Chưa hóa đơn': 'Invoice Pending',
+    'Thanh toán 1 phần': 'Partially Paid',
+    'Đã thanh toán': 'Fully Paid',
+    'Quá Hạn': 'Overdue',
+    'Thu / Chi Công Nợ Hóa Đơn': 'Log Payment For Invoice',
+    'Hạn nợ thanh toán:': 'Payment Due Date:',
+    'Số tiền thanh toán lần này *': 'Payment Amount *',
+    'Lưu Giao Dịch': 'Save Payment Log',
+    'Không có hóa đơn kế toán nào.': 'No invoices registered.',
+    'Doanh Thu': 'Revenue',
+    'Chi Phí Nguyên Vật Liệu': 'Raw Material Costs',
+    'Chi Phí Khác (Vận chuyển/Ngoài)': 'Other Costs (Logistics/Misc)',
+    'Lợi Nhuận Lãi Gộp': 'Gross Profit Margin',
+    'Tỷ Suất Lãi Gộp (%)': 'Profit Margin (%)',
+    'Chưa Giao Hàng (Lãi dự kiến)': 'Undelivered (Estimated Profit)',
+    'Xuất Excel Báo Cáo': 'Export CSV Data',
+
+    // Users Page
+    'QUẢN LÝ TÀI KHOẢN & PHÂN QUYỀN': 'USER MANAGEMENT & PRIVILEGES',
+    'Xem danh sách nhân sự, phân quyền vai trò phòng ban và quản lý trạng thái hoạt động.': 'View personnel registry, assign department access, and toggle active status.',
+    'Tìm theo tên hoặc email...': 'Search by name or email...',
+    'Tất Cả Vai Trò': 'All Roles',
+    'Đặt Lại': 'Reset Filter',
+    'Đang hoạt động': 'Active',
+    'Bị vô hiệu hóa': 'Disabled',
+    'THÊM NGƯỜI DÙNG MỚI': 'REGISTER NEW USER',
+    'CHỈNH SỬA THÔNG TIN TÀI KHOẢN': 'EDIT ACCOUNT INFORMATION',
+    'Họ Và Tên Nhân Sự *': 'Employee Full Name *',
+    'Nhập họ và tên đầy đủ...': 'Enter employee full name...',
+    'Địa Chỉ Email Văn Phòng *': 'Office Email Address *',
+    'ví dụ: user@sunflower.com': 'e.g. user@sunflower.com',
+    'Vai Trò Phòng Ban *': 'Department Role *',
+    'Trạng Thái Ban Đầu': 'Initial Account Status',
+    'Tạm khóa': 'Blocked',
+    'Thông tin đăng nhập mặc định:': 'Default Sign-in Credentials:',
+    'Quy định đổi vai:': 'Role Switch Logic:',
+    'Hệ thống ERP hỗ trợ chuyển đổi nhanh vai trò trên thanh Header để tiện kiểm thử.': 'The system supports quick-switching roles in the Header for testing.',
+    'Lưu Tài Khoản': 'Create Account',
+    'Địa Chỉ Email (Không thể thay đổi)': 'Email Address (Cannot be changed)',
+    'Trạng Thái Hoạt Động': 'Account Status',
+    'Vô hiệu hóa (Khóa)': 'Disable (Block)',
+    'Thông tin bảo mật:': 'Security Information:',
+    'Nếu đổi vai trò phòng ban của nhân sự, mật khẩu đăng nhập của họ cũng sẽ tự động chuyển thành mật khẩu tương ứng với vai trò mới (ví dụ:': 'If the role changes, the default password is also updated accordingly (e.g. ',
+    'để phù hợp với cơ chế xác thực gọn nhẹ.': 'to match the lightweight authentication mechanism.',
+    'Lưu Thay Đổi': 'Save Changes',
+    'Khóa Tài Khoản': 'Disable Account',
+    'Kích Hoạt': 'Activate Account'
+  };
+
+  const t = (key: string): string => {
+    if (language === 'vi') return key;
+
+    const cleanKey = key.trim();
+    if (dict[cleanKey]) {
+      return dict[cleanKey];
+    }
+
+    // Fallback: search if key contains templates like "HỒ SƠ KHÁCH HÀNG: "
+    for (const dictKey of Object.keys(dict)) {
+      if (cleanKey.startsWith(dictKey)) {
+        return dict[dictKey] + cleanKey.substring(dictKey.length);
+      }
+    }
+
+    return key;
+  };
+
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage: changeLanguage, t }}>
+      {children}
+    </LanguageContext.Provider>
+  );
+};
+
+export const useLanguage = () => {
+  const context = useContext(LanguageContext);
+  if (!context) {
+    throw new Error('useLanguage must be used within a LanguageProvider');
+  }
+  return context;
+};

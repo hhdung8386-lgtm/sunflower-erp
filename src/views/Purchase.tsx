@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
 
 interface PurchaseProps {
   pos: any[];
@@ -9,6 +10,7 @@ interface PurchaseProps {
 }
 
 export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   
@@ -190,31 +192,31 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
     <div className="purchase-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">MUA HÀNG VÀ NHÀ CUNG CẤP</h1>
-          <p className="page-subtitle">Quản lý nhà cung ứng vật tư, bóc tách nhu cầu sản xuất, tạo PO mua hàng và theo dõi tình trạng nhập kho nguyên liệu.</p>
+          <h1 className="page-title">{t('MUA HÀNG VÀ ĐẶT HÀNG NCC')}</h1>
+          <p className="page-subtitle">{t('Tạo yêu cầu mua decal, mực in, màng từ NCC, đối chiếu BOM và theo dõi tiến độ giao hàng của NCC.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-          <div className="btn-group">
-            <button className="btn btn-outline" onClick={() => setShowAddSupplierModal(true)}>Thêm Nhà Cung Cấp</button>
-            <button className="btn btn-primary" onClick={() => setShowAddPurModal(true)}>Tạo Đơn Mua Vật Tư</button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button className="btn btn-outline" onClick={() => setShowAddSupplierModal(true)}>{t('Thêm Nhà Cung Cấp')}</button>
+            <button className="btn btn-primary" onClick={() => setShowAddPurModal(true)}>{t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}</button>
           </div>
         )}
       </div>
 
       <div className="details-grid" style={{ gridTemplateColumns: '1fr' }}>
         <div className="card">
-          <span className="card-title">Đơn Đặt Mua Vật Tư Nhà Cung Cấp</span>
+          <span className="card-title">{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
           <div className="table-container">
             <table>
               <thead>
                 <tr>
-                  <th>Mã Đơn Mua</th>
-                  <th>Nhà Cung Cấp</th>
-                  <th>Vật Tư Đặt</th>
-                  <th>Giá Trị</th>
-                  <th>Liên Kết PO</th>
-                  <th>Trạng Thái</th>
-                  <th>Thao Tác</th>
+                  <th>{t('Mã Đơn Mua')}</th>
+                  <th>{t('Nhà Cung Cấp')}</th>
+                  <th>{t('Chi tiết vật tư cần mua')}</th>
+                  <th>{t('Giá Trị')}</th>
+                  <th>{t('PO Liên Kết')}</th>
+                  <th>{t('Trạng Thái')}</th>
+                  <th>{t('Thao Tác')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,14 +226,14 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                     <td>{pur.supplierName}</td>
                     <td style={{ fontWeight: 500 }}>{pur.items.map((i: any) => `${i.materialName} (${i.quantity} ${i.unit})`).join(', ')}</td>
                     <td>{pur.totalPrice.toLocaleString()} đ</td>
-                    <td>{pur.linkedPoCode || 'Không'}</td>
+                    <td>{pur.linkedPoCode || t('Không')}</td>
                     <td>
                       <span className={`badge ${
                         pur.status === 'received' ? 'badge-success' : 'badge-warning'
-                      }`}>{pur.status === 'received' ? 'Đã nhập kho' : pur.status.toUpperCase()}</span>
+                      }`}>{pur.status === 'received' ? t('Đã nhận kho') : t(pur.status)}</span>
                     </td>
                     <td>
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(pur)}>Cập nhật</button>
+                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(pur)}>{t('Chi Tiết')}</button>
                     </td>
                   </tr>
                 ))}
@@ -246,35 +248,35 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>CẬP NHẬT ĐƠN MUA HÀNG: {selectedPur.purCode}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT ĐƠN MUA HÀNG')}: {selectedPur.purCode}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
             </div>
             <div className="modal-body">
               <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
-                <span style={{ fontWeight: 600 }}>Nhà cung cấp:</span>
+                <span style={{ fontWeight: 600 }}>{t('Nhà Cung Cấp')}:</span>
                 <span>{selectedPur.supplierName}</span>
 
-                <span style={{ fontWeight: 600 }}>Đơn hàng liên quan:</span>
+                <span style={{ fontWeight: 600 }}>{t('PO Liên Kết')}:</span>
                 <span>{selectedPur.linkedPoCode}</span>
 
-                <span style={{ fontWeight: 600 }}>Danh sách vật tư:</span>
+                <span style={{ fontWeight: 600 }}>{t('Chi tiết vật tư cần mua')}:</span>
                 <div>
                   {selectedPur.items.map((i: any, idx: number) => (
-                    <div key={idx}>{i.materialName}: {i.quantity} {i.unit} (Đơn giá: {i.unitPrice.toLocaleString()} đ)</div>
+                    <div key={idx}>{i.materialName}: {i.quantity} {i.unit} ({t('Đơn Giá In *')}: {i.unitPrice.toLocaleString()} đ)</div>
                   ))}
                 </div>
 
-                <span style={{ fontWeight: 600 }}>Tổng giá trị:</span>
+                <span style={{ fontWeight: 600 }}>{t('Thành Tiền')}:</span>
                 <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{selectedPur.totalPrice.toLocaleString()} đ</span>
 
-                <span style={{ fontWeight: 600 }}>Dự kiến nhận:</span>
-                <span>{new Date(selectedPur.expectedReceiveDate).toLocaleDateString('vi-VN')}</span>
+                <span style={{ fontWeight: 600 }}>{t('Ngày Giao Dự Kiến')}:</span>
+                <span>{new Date(selectedPur.expectedReceiveDate).toLocaleDateString(t('vi-VN'))}</span>
 
                 {selectedPur.actualReceiveDate && (
                   <>
-                    <span style={{ fontWeight: 600 }}>Ngày nhập kho thực tế:</span>
+                    <span style={{ fontWeight: 600 }}>{t('Ngày nhận kho thực tế')}:</span>
                     <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>
-                      {new Date(selectedPur.actualReceiveDate).toLocaleString('vi-VN')}
+                      {new Date(selectedPur.actualReceiveDate).toLocaleString(t('vi-VN'))}
                     </span>
                   </>
                 )}
@@ -282,19 +284,19 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
 
               {selectedPur.status !== 'received' && (currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
                 <div style={{ border: '1px solid var(--color-border)', padding: '12px', borderRadius: '4px', marginTop: '10px', backgroundColor: '#f8fafc' }}>
-                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>Điều chỉnh trạng thái giao hàng:</h4>
+                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Cập nhật trạng thái đơn hàng sang')}:</h4>
                   <div className="btn-group">
-                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'confirmed')}>NCC Xác Nhận</button>
-                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'shipping')}>Đang Vận Chuyển</button>
+                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'confirmed')}>{t('NCC xác nhận')}</button>
+                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'shipping')}>{t('Đang giao')}</button>
                     <button className="btn btn-sm btn-success" onClick={() => updatePurStatus(selectedPur.id, 'received')}>
-                      Đã Nhận (Cộng Kho)
+                      {t('Báo Nhận Kho')}
                     </button>
                   </div>
                 </div>
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setSelectedPur(null)}>Đóng</button>
+              <button className="btn btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
             </div>
           </div>
         </div>
@@ -305,37 +307,37 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>THÊM NHÀ CUNG CẤP VẬT TƯ MỚI</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddSupplierModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM NHÀ CUNG CẤP VẬT TƯ MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddSupplierModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddSupplier}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Tên Nhà Cung Cấp *</label>
+                  <label>{t('Tên Nhà Cung Cấp')} *</label>
                   <input type="text" value={supplierName} onChange={e => setSupplierName(e.target.value)} required />
                 </div>
                 <div className="form-group">
-                  <label>Người Liên Hệ</label>
+                  <label>{t('Người Liên Hệ')}</label>
                   <input type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Điện Thoại</label>
+                    <label>{t('Điện Thoại')}</label>
                     <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Email</label>
+                    <label>{t('Email:')}</label>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Địa Chỉ Văn Phòng / Kho</label>
+                  <label>{t('Địa chỉ giao hàng:')}</label>
                   <input type="text" value={address} onChange={e => setAddress(e.target.value)} />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddSupplierModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Lưu NCC</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddSupplierModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Khách Hàng')}</button>
               </div>
             </form>
           </div>
@@ -347,13 +349,13 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>TẠO PO ĐƠN ĐẶT MUA VẬT TƯ</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddPurModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleCreatePur}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Chọn Nhà Cung Cấp *</label>
+                  <label>{t('Chọn Nhà Cung Cấp *')}</label>
                   <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
                     {suppliers.map(s => (
                       <option key={s.id} value={s.id}>{s.supplierName}</option>
@@ -362,9 +364,9 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 </div>
                 
                 <div className="form-group">
-                  <label>Liên Kết Với Đơn Khách Hàng (PO) nào?</label>
+                  <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
                   <select value={linkedPoId} onChange={e => setLinkedPoId(e.target.value)}>
-                    <option value="">Không liên kết đơn cụ thể</option>
+                    <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
                     {pos.filter(p => !['delivered', 'debt_collected'].includes(p.status)).map(po => (
                       <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
                     ))}
@@ -372,40 +374,40 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 </div>
 
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>Nội dung nguyên vật liệu cần đặt</h4>
+                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Chi tiết vật tư cần mua')}</h4>
                   <div className="form-group">
-                    <label>Tên Nguyên Vật Tư *</label>
+                    <label>{t('Tên Vật Tư / Quy Cách')} *</label>
                     <input 
                       type="text" 
                       value={materialName} 
                       onChange={e => setMaterialName(e.target.value)} 
-                      placeholder="Ví dụ: Giấy decal Fasson AW0339F, Mực DIC Cyan..." 
+                      placeholder={t('Ví dụ: Giấy decal Fasson AW0339F, Mực DIC Cyan...')} 
                       required 
                     />
                   </div>
                   <div className="form-grid" style={{ marginTop: '8px' }}>
                     <div className="form-group">
-                      <label>Số Lượng Đặt *</label>
+                      <label>{t('Số Lượng')} *</label>
                       <input type="number" min="1" value={quantity} onChange={e => setQuantity(Number(e.target.value))} required />
                     </div>
                     <div className="form-group">
-                      <label>Đơn Vị *</label>
+                      <label>{t('Đơn Vị')} *</label>
                       <select value={unit} onChange={e => setUnit(e.target.value)}>
-                        <option value="m²">m² (Decal, màng)</option>
-                        <option value="kg">kg (Mực, keo)</option>
-                        <option value="cuộn">cuộn (Lõi)</option>
-                        <option value="hộp">hộp</option>
+                        <option value="m²">m²</option>
+                        <option value="kg">kg</option>
+                        <option value="cuộn">{t('cuộn')}</option>
+                        <option value="hộp">{t('hộp')}</option>
                       </select>
                     </div>
                   </div>
                   <div className="form-group" style={{ marginTop: '8px' }}>
-                    <label>Đơn Giá Nhập (đ) *</label>
+                    <label>{t('Đơn Giá Nhập (đ) *')}</label>
                     <input type="number" min="1" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} required />
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label>Ngày Dự Kiến Nhận Hàng *</label>
+                  <label>{t('Ngày Nhận Hàng Dự Kiến *')}</label>
                   <input 
                     type="date" 
                     value={expectedReceiveDate} 
@@ -415,8 +417,8 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddPurModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Gửi Đơn Đặt Mua</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Đơn Mua Hàng')}</button>
               </div>
             </form>
           </div>

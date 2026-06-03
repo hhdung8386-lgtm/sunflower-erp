@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { PO_STATES } from './Sales';
+import { useLanguage } from '../context/LanguageContext';
 
 interface DesignProps {
   pos: any[];
@@ -9,6 +10,7 @@ interface DesignProps {
 }
 
 export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [designs, setDesigns] = useState<any[]>([]);
   const [selectedDesign, setSelectedDesign] = useState<any | null>(null);
   
@@ -34,11 +36,11 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
   // Design status colors mapping
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'approved': return <span className="badge badge-success">Khách duyệt chốt</span>;
-      case 'rejected': return <span className="badge badge-danger">Yêu cầu sửa lại</span>;
-      case 'client_pending': return <span className="badge badge-warning">Đang gửi khách duyệt</span>;
-      case 'designing': return <span className="badge badge-info">Đang thiết kế</span>;
-      default: return <span className="badge badge-danger">Chờ thiết kế</span>;
+      case 'approved': return <span className="badge badge-success">{t('Đã Duyệt Màu')}</span>;
+      case 'rejected': return <span className="badge badge-danger">{t('Yêu Cầu Sửa Lại')}</span>;
+      case 'client_pending': return <span className="badge badge-warning">{t('Chờ Khách Duyệt')}</span>;
+      case 'designing': return <span className="badge badge-info">{t('Đang thiết kế')}</span>;
+      default: return <span className="badge badge-danger">{t('Đợi Thiết Kế')}</span>;
     }
   };
 
@@ -226,41 +228,39 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
     <div className="design-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">QUẢN LÝ THIẾT KẾ & DUYỆT LAYOUT</h1>
-          <p className="page-subtitle">Nhận yêu cầu từ đơn hàng PO, upload file duyệt màu, quản lý lịch sử các phiên bản thiết kế và cập nhật ý kiến khách hàng.</p>
+          <h1 className="page-title">{t('QUẢN LÝ THIẾT KẾ & DUYỆT MẪU')}</h1>
+          <p className="page-subtitle">{t('Tải lên bản vẽ layout duyệt màu (Base64) và liên kết file thiết kế gốc (AI, Corel) trên Google Drive.')}</p>
         </div>
       </div>
 
       <div className="card">
-        <span className="card-title">Danh Sách Yêu Cầu Thiết Kế Từ Đơn Hàng</span>
+        <span className="card-title">{t('Danh Sách Yêu Cầu Thiết Kế Từ Đơn Hàng')}</span>
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>Mã PO</th>
-                <th>Khách Hàng</th>
-                <th>Tên Sản Phẩm Tem Nhãn</th>
-                <th>Kích Thước/Quy Cách</th>
-                <th>Trạng Thái Thiết Kế</th>
-                <th>Thao Tác</th>
+                <th>{t('Mã PO')}</th>
+                <th>{t('Tên Công Ty')}</th>
+                <th>{t('Sản Phẩm')}</th>
+                <th>{t('Kích Thước Quy Cách *')}</th>
+                <th>{t('Trạng Thái')}</th>
+                <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
               {pos.map(po => {
                 const design = designs.find(d => d.poId === po.id);
-                const status = design ? design.status : 'pending';
                 const item = po.items[0] || {};
-                
                 return (
                   <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => getOrCreateDesign(po)}>
                     <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                     <td>{po.customerName}</td>
                     <td style={{ fontWeight: 500 }}>{item.productName}</td>
-                    <td>{item.size} ({item.material})</td>
-                    <td>{getStatusBadge(status)}</td>
+                    <td>{item.size}</td>
+                    <td>{getStatusBadge(design ? design.status : 'pending')}</td>
                     <td>
                       <button className="btn btn-sm btn-outline" onClick={() => getOrCreateDesign(po)}>
-                        Xem Lịch Sử File (v{design?.currentVersion || 0})
+                        {t('Chi Tiết')}
                       </button>
                     </td>
                   </tr>
@@ -277,8 +277,8 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
           {/* Version logs */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Các Bản Thiết Kế v{selectedDesign.currentVersion}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedDesign(null)}>Đóng</button>
+              <span className="card-title">{t('Phiên bản')} v{selectedDesign.currentVersion}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedDesign(null)}>{t('Đóng')}</button>
             </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '450px', overflowY: 'auto' }}>
@@ -295,12 +295,12 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                   onClick={() => setSelectedDesign((prev: any) => ({ ...prev, selectedVer: ver }))}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '13px' }}>
-                    <span style={{ color: 'var(--color-primary)' }}>Bản Thiết Kế v{ver.versionNumber}</span>
+                    <span style={{ color: 'var(--color-primary)' }}>{t('Phiên bản')} v{ver.versionNumber}</span>
                     <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                      {new Date(ver.createdAt).toLocaleDateString('vi-VN')}
+                      {new Date(ver.createdAt).toLocaleDateString(t('vi-VN'))}
                     </span>
                   </div>
-                  <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: '4px 0' }}>{ver.comment || 'Không có mô tả'}</p>
+                  <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: '4px 0' }}>{ver.comment || t('Không có ghi chú')}</p>
                   {ver.feedbackFromClient && (
                     <div style={{ fontSize: '11px', marginTop: '6px', padding: '4px', backgroundColor: '#ffffff', borderLeft: '3px solid var(--color-success)', color: 'var(--color-text-main)' }}>
                       {ver.feedbackFromClient}
@@ -308,8 +308,8 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                   )}
                 </div>
               ))}
-              {!selectedDesign.versions || selectedDesign.versions.length === 0 && (
-                <span style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>Chưa có phiên bản thiết kế nào.</span>
+              {(!selectedDesign.versions || selectedDesign.versions.length === 0) && (
+                <span style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>{t('Chưa có phiên bản thiết kế nào.')}</span>
               )}
             </div>
 
@@ -320,7 +320,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                 style={{ width: '100%', marginTop: '10px' }} 
                 onClick={() => setShowAddVersionModal(true)}
               >
-                Upload Phiên Bản Mới
+                {t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')}
               </button>
             )}
           </div>
@@ -333,8 +333,8 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
               if (!activeVer) {
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '60px 0' }}>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '15px' }}>Chưa có tệp tin bản vẽ nào cho đơn hàng này.</p>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Bắt đầu bằng việc nhấn nút "Upload Phiên Bản Mới" phía cột trái.</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '15px' }}>{t('Chưa có tệp tin bản vẽ nào cho đơn hàng này.')}</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('Bắt đầu bằng việc nhấn nút "Upload Phiên Bản Mới" phía cột trái.')}</p>
                   </div>
                 );
               }
@@ -343,17 +343,17 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div className="card-header" style={{ paddingBottom: '8px' }}>
                     <span className="card-title" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-                      Chi Tiết Phiên Bản v{activeVer.versionNumber}
+                      {t('Phiên bản')} v{activeVer.versionNumber}
                     </span>
                     <span className="badge badge-info">
-                      Trạng thái chung: {PO_STATES.find((s: any) => s.value === pos.find((p: any) => p.id === selectedDesign.poId)?.status)?.label}
+                      {t('Trạng Thái')}: {t(PO_STATES.find((s: any) => s.value === pos.find((p: any) => p.id === selectedDesign.poId)?.status)?.label || '')}
                     </span>
                   </div>
 
                   <div className="details-grid">
                     {/* Render compressed Base64 image directly in <img> */}
                     <div style={{ textAlign: 'center', border: '1px solid var(--color-border-light)', padding: '10px', borderRadius: '4px' }}>
-                      <h4 style={{ textAlign: 'left', marginBottom: '8px', fontSize: '13px' }}>Hình ảnh duyệt màu/layout in</h4>
+                      <h4 style={{ textAlign: 'left', marginBottom: '8px', fontSize: '13px' }}>{t('Bản Vẽ Thiết Kế Duyệt Màu')}</h4>
                       {activeVer.previewImage ? (
                         <img 
                           src={activeVer.previewImage} 
@@ -361,28 +361,28 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                           style={{ maxWidth: '100%', maxHeight: '350px', objectFit: 'contain', border: '1px solid var(--color-border)', borderRadius: '4px' }}
                         />
                       ) : (
-                        <div style={{ padding: '80px 0', backgroundColor: '#f8fafc', color: 'var(--color-text-muted)' }}>Không có hình ảnh xem trước</div>
+                        <div style={{ padding: '80px 0', backgroundColor: '#f8fafc', color: 'var(--color-text-muted)' }}>{t('Không có hình ảnh xem trước')}</div>
                       )}
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '4px', border: '1px solid var(--color-border-light)' }}>
-                        <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)', fontSize: '13.5px' }}>Đường dẫn file gốc thiết kế</h4>
+                        <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)', fontSize: '13.5px' }}>{t('File Thiết Kế Gốc')}</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           {activeVer.aiLink ? (
                             <a href={activeVer.aiLink} target="_blank" rel="noopener noreferrer" className="file-link-item" style={{ justifyContent: 'center' }}>
-                              Mở File Thiết Kế AI Gốc trên Drive
+                              {t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}
                             </a>
                           ) : (
-                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>Chưa upload file AI gốc.</span>
+                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>{t('Chưa tải lên file gốc')} (AI)</span>
                           )}
 
                           {activeVer.corelLink ? (
                             <a href={activeVer.corelLink} target="_blank" rel="noopener noreferrer" className="file-link-item" style={{ justifyContent: 'center' }}>
-                              Mở File Thiết Kế Corel Gốc trên Drive
+                              {t('Đường dẫn Thiết kế Corel Draw (.cdr)')}
                             </a>
                           ) : (
-                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>Chưa upload file Corel gốc.</span>
+                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>{t('Chưa tải lên file gốc')} (Corel)</span>
                           )}
                         </div>
                       </div>
@@ -390,28 +390,28 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                       {/* CLIENT/SALE LAYOUT APPROVAL ACTION */}
                       {(currentUser.role === 'admin' || currentUser.role === 'sale') && selectedDesign.status === 'client_pending' && (
                         <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--color-warning-bg)' }}>
-                          <h4 style={{ color: 'var(--color-warning)', marginBottom: '8px', fontSize: '13.5px' }}>Xét duyệt màu sắc & Bố cục layout</h4>
-                          <p style={{ fontSize: '12.5px', marginBottom: '10px' }}>Ý kiến của khách hàng hoặc đại diện kinh doanh:</p>
+                          <h4 style={{ color: 'var(--color-warning)', marginBottom: '8px', fontSize: '13.5px' }}>{t('ĐỒNG Ý PHÊ DUYỆT CHỐT LAYOUT MÀU SẮC')}</h4>
+                          <p style={{ fontSize: '12.5px', marginBottom: '10px' }}>{t('Ý kiến phê duyệt hoặc yêu cầu chỉnh sửa của khách hàng:')}</p>
                           <textarea 
                             value={feedbackText} 
                             onChange={(e) => setFeedbackText(e.target.value)} 
-                            placeholder="Nhập ghi chú phản hồi của khách hàng (bắt buộc khi từ chối sửa lại)..."
+                            placeholder={t('Nhập nội dung ý kiến tại đây...')}
                             style={{ marginBottom: '12px' }}
                           />
                           <div className="btn-group">
                             <button className="btn btn-success" onClick={() => handleClientFeedback(true)}>
-                              Phê Duyệt Chốt Layout (Bản này đạt)
+                              {t('Phê Duyệt Chốt Layout')}
                             </button>
                             <button className="btn btn-danger" onClick={() => handleClientFeedback(false)} disabled={!feedbackText}>
-                              Yêu Cầu Sửa Lại (Bắt buộc nhập phản hồi)
+                              {t('Yêu Cầu Sửa Lại')}
                             </button>
                           </div>
                         </div>
                       )}
 
                       <div style={{ padding: '12px', borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f1f5f9' }}>
-                        <span style={{ fontWeight: 600, display: 'block', fontSize: '12.5px' }}>Mô tả bản vẽ v{activeVer.versionNumber}:</span>
-                        <p style={{ fontSize: '13px' }}>{activeVer.comment || 'Không có mô tả chi tiết từ thiết kế.'}</p>
+                        <span style={{ fontWeight: 600, display: 'block', fontSize: '12.5px' }}>{t('Ý Kiến Thiết Kế / Ghi Chú')} (v{activeVer.versionNumber}):</span>
+                        <p style={{ fontSize: '13px' }}>{activeVer.comment || t('Không có ghi chú')}</p>
                       </div>
                     </div>
                   </div>
@@ -427,15 +427,15 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>UPLOAD PHIÊN BẢN LAYOUT MỚI (v{selectedDesign.versions.length + 1})</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddVersionModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')} (v{selectedDesign.versions.length + 1})</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddVersionModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddVersion}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Ảnh Layout Duyệt Màu *</label>
+                  <label>{t('Bản Vẽ Layout Duyệt Màu (Ảnh)*')}</label>
                   <div className="image-upload-box">
-                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Chọn ảnh để nén sang Base64 và lưu vào Firestore</span>
+                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{t('Ảnh mẫu sẽ được nén Base64 tự động để lưu trữ an toàn dưới 100KB.')}</span>
                     <input type="file" accept="image/*" onChange={handlePreviewFileChange} style={{ display: 'block', margin: '10px auto' }} required />
                     {newBase64Preview && (
                       <img src={newBase64Preview} alt="Preview" className="image-preview-thumbnail" />
@@ -443,21 +443,21 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Đường dẫn File gốc AI (Google Drive)</label>
+                  <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
                   <input type="url" value={newAiLink} onChange={e => setNewAiLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
                 </div>
                 <div className="form-group">
-                  <label>Đường dẫn File gốc Corel (Google Drive)</label>
+                  <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
                   <input type="url" value={newCorelLink} onChange={e => setNewCorelLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
                 </div>
                 <div className="form-group">
-                  <label>Mô tả thay đổi bản vẽ này *</label>
-                  <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Ví dụ: Chỉnh lại font chữ, sửa màu cyan đậm..." required />
+                  <label>{t('Ý Kiến Thiết Kế / Ghi Chú')} *</label>
+                  <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder={t('Ví dụ: Chỉnh lại font chữ, sửa màu cyan đậm...')} required />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddVersionModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Lưu Phiên Bản</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddVersionModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Thiết Kế')}</button>
               </div>
             </form>
           </div>

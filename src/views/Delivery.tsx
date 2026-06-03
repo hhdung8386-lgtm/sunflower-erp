@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
 
 interface DeliveryProps {
   pos: any[];
@@ -8,6 +9,7 @@ interface DeliveryProps {
 }
 
 export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [showAddTripModal, setShowAddTripModal] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<any | null>(null);
@@ -249,55 +251,55 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     <div className="delivery-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">KẾ HOẠCH GIAO HÀNG & GOM ĐƠN</h1>
-          <p className="page-subtitle">Gom nhóm các đơn hàng sản xuất xong theo khu vực địa lý, sắp xếp đội xe vận chuyển và lấy chữ ký nhận hàng Base64 của khách.</p>
+          <h1 className="page-title">{t('ĐIỀU HÀNH & KẾ HOẠCH GIAO HÀNG')}</h1>
+          <p className="page-subtitle">{t('Gom đơn hàng đã đóng gói theo khu vực, lập chuyến xe và ký xác nhận giao nhận trực tuyến (Base64).')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary" onClick={handleOpenAddTrip}>Thiết Lập Chuyến Xe Giao Hàng</button>
+          <button className="btn btn-primary" onClick={handleOpenAddTrip}>{t('Lập Chuyến')}</button>
         )}
       </div>
 
       <div className="card">
-        <span className="card-title">Các Chuyến Giao Hàng Đang Điều Phối</span>
+        <span className="card-title">{t('Các Chuyến Giao Hàng Đang Điều Phối')}</span>
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>Mã Chuyến</th>
-                <th>Khu Vực Giao</th>
-                <th>Tài Xế</th>
-                <th>Biển Số Xe</th>
-                <th>Sale Đi Cùng</th>
-                <th>Ngày Giao</th>
-                <th>Số Đơn</th>
-                <th>Trạng Thái Chuyến</th>
-                <th>Thao Tác</th>
+                <th>{t('Mã Chuyến')}</th>
+                <th>{t('Khu Vực Tuyến Đường Giao Hàng *')}</th>
+                <th>{t('Tên Tài Xế Phụ Trách *')}</th>
+                <th>{t('Biển Số Xe Vận Chuyển *')}</th>
+                <th>{t('Nhân Viên Sale Đi Cùng (Nếu có)')}</th>
+                <th>{t('expectedDeliveryDate')}</th>
+                <th>{t('Số Đơn')}</th>
+                <th>{t('Trạng Thái')}</th>
+                <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
               {deliveries.map(del => (
                 <tr key={del.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedTrip(del)}>
                   <td style={{ fontWeight: 600 }}>{del.delCode}</td>
-                  <td style={{ fontWeight: 500 }}>{del.region}</td>
+                  <td style={{ fontWeight: 500 }}>{t(del.region)}</td>
                   <td>{del.driverName}</td>
                   <td>{del.vehiclePlate}</td>
-                  <td>{currentUser.displayName} (Chăm sóc)</td>
-                  <td>{new Date(del.deliveryDate).toLocaleDateString('vi-VN')}</td>
-                  <td>{del.orders.length} đơn hàng</td>
+                  <td>{currentUser.displayName} ({t('Sale Phụ Trách')})</td>
+                  <td>{new Date(del.deliveryDate).toLocaleDateString(t('vi-VN'))}</td>
+                  <td>{del.orders.length} {t('đơn')}</td>
                   <td>
                     <span className={`badge ${
                       del.status === 'completed' ? 'badge-success' :
                       del.status === 'delivering' ? 'badge-info' : 'badge-warning'
-                    }`}>{del.status === 'completed' ? 'Đã hoàn thành' : del.status === 'delivering' ? 'Đang giao' : 'Đang lập chuyến'}</span>
+                    }`}>{del.status === 'completed' ? t('Giao Thành Công') : del.status === 'delivering' ? t('Đang Đi Giao') : t('Đang lập chuyến')}</span>
                   </td>
                   <td>
-                    <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(del)}>Cập nhật chuyến</button>
+                    <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(del)}>{t('Chi Tiết')}</button>
                   </td>
                 </tr>
               ))}
               {deliveries.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '24px' }}>Chưa thiết lập chuyến giao hàng nào.</td>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có chuyến giao hàng nào.')}</td>
                 </tr>
               )}
             </tbody>
@@ -310,46 +312,46 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         <div className="card">
           <div className="card-header">
             <span className="card-title" style={{ color: 'var(--color-primary)' }}>
-              CHI TIẾT CHUYẾN ĐI: {selectedTrip.delCode} ({selectedTrip.region})
+              {t('CHI TIẾT CHUYẾN ĐI')}: {selectedTrip.delCode} ({t(selectedTrip.region)})
             </span>
-            <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(null)}>Đóng chi tiết</button>
+            <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(null)}>{t('Đóng chi tiết')}</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
-            <div><span style={{ fontWeight: 600 }}>Tài xế lái xe:</span> {selectedTrip.driverName}</div>
-            <div><span style={{ fontWeight: 600 }}>Biển số xe tải:</span> {selectedTrip.vehiclePlate}</div>
-            <div><span style={{ fontWeight: 600 }}>Kế hoạch xuất phát:</span> {new Date(selectedTrip.deliveryDate).toLocaleDateString('vi-VN')}</div>
-            <div><span style={{ fontWeight: 600 }}>Trạng thái:</span> {selectedTrip.status.toUpperCase()}</div>
+            <div><span style={{ fontWeight: 600 }}>{t('driverName')}:</span> {selectedTrip.driverName}</div>
+            <div><span style={{ fontWeight: 600 }}>{t('vehiclePlate')}:</span> {selectedTrip.vehiclePlate}</div>
+            <div><span style={{ fontWeight: 600 }}>{t('expectedDeliveryDate')}:</span> {new Date(selectedTrip.deliveryDate).toLocaleDateString(t('vi-VN'))}</div>
+            <div><span style={{ fontWeight: 600 }}>{t('Trạng Thái')}:</span> {t(selectedTrip.status.toUpperCase())}</div>
           </div>
 
           {selectedTrip.status === 'planning' && (
             <div className="btn-group">
               <button className="btn btn-primary" onClick={() => updateTripStatus(selectedTrip.id, 'delivering')}>
-                Xuất Phát (Bắt đầu đi giao)
+                {t('Đang Đi Giao')}
               </button>
-              <button className="btn btn-danger" onClick={() => dbService.deleteDocument('deliveries', selectedTrip.id).then(() => { setSelectedTrip(null); fetchDeliveries(); })}>
-                Hủy Chuyến Đi
+              <button className="btn btn-danger" onClick={() => dbService.deleteDocument('deliveries', selectedTrip.id).then(() => { setSelectedTrip(null); fetchDeliveries(); })} style={{ width: 'auto' }}>
+                {t('Hủy')}
               </button>
             </div>
           )}
           
           {selectedTrip.status === 'delivering' && (
             <button className="btn btn-success" onClick={() => updateTripStatus(selectedTrip.id, 'completed')}>
-              Hoàn Thành Toàn Bộ Chuyến Giao
+              {t('Giao Thành Công')}
             </button>
           )}
 
-          <h3 style={{ fontSize: '14px', marginTop: '10px', color: 'var(--color-primary)' }}>Các đơn hàng gom trong chuyến này:</h3>
+          <h3 style={{ fontSize: '14px', marginTop: '10px', color: 'var(--color-primary)' }}>{t('Chọn Các Đơn Hàng Sẵn Sàng Giao (QC Đã Duyệt)')}:</h3>
           <div className="table-container">
             <table>
               <thead>
                 <tr>
-                  <th>Khách Hàng</th>
-                  <th>Địa Chỉ Giao</th>
-                  <th>SL Giao (Tem)</th>
-                  <th>Ký Nhận / Chứng Từ</th>
-                  <th>Trạng Thái Giao</th>
-                  <th>Thao Tác</th>
+                  <th>{t('Khách Hàng')}</th>
+                  <th>{t('Địa Chỉ Giao')}</th>
+                  <th>{t('Số Lượng')} ({t('tem')})</th>
+                  <th>{t('XÁC NHẬN KÝ NHẬN GIAO HÀNG')}</th>
+                  <th>{t('Trạng Thái')}</th>
+                  <th>{t('Thao Tác')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,18 +368,18 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                           style={{ maxHeight: '40px', border: '1px solid var(--color-border)', padding: '2px' }}
                         />
                       ) : (
-                        <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Chưa ký nhận</span>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Chưa ký nhận')}</span>
                       )}
                     </td>
                     <td>
                       <span className={`badge ${
                         ord.status === 'success' ? 'badge-success' : 'badge-warning'
-                      }`}>{ord.status === 'success' ? 'Giao thành công' : 'Chờ giao'}</span>
+                      }`}>{ord.status === 'success' ? t('Giao Thành Công') : t('Chờ giao')}</span>
                     </td>
                     <td>
                       {ord.status !== 'success' && selectedTrip.status === 'delivering' && (
                         <button className="btn btn-sm btn-primary" onClick={() => handleOpenSignature(ord.poId)}>
-                          Xác Nhận Đã Giao (Ký Tên)
+                          {t('Xác Nhận Đã Giao')}
                         </button>
                       )}
                     </td>
@@ -394,40 +396,40 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '700px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>THIẾT LẬP CHUYẾN XE GOM ĐƠN GIAO HÀNG</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddTripModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('LẬP CHUYẾN XE GIAO HÀNG MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddTripModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleCreateTrip}>
               <div className="modal-body">
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Khu Vực Giao Hàng *</label>
+                    <label>{t('Khu Vực Tuyến Đường Giao Hàng *')}</label>
                     <select value={region} onChange={e => setRegion(e.target.value)}>
-                      <option value="Hải Dương">Tỉnh Hải Dương (GomAqua/Brother/Trancy)</option>
-                      <option value="Bắc Ninh">Tỉnh Bắc Ninh (Samsung)</option>
-                      <option value="Hà Nội">Thành Phố Hà Nội</option>
-                      <option value="Hưng Yên">Tỉnh Hưng Yên</option>
+                      <option value="Hải Dương">{t('Tỉnh Hải Dương (GomAqua/Brother/Trancy)')}</option>
+                      <option value="Bắc Ninh">{t('Tỉnh Bắc Ninh (Samsung)')}</option>
+                      <option value="Hà Nội">{t('Thành Phố Hà Nội')}</option>
+                      <option value="Hưng Yên">{t('Tỉnh Hưng Yên')}</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Ngày Giao Hàng Dự Kiến *</label>
+                    <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
                     <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} required />
                   </div>
                 </div>
 
                 <div className="form-grid" style={{ marginTop: '10px' }}>
                   <div className="form-group">
-                    <label>Tài Xế Phân Công *</label>
+                    <label>{t('Tên Tài Xế Phụ Trách *')}</label>
                     <input type="text" value={driverName} onChange={e => setDriverName(e.target.value)} required />
                   </div>
                   <div className="form-group">
-                    <label>Biển Số Xe Tải *</label>
+                    <label>{t('Biển Số Xe Vận Chuyển *')}</label>
                     <input type="text" value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} required />
                   </div>
                 </div>
 
                 <h3 style={{ fontSize: '13px', marginTop: '16px', marginBottom: '8px', color: 'var(--color-primary)' }}>
-                  Chọn các đơn hàng đang đóng gói/sẵn sàng trong khu vực "{region}":
+                  {t('Chọn Các Đơn Hàng Sẵn Sàng Giao (QC Đã Duyệt)')} "{t(region)}":
                 </h3>
 
                 <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '8px' }}>
@@ -449,21 +451,21 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
                           style={{ width: 'auto' }}
                         />
                         <label htmlFor={`chk-${po.id}`} style={{ fontWeight: 'normal', cursor: 'pointer' }}>
-                          <strong>{po.poCode}</strong> - {po.customerName} | Sản phẩm: {po.items[0]?.productName} (SL: {po.items[0]?.quantity?.toLocaleString()} tem)
+                          <strong>{po.poCode}</strong> - {po.customerName} | {t('Sản Phẩm')}: {po.items[0]?.productName} ({t('Số Lượng')}: {po.items[0]?.quantity?.toLocaleString()} {t('tem')})
                         </label>
                       </div>
                     );
                   })}
                   {getPackedOrdersInRegion().length === 0 && (
                     <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>
-                      Không có đơn hàng nào ở trạng thái Đóng gói sẵn sàng cho khu vực này.
+                      {t('Không có lịch giao hàng sắp tới.')}
                     </div>
                   )}
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddTripModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Xác Nhận Tạo Chuyến Giao</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddTripModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Chuyến Xe')}</button>
               </div>
             </form>
           </div>
@@ -475,12 +477,12 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '400px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '15px' }}>KHÁCH HÀNG KÝ XÁC NHẬN NHẬN HÀNG</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowSignatureModal(false)}>Hủy</button>
+              <span style={{ fontWeight: 700, fontSize: '15px' }}>{t('XÁC NHẬN KÝ NHẬN GIAO HÀNG')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowSignatureModal(false)}>{t('Hủy')}</button>
             </div>
             <div className="modal-body" style={{ textAlign: 'center' }}>
               <p style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--color-text-muted)' }}>
-                Vui lòng ký tên của bạn trực tiếp lên khung vẽ bên dưới để lưu vào biên bản giao hàng số.
+                {t('Bấm chuột/Vẽ ngón tay lên khung dưới đây để ký nhận biên bản:')}
               </p>
               
               <canvas 
@@ -495,8 +497,8 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               />
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-                <button type="button" className="btn btn-sm btn-outline" onClick={clearCanvas}>Xóa vẽ lại</button>
-                <button type="button" className="btn btn-sm btn-success" onClick={saveSignature}>Xác Nhận Giao Hàng</button>
+                <button type="button" className="btn btn-sm btn-outline" onClick={clearCanvas}>{t('Xóa Chữ Ký')}</button>
+                <button type="button" className="btn btn-sm btn-success" onClick={saveSignature}>{t('Xác Nhận Đã Giao')}</button>
               </div>
             </div>
           </div>

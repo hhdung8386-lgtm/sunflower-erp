@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { dbService } from '../services/firebaseService';
+import { useLanguage } from '../context/LanguageContext';
+import { HorizontalBarChart } from '../components/VisualCharts';
 
 interface CrmProps {
   customers: any[];
@@ -10,6 +12,7 @@ interface CrmProps {
 }
 
 export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, onRefresh }) => {
+  const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'needs_care'>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
@@ -116,7 +119,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Delete customer
   const handleDeleteCustomer = async (id: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa khách hàng này?')) {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa khách hàng này?'))) {
       await dbService.deleteDocument('customers', id);
       setSelectedCustomer(null);
       onRefresh();
@@ -131,7 +134,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   // Order frequency (orders per month)
   const calculateFrequency = (custId: string) => {
     const orders = getCustomerOrders(custId);
-    if (orders.length === 0) return '0 đơn/tháng';
+    if (orders.length === 0) return `0 ${t('đơn/tháng')}`;
     
     // Calculate months between first order and now
     const dates = orders.map(o => new Date(o.orderDate).getTime());
@@ -139,7 +142,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     const now = new Date();
     const diffMonths = Math.max(1, (now.getFullYear() - minDate.getFullYear()) * 12 + (now.getMonth() - minDate.getMonth()));
     
-    return `${(orders.length / diffMonths).toFixed(1)} đơn/tháng`;
+    return `${(orders.length / diffMonths).toFixed(1)} ${t('đơn/tháng')}`;
   };
 
   // Filter and search
@@ -158,43 +161,65 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     return matchesSearch;
   });
 
+  // Top 5 customers by sales volume
+  const topCustomerSales = customers
+    .map(c => ({
+      label: c.companyName,
+      value: pos.filter(po => po.customerId === c.id).length
+    }))
+    .filter(item => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
+
   return (
     <div className="crm-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">QUẢN LÝ KHÁCH HÀNG (CRM)</h1>
-          <p className="page-subtitle">Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.</p>
+          <h1 className="page-title">{t('QUẢN LÝ KHÁCH HÀNG (CRM)')}</h1>
+          <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary" onClick={openAddModal}>Thêm Khách Hàng Mới</button>
+          <button className="btn btn-primary" onClick={openAddModal}>{t('Thêm Khách Hàng Mới')}</button>
         )}
       </div>
+
+      {/* Top customer chart */}
+      {topCustomerSales.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">{t('Sản Lượng Đơn Hàng Theo Khách Hàng (Top 5)')}</span>
+          </div>
+          <div style={{ maxWidth: '600px', width: '100%' }}>
+            <HorizontalBarChart data={topCustomerSales} valueSuffix={` ${t('đơn')}`} />
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <input 
               type="text" 
-              placeholder="Tìm tên công ty, liên hệ, SĐT..." 
+              placeholder={t('Tìm tên công ty, liên hệ, SĐT...')} 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '300px' }}
             />
-            <button className="btn btn-outline" onClick={() => setSearchTerm('')}>Xóa Tìm Kiếm</button>
+            <button className="btn btn-outline" onClick={() => setSearchTerm('')}>{t('Xóa Tìm Kiếm')}</button>
           </div>
           <div className="tab-container" style={{ borderBottom: 'none' }}>
             <button 
               className={`tab-btn ${filterType === 'all' ? 'active' : ''}`}
               onClick={() => setFilterType('all')}
             >
-              Tất Cả Khách Hàng ({customers.length})
+              {t('Tất Cả Khách Hàng')} ({customers.length})
             </button>
             <button 
               className={`tab-btn ${filterType === 'needs_care' ? 'active' : ''}`}
               onClick={() => setFilterType('needs_care')}
               style={{ color: 'var(--color-danger)' }}
             >
-              Cần Chăm Sóc (&gt;30 ngày chưa đặt)
+              {t('Cần Chăm Sóc (>30 ngày chưa đặt)')}
             </button>
           </div>
         </div>
@@ -203,13 +228,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <table>
             <thead>
               <tr>
-                <th>Tên Công Ty</th>
-                <th>Người Liên Hệ</th>
-                <th>Điện Thoại</th>
-                <th>Chiết Khấu</th>
-                <th>Hạn Mức Nợ</th>
-                <th>Đơn Cuối Cùng</th>
-                <th>Thao Tác</th>
+                <th>{t('Tên Công Ty')}</th>
+                <th>{t('Người Liên Hệ')}</th>
+                <th>{t('Điện Thoại')}</th>
+                <th>{t('Chiết Khấu')}</th>
+                <th>{t('Hạn Mức Nợ')}</th>
+                <th>{t('Đơn Cuối Cùng')}</th>
+                <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
@@ -232,7 +257,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         <span>{cust.companyName}</span>
                         {isInactive && (
                           <span style={{ fontSize: '10px', color: 'var(--color-danger)', fontWeight: 'bold' }}>
-                            [CẢNH BÁO: CHƯA PHÁT SINH ĐƠN MỚI &gt; 30 NGÀY]
+                            [{t('CẢNH BÁO: CHƯA PHÁT SINH ĐƠN MỚI > 30 NGÀY')}]
                           </span>
                         )}
                       </div>
@@ -241,14 +266,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     <td>{cust.phone}</td>
                     <td>{cust.discountRate}%</td>
                     <td>{cust.debtLimit.toLocaleString()} đ</td>
-                    <td>{cust.lastOrderAt ? new Date(cust.lastOrderAt).toLocaleDateString('vi-VN') : 'Chưa có'}</td>
+                    <td>{cust.lastOrderAt ? new Date(cust.lastOrderAt).toLocaleDateString('vi-VN') : t('Chưa có')}</td>
                     <td>
                       <div className="btn-group" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>Chi Tiết</button>
+                        <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>{t('Chi Tiết')}</button>
                         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                           <>
-                            <button className="btn btn-sm btn-outline" onClick={() => openEditModal(cust)}>Sửa</button>
-                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCustomer(cust.id)}>Xóa</button>
+                            <button className="btn btn-sm btn-outline" onClick={() => openEditModal(cust)}>{t('Sửa')}</button>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCustomer(cust.id)}>{t('Xóa')}</button>
                           </>
                         )}
                       </div>
@@ -258,7 +283,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               })}
               {filteredCustomers.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>Không tìm thấy khách hàng nào.</td>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy khách hàng nào.')}</td>
                 </tr>
               )}
             </tbody>
@@ -271,47 +296,47 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         <div className="details-grid">
           <div className="card">
             <div className="card-header">
-              <span className="card-title">HỒ SƠ KHÁCH HÀNG: {selectedCustomer.companyName}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(null)}>Đóng chi tiết</button>
+              <span className="card-title">{t('HỒ SƠ KHÁCH HÀNG:')} {selectedCustomer.companyName}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(null)}>{t('Đóng chi tiết')}</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Mã số thuế:</span>
-                <span>{selectedCustomer.taxCode || 'Chưa cung cấp'}</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Mã số thuế:')}</span>
+                <span>{selectedCustomer.taxCode || t('Chưa cung cấp')}</span>
                 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Địa chỉ giao hàng:</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Địa chỉ giao hàng:')}</span>
                 <span>{selectedCustomer.address}</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Email:</span>
-                <span>{selectedCustomer.email || 'Chưa cung cấp'}</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Email:')}</span>
+                <span>{selectedCustomer.email || t('Chưa cung cấp')}</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Sale phụ trách:</span>
-                <span>{users.find(u => u.uid === selectedCustomer.assignedSaleId)?.displayName || 'Chưa phân công'}</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Sale phụ trách:')}</span>
+                <span>{users.find(u => u.uid === selectedCustomer.assignedSaleId)?.displayName || t('Chưa phân công')}</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Điều khoản nợ:</span>
-                <span>{selectedCustomer.paymentTerms} (Hạn mức: {selectedCustomer.debtLimit.toLocaleString()} đ)</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Điều khoản nợ:')}</span>
+                <span>{t(selectedCustomer.paymentTerms)} ({t('Hạn mức:')} {selectedCustomer.debtLimit.toLocaleString()} đ)</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Tần suất đặt hàng:</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Tần suất đặt hàng:')}</span>
                 <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{calculateFrequency(selectedCustomer.id)}</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>Ghi chú kinh doanh:</span>
-                <span>{selectedCustomer.note || 'Không có ghi chú'}</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Ghi chú kinh doanh:')}</span>
+                <span>{selectedCustomer.note || t('Không có ghi chú')}</span>
               </div>
             </div>
           </div>
 
           <div className="card">
             <div className="card-header">
-              <span className="card-title">LỊCH SỬ ĐƠN HÀNG (PO)</span>
+              <span className="card-title">{t('LỊCH SỬ ĐƠN HÀNG (PO)')}</span>
             </div>
             <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
               <table>
                 <thead>
                   <tr>
-                    <th>Mã PO</th>
-                    <th>Ngày Đặt</th>
-                    <th>Trị Giá (Net)</th>
-                    <th>Tiến Độ</th>
+                    <th>{t('Mã PO')}</th>
+                    <th>{t('Ngày Đặt')}</th>
+                    <th>{t('Trị Giá (Net)')}</th>
+                    <th>{t('Tiến Độ')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -329,7 +354,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   ))}
                   {getCustomerOrders(selectedCustomer.id).length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>Chưa phát sinh đơn hàng nào.</td>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa phát sinh đơn hàng nào.')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -344,62 +369,62 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>THÊM KHÁCH HÀNG MỚI</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM KHÁCH HÀNG MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddCustomer}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Tên Công Ty *</label>
+                  <label>{t('Tên Công Ty *')}</label>
                   <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Người Liên Hệ</label>
+                    <label>{t('Người Liên Hệ')}</label>
                     <input type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Số Điện Thoại</label>
+                    <label>{t('Số Điện Thoại')}</label>
                     <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Mã Số Thuế</label>
+                    <label>{t('Mã Số Thuế')}</label>
                     <input type="text" value={taxCode} onChange={e => setTaxCode(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Email</label>
+                    <label>{t('Email:')}</label>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Địa Chỉ Giao Hàng</label>
+                  <label>{t('Địa Chỉ Giao Hàng')}</label>
                   <input type="text" value={address} onChange={e => setAddress(e.target.value)} />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Chiết Khấu Mặc Định (%)</label>
+                    <label>{t('Chiết Khấu Mặc Định (%)')}</label>
                     <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
                   </div>
                   <div className="form-group">
-                    <label>Hạn Mức Công Nợ (đ)</label>
+                    <label>{t('Hạn Mức Công Nợ (đ)')}</label>
                     <input type="number" min="0" value={debtLimit} onChange={e => setDebtLimit(Number(e.target.value))} />
                   </div>
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Điều Khoản Thanh Toán</label>
+                    <label>{t('Điều Khoản Thanh Toán')}</label>
                     <select value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
-                      <option value="Thanh toán trước">Thanh toán trước</option>
-                      <option value="Thanh toán khi nhận hàng">Thanh toán khi nhận hàng</option>
-                      <option value="30 ngày">30 ngày kể từ khi giao hàng</option>
-                      <option value="45 ngày">45 ngày kể từ khi giao hàng</option>
-                      <option value="60 ngày">60 ngày kể từ khi giao hàng</option>
+                      <option value="Thanh toán trước">{t('Thanh toán trước')}</option>
+                      <option value="Thanh toán khi nhận hàng">{t('Thanh toán khi nhận hàng')}</option>
+                      <option value="30 ngày">{t('30 ngày kể từ khi giao hàng')}</option>
+                      <option value="45 ngày">{t('45 ngày kể từ khi giao hàng')}</option>
+                      <option value="60 ngày">{t('60 ngày kể từ khi giao hàng')}</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Sale Phụ Trách</label>
+                    <label>{t('Sale Phụ Trách')}</label>
                     <select value={assignedSaleId} onChange={e => setAssignedSaleId(e.target.value)} disabled={currentUser.role === 'sale'}>
                       {saleUsers.map(s => (
                         <option key={s.uid} value={s.uid}>{s.displayName}</option>
@@ -408,13 +433,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Ghi Chú Yêu Cầu Riêng</label>
+                  <label>{t('Ghi Chú Yêu Cầu Riêng')}</label>
                   <textarea value={note} onChange={e => setNote(e.target.value)} />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Lưu Khách Hàng</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Khách Hàng')}</button>
               </div>
             </form>
           </div>
@@ -426,62 +451,62 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>CHỈNH SỬA HỒ SƠ KHÁCH HÀNG</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>Đóng</button>
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA HỒ SƠ KHÁCH HÀNG')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleEditCustomer}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>Tên Công Ty *</label>
+                  <label>{t('Tên Công Ty *')}</label>
                   <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Người Liên Hệ</label>
+                    <label>{t('Người Liên Hệ')}</label>
                     <input type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Số Điện Thoại</label>
+                    <label>{t('Số Điện Thoại')}</label>
                     <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Mã Số Thuế</label>
+                    <label>{t('Mã Số Thuế')}</label>
                     <input type="text" value={taxCode} onChange={e => setTaxCode(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>Email</label>
+                    <label>{t('Email:')}</label>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Địa Chỉ Giao Hàng</label>
+                  <label>{t('Địa Chỉ Giao Hàng')}</label>
                   <input type="text" value={address} onChange={e => setAddress(e.target.value)} />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Chiết Khấu Mặc Định (%)</label>
+                    <label>{t('Chiết Khấu Mặc Định (%)')}</label>
                     <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
                   </div>
                   <div className="form-group">
-                    <label>Hạn Mức Công Nợ (đ)</label>
+                    <label>{t('Hạn Mức Công Nợ (đ)')}</label>
                     <input type="number" min="0" value={debtLimit} onChange={e => setDebtLimit(Number(e.target.value))} />
                   </div>
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Điều Khoản Thanh Toán</label>
+                    <label>{t('Điều Khoản Thanh Toán')}</label>
                     <select value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
-                      <option value="Thanh toán trước">Thanh toán trước</option>
-                      <option value="Thanh toán khi nhận hàng">Thanh toán khi nhận hàng</option>
-                      <option value="30 ngày">30 ngày kể từ khi giao hàng</option>
-                      <option value="45 ngày">45 ngày kể từ khi giao hàng</option>
-                      <option value="60 ngày">60 ngày kể từ khi giao hàng</option>
+                      <option value="Thanh toán trước">{t('Thanh toán trước')}</option>
+                      <option value="Thanh toán khi nhận hàng">{t('Thanh toán khi nhận hàng')}</option>
+                      <option value="30 ngày">{t('30 ngày kể từ khi giao hàng')}</option>
+                      <option value="45 ngày">{t('45 ngày kể từ khi giao hàng')}</option>
+                      <option value="60 ngày">{t('60 ngày kể từ khi giao hàng')}</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Sale Phụ Trách</label>
+                    <label>{t('Sale Phụ Trách')}</label>
                     <select value={assignedSaleId} onChange={e => setAssignedSaleId(e.target.value)} disabled={currentUser.role === 'sale'}>
                       {saleUsers.map(s => (
                         <option key={s.uid} value={s.uid}>{s.displayName}</option>
@@ -490,13 +515,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Ghi Chú Yêu Cầu Riêng</label>
+                  <label>{t('Ghi Chú Yêu Cầu Riêng')}</label>
                   <textarea value={note} onChange={e => setNote(e.target.value)} />
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Cập Nhật</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
               </div>
             </form>
           </div>
