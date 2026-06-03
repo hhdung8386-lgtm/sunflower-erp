@@ -212,6 +212,47 @@ const initLocalStorage = () => {
 
 initLocalStorage();
 
+const seedFirestoreIfNeeded = async () => {
+  if (!isFirebaseConfigured || !realDb) return;
+  try {
+    // 1. Seed users
+    const usersSnap = await getDocs(collection(realDb, 'users'));
+    const existingUsers = usersSnap.docs.map(doc => doc.data());
+    for (const defUser of DEFAULT_USERS) {
+      if (!existingUsers.some((u: any) => u.email.toLowerCase() === defUser.email.toLowerCase())) {
+        await setDoc(doc(realDb, 'users', defUser.uid), defUser);
+      }
+    }
+
+    // 2. Seed other collections if they are completely empty
+    const checkAndSeed = async (colName: string, defaults: any[]) => {
+      const snap = await getDocs(collection(realDb, colName));
+      if (snap.empty && defaults.length > 0) {
+        for (const item of defaults) {
+          const docId = item.id || `${colName.substring(0, 3)}-${Math.random().toString(36).substr(2, 9)}`;
+          await setDoc(doc(realDb, colName, docId), { ...item, id: docId });
+        }
+      }
+    };
+
+    await checkAndSeed('customers', DEFAULT_CUSTOMERS);
+    await checkAndSeed('pos', DEFAULT_POS);
+    await checkAndSeed('designs', DEFAULT_DESIGNS);
+    await checkAndSeed('inventory', DEFAULT_INVENTORY);
+    await checkAndSeed('suppliers', DEFAULT_SUPPLIERS);
+    await checkAndSeed('purchase_orders', DEFAULT_PURCHASE_ORDERS);
+    await checkAndSeed('production_commands', DEFAULT_PRODUCTION_COMMANDS);
+    await checkAndSeed('deliveries', DEFAULT_DELIVERIES);
+    await checkAndSeed('invoices', DEFAULT_INVOICES);
+
+    console.log("Firestore successfully seeded with default data.");
+  } catch (error) {
+    console.error("Error seeding Firestore:", error);
+  }
+};
+
+seedFirestoreIfNeeded();
+
 const subscribers: { [collection: string]: Function[] } = {};
 
 const triggerSubscribers = (colName: string) => {
