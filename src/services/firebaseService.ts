@@ -1,10 +1,4 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getAuth,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from 'firebase/auth';
 import {
   getFirestore, 
   collection, 
@@ -32,13 +26,11 @@ const firebaseConfig = {
 const isFirebaseConfigured = !!firebaseConfig.apiKey && firebaseConfig.apiKey !== 'YOUR_API_KEY' && firebaseConfig.apiKey !== '';
 
 let realDb: any = null;
-let realAuth: any = null;
 
 if (isFirebaseConfigured) {
   try {
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     realDb = getFirestore(app);
-    realAuth = getAuth(app);
   } catch (error) {
     console.error("Failed to initialize Firebase", error);
   }
@@ -353,7 +345,7 @@ export const dbService = {
 };
 
 // ----------------------------------------------------
-// AUTH SERVICE WRAPPER (Firebase Auth or Mock Auth)
+// AUTH SERVICE WRAPPER (Client-side bypass + Firestore sync)
 // ----------------------------------------------------
 let authStateListener: ((user: UserProfile | null) => void) | null = null;
 let currentUser: UserProfile | null = (() => {
@@ -363,35 +355,13 @@ let currentUser: UserProfile | null = (() => {
 
 export const authService = {
   async login(email: string, password: string): Promise<UserProfile> {
-    if (isFirebaseConfigured && realAuth) {
-      const cred = await signInWithEmailAndPassword(realAuth, email, password);
-      let userProfile = await dbService.getDocument('users', cred.user.uid);
-      if (!userProfile) {
-        // If profile doesn't exist in Firestore, create it matching default credentials for testing
-        const role = email.split('@')[0];
-        const display = email.split('@')[0].toUpperCase();
-        userProfile = {
-          uid: cred.user.uid,
-          email,
-          displayName: `User: ${display}`,
-          role: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'].includes(role) ? role : 'sale',
-          active: true,
-          createdAt: new Date().toISOString()
-        };
-        await dbService.addDocument('users', userProfile);
-      }
-      currentUser = userProfile;
-      localStorage.setItem('erp_current_user', JSON.stringify(userProfile));
-      if (authStateListener) authStateListener(userProfile);
-      return userProfile;
-    }
-
-    const users = JSON.parse(localStorage.getItem('erp_users') || '[]');
+    const users = DEFAULT_USERS;
     const user = users.find((u: any) => u.email === email);
     
     if (!user) {
       throw new Error('Email không tồn tại trên hệ thống.');
     }
+    
     const expectedPassword = user.role === 'admin' ? 'admin123' : 
                              user.role === 'sale' ? 'sale123' : 
                              user.role === 'designer' ? 'design123' : 
@@ -402,6 +372,15 @@ export const authService = {
       throw new Error('Mật khẩu không đúng. Vui lòng thử lại.');
     }
 
+    // Save profile to Firestore database in background to sync it in the cloud!
+    if (isFirebaseConfigured && realDb) {
+      try {
+        await setDoc(doc(realDb, 'users', user.uid), user);
+      } catch (err) {
+        console.error("Failed to sync user profile to Firestore:", err);
+      }
+    }
+
     currentUser = user;
     localStorage.setItem('erp_current_user', JSON.stringify(user));
     if (authStateListener) authStateListener(user);
@@ -409,43 +388,12 @@ export const authService = {
   },
 
   async logout(): Promise<void> {
-    if (isFirebaseConfigured && realAuth) {
-      await signOut(realAuth);
-    }
     currentUser = null;
     localStorage.removeItem('erp_current_user');
     if (authStateListener) authStateListener(null);
   },
 
   onAuthStateChanged(callback: (user: UserProfile | null) => void): () => void {
-    if (isFirebaseConfigured && realAuth) {
-      return onAuthStateChanged(realAuth, async (firebaseUser) => {
-        if (firebaseUser) {
-          let profile = await dbService.getDocument('users', firebaseUser.uid);
-          if (!profile) {
-            const email = firebaseUser.email || 'user@sunflower.com';
-            const role = email.split('@')[0];
-            profile = {
-              uid: firebaseUser.uid,
-              email,
-              displayName: `User: ${role.toUpperCase()}`,
-              role: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'].includes(role) ? role : 'sale',
-              active: true,
-              createdAt: new Date().toISOString()
-            };
-            await dbService.addDocument('users', profile);
-          }
-          currentUser = profile;
-          localStorage.setItem('erp_current_user', JSON.stringify(profile));
-          callback(profile);
-        } else {
-          currentUser = null;
-          localStorage.removeItem('erp_current_user');
-          callback(null);
-        }
-      });
-    }
-
     authStateListener = callback;
     callback(currentUser);
     return () => {
