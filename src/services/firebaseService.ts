@@ -355,11 +355,25 @@ let currentUser: UserProfile | null = (() => {
 
 export const authService = {
   async login(email: string, password: string): Promise<UserProfile> {
-    const users = DEFAULT_USERS;
-    const user = users.find((u: any) => u.email === email);
+    // Fetch users from database (Firestore or localStorage)
+    const dbUsers = await dbService.getCollection('users');
+    let user = dbUsers.find((u: any) => u.email === email);
+    
+    // Fallback if user is in DEFAULT_USERS but not yet initialized in Firestore
+    if (!user) {
+      const defaultUser = DEFAULT_USERS.find((u: any) => u.email === email);
+      if (defaultUser) {
+        user = await dbService.addDocument('users', defaultUser);
+      }
+    }
     
     if (!user) {
       throw new Error('Email không tồn tại trên hệ thống.');
+    }
+    
+    // Check if account is active
+    if (user.active === false) {
+      throw new Error('Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ Giám đốc.');
     }
     
     const expectedPassword = user.role === 'admin' ? 'admin123' : 
@@ -370,15 +384,6 @@ export const authService = {
     
     if (password !== expectedPassword && password !== '123456') {
       throw new Error('Mật khẩu không đúng. Vui lòng thử lại.');
-    }
-
-    // Save profile to Firestore database in background to sync it in the cloud!
-    if (isFirebaseConfigured && realDb) {
-      try {
-        await setDoc(doc(realDb, 'users', user.uid), user);
-      } catch (err) {
-        console.error("Failed to sync user profile to Firestore:", err);
-      }
     }
 
     currentUser = user;

@@ -9,6 +9,7 @@ import { Inventory } from './views/Inventory';
 import { Production } from './views/Production';
 import { Delivery } from './views/Delivery';
 import { Accounting } from './views/Accounting';
+import { UserManagement } from './views/UserManagement';
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -118,6 +119,15 @@ function App() {
         return <Delivery pos={pos} currentUser={user} onRefresh={refreshData} />;
       case 'accounting':
         return <Accounting pos={pos} currentUser={user} onRefresh={refreshData} />;
+      case 'users':
+        if (user.role !== 'admin') {
+          // React state updates during render are allowed if guarded or deferred,
+          // but we can schedule it in useEffect or do a simple redirect check.
+          // Let's do activePage state reset.
+          setTimeout(() => setActivePage('dashboard'), 0);
+          return null;
+        }
+        return <UserManagement users={users} currentUser={user} onRefresh={refreshData} />;
       default:
         return (
           <Dashboard 
@@ -275,6 +285,15 @@ function App() {
               onClick={() => setActivePage('accounting')}
             >
               Kế Toán & Lãi Gộp
+            </button>
+          )}
+
+          {user.role === 'admin' && (
+            <button 
+              className={`sidebar-item ${activePage === 'users' ? 'active' : ''}`}
+              onClick={() => setActivePage('users')}
+            >
+              Quản Lý Tài Khoản
             </button>
           )}
         </nav>
