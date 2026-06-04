@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
@@ -16,6 +16,33 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'needs_care'>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  
+  // Tab state
+  const [crmActiveTab, setCrmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
+
+  // Leads state & subscription
+  const [leads, setLeads] = useState<any[]>([]);
+  useEffect(() => {
+    const unsubLeads = dbService.subscribeCollection('leads', setLeads);
+    return () => unsubLeads();
+  }, []);
+
+  // Lead Conversion state
+  const [convertingLead, setConvertingLead] = useState<any | null>(null);
+
+  // Lead modals state
+  const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+  const [showEditLeadModal, setShowEditLeadModal] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+
+  // Lead Form fields
+  const [leadName, setLeadName] = useState('');
+  const [leadPhone, setLeadPhone] = useState('');
+  const [leadEmail, setLeadEmail] = useState('');
+  const [leadStage, setLeadStage] = useState<'new' | 'contacted' | 'quoted' | 'negotiating' | 'lost'>('new');
+  const [leadNote, setLeadNote] = useState('');
+  const [leadReminderTime, setLeadReminderTime] = useState('');
+  const [leadFiles, setLeadFiles] = useState<any[]>([]);
   
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -35,6 +62,59 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [note, setNote] = useState('');
 
   const saleUsers = users.filter(u => u.role === 'sale');
+
+  // Product List states
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+
+  // General product form fields
+  const [productCode, setProductCode] = useState('');
+  const [productName, setProductName] = useState('');
+  const [productType, setProductType] = useState<'muc_in' | 'tem_trang_cuon' | 'tem_mau_cuon' | 'tem_mau_to'>('tem_trang_cuon');
+  const [currentPrice, setCurrentPrice] = useState(0);
+  const [productLayoutBase64, setProductLayoutBase64] = useState('');
+
+  // Specs - Ribbon
+  const [specRibbonType, setSpecRibbonType] = useState('WAX PREMIUM');
+  const [specRibbonDirection, setSpecRibbonDirection] = useState('Out side');
+  const [specRibbonSize, setSpecRibbonSize] = useState('110mm x 300m');
+  const [specRibbonColor, setSpecRibbonColor] = useState('Đen');
+
+  // Specs - White roll
+  const [specWidth, setSpecWidth] = useState(80);
+  const [specHeight, setSpecHeight] = useState(55);
+  const [specGap, setSpecGap] = useState(3);
+  const [specPitch, setSpecPitch] = useState(58);
+  const [specQtyPerRoll, setSpecQtyPerRoll] = useState(1000);
+  const [specCore, setSpecCore] = useState('76mm');
+  const [specDieCut, setSpecDieCut] = useState('Bo góc R2');
+  const [specPerforated, setSpecPerforated] = useState('Không');
+  const [specWindDirection, setSpecWindDirection] = useState('Ra đầu trước');
+
+  // Specs - Color roll
+  const [specColorColors, setSpecColorColors] = useState('4 màu');
+  const [specColorForm, setSpecColorForm] = useState('Cuộn');
+  const [specColorWindingCore, setSpecColorWindingCore] = useState('76mm');
+  const [specColorProcessing, setSpecColorProcessing] = useState<string[]>([]);
+
+  // Specs - Color sheet
+  const [specSheetCorner, setSpecSheetCorner] = useState('Bo góc R2');
+  const [specSheetLamination, setSpecSheetLamination] = useState('Cán bóng');
+  const [specSheetFinished, setSpecSheetFinished] = useState('Xén thành phẩm');
+  const [specSheetType, setSpecSheetType] = useState('A4');
+
+  // Re-quote price dialog state
+  const [showRequoteModal, setShowRequoteModal] = useState(false);
+  const [requotePrice, setRequotePrice] = useState(0);
+
+  // Contract list modals & states
+  const [showAddContractModal, setShowAddContractModal] = useState(false);
+  const [contractNo, setContractNo] = useState('');
+  const [contractSignDate, setContractSignDate] = useState('');
+  const [contractExpiryDate, setContractExpiryDate] = useState('');
+  const [contractValue, setContractValue] = useState(0);
+  const [contractFile, setContractFile] = useState('');
 
   // Handle opening create modal
   const openAddModal = () => {
@@ -93,6 +173,11 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       updatedAt: ''
     });
 
+    if (convertingLead) {
+      await dbService.deleteDocument('leads', convertingLead.id);
+      setConvertingLead(null);
+    }
+
     setShowAddModal(false);
     onRefresh();
   };
@@ -132,6 +217,353 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     }
   };
 
+  // Lead Helpers & Handlers
+  const openAddLeadModal = () => {
+    resetLeadForm();
+    setShowAddLeadModal(true);
+  };
+
+  const openEditLeadModal = (lead: any) => {
+    setSelectedLead(lead);
+    setLeadName(lead.name);
+    setLeadPhone(lead.phone || '');
+    setLeadEmail(lead.email || '');
+    setLeadStage(lead.stage || 'new');
+    setLeadNote(lead.note || '');
+    setLeadReminderTime(lead.reminderTime ? new Date(lead.reminderTime).toISOString().split('T')[0] : '');
+    setLeadFiles(lead.files || []);
+    setShowEditLeadModal(true);
+  };
+
+  const resetLeadForm = () => {
+    setLeadName('');
+    setLeadPhone('');
+    setLeadEmail('');
+    setLeadStage('new');
+    setLeadNote('');
+    setLeadReminderTime('');
+    setLeadFiles([]);
+  };
+
+  const handleAddLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leadName) return;
+
+    const newLead = {
+      name: leadName,
+      phone: leadPhone,
+      email: leadEmail,
+      stage: leadStage,
+      note: leadNote,
+      reminderTime: leadReminderTime ? new Date(leadReminderTime).toISOString() : '',
+      files: leadFiles,
+      assignedSaleId: currentUser.role === 'sale' ? currentUser.uid : (saleUsers[0]?.uid || ''),
+      assignedSaleName: currentUser.role === 'sale' ? currentUser.displayName : (saleUsers[0]?.displayName || 'N/A'),
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
+    };
+
+    await dbService.addDocument('leads', newLead);
+    setShowAddLeadModal(false);
+    resetLeadForm();
+  };
+
+  const handleEditLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLead || !leadName) return;
+
+    await dbService.updateDocument('leads', selectedLead.id, {
+      name: leadName,
+      phone: leadPhone,
+      email: leadEmail,
+      stage: leadStage,
+      note: leadNote,
+      reminderTime: leadReminderTime ? new Date(leadReminderTime).toISOString() : '',
+      files: leadFiles,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    });
+
+    setShowEditLeadModal(false);
+    setSelectedLead(null);
+    resetLeadForm();
+  };
+
+  const handleDeleteLead = async (leadId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa khách hàng tiềm năng này?'))) {
+      await dbService.deleteDocument('leads', leadId);
+    }
+  };
+
+  const handleConvertLeadToCustomer = (lead: any) => {
+    setConvertingLead(lead);
+    setCompanyName(lead.name);
+    setContactPerson(lead.name);
+    setPhone(lead.phone || '');
+    setEmail(lead.email || '');
+    setAddress('');
+    setTaxCode('');
+    setAssignedSaleId(lead.assignedSaleId || currentUser.uid);
+    setDiscountRate(0);
+    setDebtLimit(50000000);
+    setPaymentTerms('30 ngày');
+    setNote(`Chuyển đổi từ Lead. Ghi chú cũ: ${lead.note}`);
+    setShowAddModal(true);
+  };
+
+  const handleLeadFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+    
+    const newFiles: any[] = [];
+    Array.from(fileList).forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newFiles.push({
+          name: file.name,
+          data: reader.result as string
+        });
+        if (newFiles.length === fileList.length) {
+          setLeadFiles(prev => [...prev, ...newFiles]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const renderReminderAlert = (reminderTime: string) => {
+    if (!reminderTime) return null;
+    const remDate = new Date(reminderTime);
+    const now = new Date();
+    const diffMs = remDate.getTime() - now.getTime();
+    
+    if (diffMs < 0) {
+      return (
+        <span className="lead-reminder-alert danger" style={{ marginTop: '4px' }}>
+          ⌛ {t('Quá hạn chăm sóc!')} ({remDate.toLocaleDateString('vi-VN')} {remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
+        </span>
+      );
+    } else if (diffMs < 24 * 60 * 60 * 1000) {
+      return (
+        <span className="lead-reminder-alert warning" style={{ marginTop: '4px' }}>
+          ⌛ {t('Sắp đến hạn!')} ({remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
+        </span>
+      );
+    } else {
+      return (
+        <span className="lead-reminder-alert future" style={{ marginTop: '4px' }}>
+          ⌛ {remDate.toLocaleDateString('vi-VN')} {remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+        </span>
+      );
+    }
+  };
+
+  // Product Helpers
+  const handleOpenAddProduct = () => {
+    setProductCode('');
+    setProductName('');
+    setProductType('tem_trang_cuon');
+    setCurrentPrice(0);
+    setProductLayoutBase64('');
+    setShowAddProductModal(true);
+  };
+
+  const handleProductLayoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setProductLayoutBase64(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !productCode || !productName || !currentPrice) return;
+
+    let specs: any = {};
+    if (productType === 'muc_in') {
+      specs = {
+        ribbonType: specRibbonType,
+        direction: specRibbonDirection,
+        size: specRibbonSize,
+        color: specRibbonColor
+      };
+    } else if (productType === 'tem_trang_cuon') {
+      specs = {
+        width: Number(specWidth),
+        height: Number(specHeight),
+        gap: Number(specGap),
+        pitch: Number(specPitch),
+        qtyPerRoll: Number(specQtyPerRoll),
+        core: specCore,
+        dieCut: specDieCut,
+        perforated: specPerforated,
+        windDirection: specWindDirection
+      };
+    } else if (productType === 'tem_mau_cuon') {
+      specs = {
+        colors: specColorColors,
+        form: specColorForm,
+        windingCore: specColorWindingCore,
+        processing: specColorProcessing
+      };
+    } else if (productType === 'tem_mau_to') {
+      specs = {
+        corner: specSheetCorner,
+        lamination: specSheetLamination,
+        finished: specSheetFinished,
+        sheetType: specSheetType
+      };
+    }
+
+    const newProduct = {
+      id: `prod-${Math.random().toString(36).substr(2, 9)}`,
+      productCode,
+      productName,
+      productType,
+      currentPrice: Number(currentPrice),
+      layoutUrl: productLayoutBase64,
+      specifications: specs,
+      priceHistory: [
+        { date: new Date().toISOString().split('T')[0], price: Number(currentPrice) }
+      ],
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedProducts = [...(selectedCustomer.products || []), newProduct];
+
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      products: updatedProducts
+    });
+
+    setSelectedCustomer((prev: any) => ({
+      ...prev,
+      products: updatedProducts
+    }));
+
+    setShowAddProductModal(false);
+    onRefresh();
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (!selectedCustomer) return;
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa mã sản phẩm này?'))) {
+      const updatedProducts = (selectedCustomer.products || []).filter((p: any) => p.id !== productId);
+      
+      await dbService.updateDocument('customers', selectedCustomer.id, {
+        products: updatedProducts
+      });
+
+      setSelectedCustomer((prev: any) => ({
+        ...prev,
+        products: updatedProducts
+      }));
+
+      onRefresh();
+    }
+  };
+
+  const handleOpenRequote = (prod: any) => {
+    setSelectedProduct(prod);
+    setRequotePrice(prod.currentPrice);
+    setShowRequoteModal(true);
+  };
+
+  const handleRequoteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !selectedProduct) return;
+
+    const updatedProducts = (selectedCustomer.products || []).map((p: any) => {
+      if (p.id === selectedProduct.id) {
+        return {
+          ...p,
+          currentPrice: Number(requotePrice),
+          priceHistory: [
+            ...(p.priceHistory || []),
+            { date: new Date().toISOString().split('T')[0], price: Number(requotePrice) }
+          ]
+        };
+      }
+      return p;
+    });
+
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      products: updatedProducts
+    });
+
+    setSelectedCustomer((prev: any) => ({
+      ...prev,
+      products: updatedProducts
+    }));
+
+    setShowRequoteModal(false);
+    setSelectedProduct(null);
+    onRefresh();
+  };
+
+  // Contract Helpers
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setContractFile(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddContractSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !contractNo) return;
+
+    const newContract = {
+      id: `contr-${Math.random().toString(36).substr(2, 9)}`,
+      contractNo,
+      signDate: contractSignDate,
+      expiryDate: contractExpiryDate,
+      value: Number(contractValue),
+      fileUrl: contractFile,
+      status: new Date(contractExpiryDate).getTime() > Date.now() ? 'active' : 'expired',
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedContracts = [...(selectedCustomer.contracts || []), newContract];
+
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      contracts: updatedContracts
+    });
+
+    setSelectedCustomer((prev: any) => ({
+      ...prev,
+      contracts: updatedContracts
+    }));
+
+    setShowAddContractModal(false);
+    setContractNo('');
+    setContractFile('');
+    onRefresh();
+  };
+
+  const handleDeleteContract = async (contractId: string) => {
+    if (!selectedCustomer) return;
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa hợp đồng này?'))) {
+      const updatedContracts = (selectedCustomer.contracts || []).filter((c: any) => c.id !== contractId);
+
+      await dbService.updateDocument('customers', selectedCustomer.id, {
+        contracts: updatedContracts
+      });
+
+      setSelectedCustomer((prev: any) => ({
+        ...prev,
+        contracts: updatedContracts
+      }));
+
+      onRefresh();
+    }
+  };
+
   // Order history helper for selected customer
   const getCustomerOrders = (custId: string) => {
     return pos.filter(po => po.customerId === custId);
@@ -154,6 +586,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   // Filter and search
   const today = new Date();
   const filteredCustomers = customers.filter(c => {
+    // Filter by sales rep role: only see assigned customers
+    if (currentUser.role === 'sale' && c.assignedSaleId && c.assignedSaleId !== currentUser.uid) {
+      return false;
+    }
     const matchesSearch = c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           c.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           c.phone.includes(searchTerm);
@@ -184,13 +620,31 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <h1 className="page-title">{t('QUẢN LÝ KHÁCH HÀNG (CRM)')}</h1>
           <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
-        {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary" onClick={openAddModal}>{t('Thêm Khách Hàng Mới')}</button>
+        {crmActiveTab === 'cooperative' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
+          <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>+</button>
         )}
       </div>
 
-      {/* Top customer chart */}
-      {topCustomerSales.length > 0 && (
+      {/* Tab controls */}
+      <div className="leads-tabs">
+        <button 
+          className={`leads-tab-btn ${crmActiveTab === 'cooperative' ? 'active' : ''}`}
+          onClick={() => setCrmActiveTab('cooperative')}
+        >
+          {t('Khách Hàng Hợp Tác')}
+        </button>
+        <button 
+          className={`leads-tab-btn ${crmActiveTab === 'leads' ? 'active' : ''}`}
+          onClick={() => setCrmActiveTab('leads')}
+        >
+          {t('Khách Hàng Tiềm Năng (Leads)')}
+        </button>
+      </div>
+
+      {crmActiveTab === 'cooperative' ? (
+        <>
+          {/* Top customer chart */}
+          {topCustomerSales.length > 0 && (
         <div className="card">
           <div className="card-header">
             <span className="card-title">{t('Sản Lượng Đơn Hàng Theo Khách Hàng (Top 5)')}</span>
@@ -211,7 +665,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '300px' }}
             />
-            <button className="btn btn-outline" onClick={() => setSearchTerm('')}>{t('Xóa Tìm Kiếm')}</button>
+             <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>✕</button>
           </div>
           <div className="tab-container" style={{ borderBottom: 'none' }}>
             <button 
@@ -278,8 +732,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>{t('Chi Tiết')}</button>
                         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                           <>
-                            <button className="btn btn-sm btn-outline" onClick={() => openEditModal(cust)}>{t('Sửa')}</button>
-                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCustomer(cust.id)}>{t('Xóa')}</button>
+                             <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(cust)} title={t('Sửa')}>✎</button>
+                             <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteCustomer(cust.id)} title={t('Xóa')}>✕</button>
                           </>
                         )}
                       </div>
@@ -298,8 +752,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       </div>
 
       {/* SELECTED CUSTOMER DETAIL */}
-      {selectedCustomer && (
-        <div className="details-grid">
+       {selectedCustomer && (
+        <div className="customer-details-grid">
           <div className="card">
             <div className="card-header">
               <span className="card-title">{t('HỒ SƠ KHÁCH HÀNG:')} {selectedCustomer.companyName}</span>
@@ -374,6 +828,223 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* CUSTOMER PREDEFINED PRODUCTS & CONTRACTS */}
+          <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="card-title">{t('DANH MỤC MÃ SẢN PHẨM KHÁCH HÀNG')}</span>
+               {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                 <button className="btn btn-primary btn-symbol" onClick={handleOpenAddProduct} title={t('Thêm Mã Sản Phẩm Mới')}>+</button>
+               )}
+            </div>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('Mã Sản Phẩm')}</th>
+                    <th>{t('Tên Sản Phẩm')}</th>
+                    <th>{t('Loại')}</th>
+                    <th>{t('Đơn Giá')}</th>
+                    <th>{t('Mô Tả Kỹ Thuật')}</th>
+                    <th>{t('Ảnh Layout')}</th>
+                    <th>{t('Thao Tác')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedCustomer.products || []).map((prod: any) => (
+                    <tr key={prod.id}>
+                      <td style={{ fontWeight: 600 }}>{prod.productCode}</td>
+                      <td>{prod.productName}</td>
+                      <td>{t(prod.productType)}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{prod.currentPrice.toLocaleString()} đ</td>
+                      <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        {prod.productType === 'muc_in' && (
+                          <span>{prod.specifications.ribbonType} - {prod.specifications.size} - {prod.specifications.color}</span>
+                        )}
+                        {prod.productType === 'tem_trang_cuon' && (
+                          <span>{prod.specifications.width}x{prod.specifications.height}mm - Cuộn {prod.specifications.qtyPerRoll} tem - Lõi {prod.specifications.core} - bế {prod.specifications.dieCut}</span>
+                        )}
+                        {prod.productType === 'tem_mau_cuon' && (
+                          <span>{prod.specifications.colors} - {prod.specifications.form} - Lõi {prod.specifications.windingCore} - {prod.specifications.processing?.join(', ')}</span>
+                        )}
+                        {prod.productType === 'tem_mau_to' && (
+                          <span>{prod.specifications.sheetType} - {prod.specifications.corner} - {prod.specifications.lamination} - {prod.specifications.finished}</span>
+                        )}
+                      </td>
+                      <td>
+                        {prod.layoutUrl ? (
+                          <img src={prod.layoutUrl} alt="Layout" style={{ maxHeight: '40px', borderRadius: '4px' }} />
+                        ) : (
+                          <span style={{ fontSize: '11px', fontStyle: 'italic' }}>{t('Chưa có')}</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="btn-group">
+                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                            <>
+                               <button className="btn btn-sm btn-outline" onClick={() => handleOpenRequote(prod)}>{t('Báo Giá Lại')}</button>
+                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteProduct(prod.id)} title={t('Xóa')}>✕</button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {(selectedCustomer.products || []).length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa thiết lập mã sản phẩm nào cho khách hàng này.')}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="card-title">{t('HỢP ĐỒNG & VĂN BẢN KÝ KẾT')}</span>
+              {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                 <button className="btn btn-primary btn-symbol" onClick={() => setShowAddContractModal(true)} title={t('Thêm Hợp Đồng Mới')}>+</button>
+              )}
+            </div>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('Số Hợp Đồng')}</th>
+                    <th>{t('Ngày Ký')}</th>
+                    <th>{t('Hạn Hiệu Lực')}</th>
+                    <th>{t('Giá Trị')}</th>
+                    <th>{t('Tài Liệu')}</th>
+                    <th>{t('Trạng Thái')}</th>
+                    <th>{t('Thao Tác')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedCustomer.contracts || []).map((contr: any) => (
+                    <tr key={contr.id}>
+                      <td style={{ fontWeight: 600 }}>{contr.contractNo}</td>
+                      <td>{new Date(contr.signDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{new Date(contr.expiryDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{contr.value?.toLocaleString()} đ</td>
+                      <td>
+                        {contr.fileUrl ? (
+                          <a href={contr.fileUrl} download={`HopDong_${contr.contractNo}`} className="btn btn-sm btn-outline">
+                            Tải file bản cứng
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: '11px', fontStyle: 'italic' }}>{t('Không có file')}</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${
+                          contr.status === 'active' ? 'badge-success' : 'badge-warning'
+                        }`}>{t(contr.status)}</span>
+                      </td>
+                      <td>
+                         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                           <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteContract(contr.id)} title={t('Xóa')}>✕</button>
+                         )}
+                      </td>
+                    </tr>
+                  ))}
+                  {(selectedCustomer.contracts || []).length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa có hợp đồng nào được lưu trữ.')}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      </>
+      ) : (
+        /* Render Leads Kanban Board */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-primary)' }}>
+              {t('PHỄU THEO DÕI KHÁCH HÀNG TIỀM NĂNG')}
+            </span>
+            {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+              <button className="btn btn-primary" onClick={openAddLeadModal} style={{ fontWeight: 600 }}>
+                + {t('THÊM KHÁCH HÀNG TIỀM NĂNG MỚI')}
+              </button>
+            )}
+          </div>
+
+          <div className="kanban-board">
+            {/* Columns */}
+            {[
+              { stage: 'new', name: t('MỚI'), color: '#64748b' },
+              { stage: 'contacted', name: t('ĐÃ LIÊN HỆ'), color: '#0ea5e9' },
+              { stage: 'quoted', name: t('ĐÃ BÁO GIÁ'), color: '#f59e0b' },
+              { stage: 'negotiating', name: t('ĐANG ĐÀM PHÁN'), color: '#3b82f6' },
+              { stage: 'lost', name: t('THẤT BẠI / HỦY'), color: '#ef4444' }
+            ].map(col => {
+              const colLeads = leads.filter(l => {
+                if (currentUser.role === 'sale' && l.assignedSaleId !== currentUser.uid) {
+                  return false;
+                }
+                return l.stage === col.stage;
+              });
+
+              return (
+                <div key={col.stage} className="kanban-column">
+                  <div className="kanban-column-header">
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: col.color }}></span>
+                      {col.name}
+                    </span>
+                    <span className="kanban-column-count">{colLeads.length}</span>
+                  </div>
+
+                  <div className="kanban-cards-container">
+                    {colLeads.map(lead => (
+                      <div key={lead.id} className="kanban-card" onClick={() => openEditLeadModal(lead)}>
+                        <div className="kanban-card-title">{lead.name}</div>
+                        <div className="kanban-card-details">
+                          {lead.phone && <div>📞 {lead.phone}</div>}
+                          {lead.email && <div>✉️ {lead.email}</div>}
+                          {lead.note && <div style={{ fontStyle: 'italic', fontSize: '11px', marginTop: '4px' }}>💬 {lead.note.substring(0, 50)}{lead.note.length > 50 ? '...' : ''}</div>}
+                          
+                          {/* Reminder Time alert indicator */}
+                          {lead.reminderTime && renderReminderAlert(lead.reminderTime)}
+                        </div>
+
+                        {/* Files list */}
+                        {lead.files && lead.files.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                            {lead.files.map((file: any, fIdx: number) => (
+                              <span key={fIdx} className="lead-file-badge">📎 {file.name}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="kanban-card-meta">
+                          <span style={{ fontSize: '10px' }}>👤 {lead.assignedSaleName}</span>
+                          <div className="btn-group" onClick={e => e.stopPropagation()}>
+                            <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditLeadModal(lead)} title={t('Sửa')}>✎</button>
+                            {col.stage !== 'lost' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                              <button className="btn btn-sm btn-success btn-symbol-sm" onClick={() => handleConvertLeadToCustomer(lead)} title={t('Chuyển thành khách hàng chính thức')}>🤝</button>
+                            )}
+                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLead(lead.id)} title={t('Xóa')}>✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {colLeads.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
+                        {t('Trống')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -535,6 +1206,457 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ADD PRODUCT MODAL */}
+      {showAddProductModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM MÃ SẢN PHẨM KHÁCH HÀNG MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddProductModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleAddProductSubmit}>
+              <div className="modal-body" style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>{t('Mã Sản Phẩm')} *</label>
+                    <input type="text" value={productCode} onChange={e => setProductCode(e.target.value)} required placeholder="VD: 5.07.016" />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tên Hàng Hóa')} *</label>
+                    <input type="text" value={productName} onChange={e => setProductName(e.target.value)} required placeholder="VD: Tem dán dạng cuộn" />
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Phân Loại Sản Phẩm')} *</label>
+                    <select value={productType} onChange={e => setProductType(e.target.value as any)}>
+                      <option value="tem_trang_cuon">{t('Tem Trắng Dạng Cuộn')}</option>
+                      <option value="tem_mau_cuon">{t('Tem Màu Dạng Cuộn')}</option>
+                      <option value="tem_mau_to">{t('Tem Màu Dạng Tờ')}</option>
+                      <option value="muc_in">{t('Mực In Ribbon')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đơn Giá Bán Hiện Tại (đ)')} *</label>
+                    <input type="number" min="0" value={currentPrice} onChange={e => setCurrentPrice(Number(e.target.value))} required />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Tải Ảnh Layout Thiết Kế Mẫu')}</label>
+                  <input type="file" accept="image/*" onChange={handleProductLayoutChange} style={{ fontSize: '12px' }} />
+                  {productLayoutBase64 && (
+                    <img src={productLayoutBase64} alt="Preview" style={{ maxHeight: '80px', marginTop: '8px', borderRadius: '4px' }} />
+                  )}
+                </div>
+
+                <span style={{ display: 'block', borderBottom: '1px solid var(--color-border-light)', margin: '16px 0' }}></span>
+                <h4 style={{ color: 'var(--color-primary)', marginBottom: '10px' }}>{t('MÔ TẢ THÔNG SỐ KỸ THUẬT')}</h4>
+
+                {/* Conditional specs: Mực In */}
+                {productType === 'muc_in' && (
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label>{t('Loại mực')}</label>
+                      <select value={specRibbonType} onChange={e => setSpecRibbonType(e.target.value)}>
+                        <option value="WAX PREMIUM">WAX PREMIUM</option>
+                        <option value="WAX RESIN">WAX RESIN</option>
+                        <option value="RESIN">RESIN</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>{t('Chiều quấn')}</label>
+                      <select value={specRibbonDirection} onChange={e => setSpecRibbonDirection(e.target.value)}>
+                        <option value="Out side">Out side (Ngoài)</option>
+                        <option value="In side">In side (Trong)</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Kích thước (Rộng x Dài)')}</label>
+                      <input type="text" value={specRibbonSize} onChange={e => setSpecRibbonSize(e.target.value)} placeholder="VD: 110mm x 300m" />
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Màu mực')}</label>
+                      <select value={specRibbonColor} onChange={e => setSpecRibbonColor(e.target.value)}>
+                        <option value="Đen">{t('Màu đen')}</option>
+                        <option value="Đỏ">{t('Màu đỏ')}</option>
+                        <option value="Xanh">{t('Màu xanh')}</option>
+                        <option value="Khác">{t('Màu khác')}</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional specs: Tem Trắng Dạng Cuộn */}
+                {productType === 'tem_trang_cuon' && (
+                  <div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Rộng tem (mm)')}</label>
+                        <input type="number" value={specWidth} onChange={e => setSpecWidth(Number(e.target.value))} />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Cao tem (mm)')}</label>
+                        <input type="number" value={specHeight} onChange={e => setSpecHeight(Number(e.target.value))} />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Bước răng/Gap')}</label>
+                        <input type="number" value={specGap} onChange={e => setSpecGap(Number(e.target.value))} />
+                      </div>
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Số tem/cuộn')}</label>
+                        <input type="number" value={specQtyPerRoll} onChange={e => setSpecQtyPerRoll(Number(e.target.value))} />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Cỡ lõi cuộn')}</label>
+                        <select value={specCore} onChange={e => setSpecCore(e.target.value)}>
+                          <option value="76mm">76mm</option>
+                          <option value="42mm">42mm</option>
+                          <option value="29mm">29mm</option>
+                          <option value="40mm">40mm</option>
+                          <option value="25mm">25mm</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Kiểu bế góc')}</label>
+                        <select value={specDieCut} onChange={e => setSpecDieCut(e.target.value)}>
+                          <option value="Bo góc R2">Bo góc R2</option>
+                          <option value="Bo góc R3">Bo góc R3</option>
+                          <option value="Bo góc R5">Bo góc R5</option>
+                          <option value="Vuông góc">Vuông góc</option>
+                          <option value="Tròn">Bế hình tròn</option>
+                          <option value="Oval">Bế hình Oval</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
+                      <div className="form-group">
+                        <label>{t('Răng cưa xé')}</label>
+                        <select value={specPerforated} onChange={e => setSpecPerforated(e.target.value)}>
+                          <option value="Không">Không răng cưa</option>
+                          <option value="Có">Có đường răng cưa</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Hướng tem ra')}</label>
+                        <select value={specWindDirection} onChange={e => setSpecWindDirection(e.target.value)}>
+                          <option value="Ra đầu trước">Ra đầu trước</option>
+                          <option value="Ra đầu sau">Ra đầu sau</option>
+                          <option value="Chữ quay trái">Chữ quay trái</option>
+                          <option value="Chữ quay phải">Chữ quay phải</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional specs: Tem Màu Cuộn */}
+                {productType === 'tem_mau_cuon' && (
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label>{t('Số màu in / Diễn giải màu')}</label>
+                      <input type="text" value={specColorColors} onChange={e => setSpecColorColors(e.target.value)} placeholder="VD: In 4 màu CMYK" />
+                    </div>
+                    <div className="form-group">
+                      <label>{t('Hướng tem ra')}</label>
+                      <select value={specWindDirection} onChange={e => setSpecWindDirection(e.target.value)}>
+                        <option value="Head First">Head First</option>
+                        <option value="Tail First">Tail First</option>
+                        <option value="Left First">Left First</option>
+                        <option value="Right First">Right First</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Cỡ lõi cuộn tem màu')}</label>
+                      <select value={specColorWindingCore} onChange={e => setSpecColorWindingCore(e.target.value)}>
+                        <option value="76mm">76mm</option>
+                        <option value="42mm">42mm</option>
+                        <option value="29mm">29mm</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Quy cách gia công')}</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '12.5px', marginTop: '6px' }}>
+                        {['Cán bóng', 'Cán mờ', 'Phủ UV', 'Ép kim', 'Bế demi', 'Bế đứt'].map(proc => (
+                          <label key={proc} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'normal', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={specColorProcessing.includes(proc)} 
+                              onChange={e => {
+                                if (e.target.checked) setSpecColorProcessing([...specColorProcessing, proc]);
+                                else setSpecColorProcessing(specColorProcessing.filter(p => p !== proc));
+                              }} 
+                            />
+                            <span>{proc}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional specs: Tem Màu Tờ */}
+                {productType === 'tem_mau_to' && (
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label>{t('Góc tem tờ')}</label>
+                      <select value={specSheetCorner} onChange={e => setSpecSheetCorner(e.target.value)}>
+                        <option value="Bo góc R2">Bo góc R2</option>
+                        <option value="Bo góc R3">Bo góc R3</option>
+                        <option value="Bo góc R5">Bo góc R5</option>
+                        <option value="Vuông góc">Vuông góc</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>{t('Cán màng bảo vệ')}</label>
+                      <select value={specSheetLamination} onChange={e => setSpecSheetLamination(e.target.value)}>
+                        <option value="Không cán">Không cán</option>
+                        <option value="Cán bóng">Cán màng bóng</option>
+                        <option value="Cán mờ">Cán màng mờ</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Thành phẩm sau in')}</label>
+                      <select value={specSheetFinished} onChange={e => setSpecSheetFinished(e.target.value)}>
+                        <option value="Bế demi">Bế demi</option>
+                        <option value="Bế đứt">Bế đứt rời</option>
+                        <option value="Xén thành phẩm">Xén thành phẩm</option>
+                        <option value="Giao nguyên tờ">Giao nguyên tờ</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label>{t('Quy cách khổ tờ')}</label>
+                      <select value={specSheetType} onChange={e => setSpecSheetType(e.target.value)}>
+                        <option value="A4">Tờ A4</option>
+                        <option value="A3">Tờ A3</option>
+                        <option value="310 x 450">Khổ 310 x 450 mm</option>
+                        <option value="330 x 480">Khổ 330 x 480 mm</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddProductModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Sản Phẩm')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REQUOTE PRODUCT PRICE MODAL */}
+      {showRequoteModal && selectedProduct && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700 }}>{t('BÁO GIÁ LẠI SẢN PHẨM')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowRequoteModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleRequoteSubmit}>
+              <div className="modal-body">
+                <p style={{ fontSize: '13px', marginBottom: '10px' }}>
+                  {t('Cập nhật giá mới cho mã hàng')}: <strong>{selectedProduct.productCode}</strong> ({selectedProduct.productName})
+                </p>
+                <div className="form-group">
+                  <label>{t('Đơn Giá Mới (đ)')} *</label>
+                  <input 
+                    type="number" 
+                    value={requotePrice} 
+                    onChange={e => setRequotePrice(Number(e.target.value))} 
+                    required 
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowRequoteModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Cập Nhật Giá')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD CONTRACT MODAL */}
+      {showAddContractModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM HỢP ĐỒNG KHÁCH HÀNG MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddContractModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleAddContractSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Số Hợp Đồng / Ký Hiệu')} *</label>
+                  <input type="text" value={contractNo} onChange={e => setContractNo(e.target.value)} required placeholder="VD: HĐ-2026-001/SF" />
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Ngày Ký Kết')}</label>
+                    <input type="date" value={contractSignDate} onChange={e => setContractSignDate(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hạn Hiệu Lực')}</label>
+                    <input type="date" value={contractExpiryDate} onChange={e => setContractExpiryDate(e.target.value)} required />
+                  </div>
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Giá Trị Hợp Đồng (đ)')}</label>
+                    <input type="number" min="0" value={contractValue} onChange={e => setContractValue(Number(e.target.value))} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tải File Bản Cứng Hợp Đồng (.pdf, .jpg)')}</label>
+                    <input type="file" accept="application/pdf,image/*" onChange={handleContractFileChange} style={{ fontSize: '12px' }} required />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddContractModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Hợp Đồng')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD LEAD MODAL */}
+      {showAddLeadModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM KHÁCH HÀNG TIỀM NĂNG (LEAD) MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddLeadModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleAddLead}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Tên Công Ty / Tên Liên Hệ *')}</label>
+                  <input type="text" value={leadName} onChange={e => setLeadName(e.target.value)} required placeholder="VD: Công ty TNHH Nhựa ABC" />
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Số Điện Thoại')}</label>
+                    <input type="text" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Email')}</label>
+                    <input type="email" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Giai Đoạn Chăm Sóc')}</label>
+                    <select value={leadStage} onChange={e => setLeadStage(e.target.value as any)}>
+                      <option value="new">{t('Mới tiếp cận')}</option>
+                      <option value="contacted">{t('Đã liên hệ')}</option>
+                      <option value="quoted">{t('Đã gửi báo giá')}</option>
+                      <option value="negotiating">{t('Đang đàm phán')}</option>
+                      <option value="lost">{t('Thất bại / Hủy')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hẹn Ngày Giờ Chăm Sóc Lại (Reminder)')}</label>
+                    <input type="datetime-local" value={leadReminderTime} onChange={e => setLeadReminderTime(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Ghi Chú Yêu Cầu Khách Hàng')}</label>
+                  <textarea value={leadNote} onChange={e => setLeadNote(e.target.value)} rows={3} placeholder={t('Nhu cầu nhãn dán, quy cách, chất liệu decal yêu cầu...')} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px' }} />
+                </div>
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Đính Kèm Tài Liệu Cục Bộ (PDF, Hình ảnh...)')}</label>
+                  <input type="file" multiple onChange={handleLeadFilesChange} style={{ fontSize: '12px' }} />
+                  {leadFiles.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                      {leadFiles.map((f, idx) => (
+                        <span key={idx} className="lead-file-badge">📎 {f.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddLeadModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Lead')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT LEAD MODAL */}
+      {showEditLeadModal && selectedLead && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CẬP NHẬT THÔNG TIN LEAD')}: {selectedLead.name}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditLeadModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleEditLead}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>{t('Tên Công Ty / Tên Liên Hệ *')}</label>
+                  <input type="text" value={leadName} onChange={e => setLeadName(e.target.value)} required />
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Số Điện Thoại')}</label>
+                    <input type="text" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Email')}</label>
+                    <input type="email" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Giai Đoạn Chăm Sóc')}</label>
+                    <select value={leadStage} onChange={e => setLeadStage(e.target.value as any)}>
+                      <option value="new">{t('Mới tiếp cận')}</option>
+                      <option value="contacted">{t('Đã liên hệ')}</option>
+                      <option value="quoted">{t('Đã gửi báo giá')}</option>
+                      <option value="negotiating">{t('Đang đàm phán')}</option>
+                      <option value="lost">{t('Thất bại / Hủy')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hẹn Ngày Giờ Chăm Sóc Lại (Reminder)')}</label>
+                    <input type="datetime-local" value={leadReminderTime} onChange={e => setLeadReminderTime(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Ghi Chú Yêu Cầu Khách Hàng')}</label>
+                  <textarea value={leadNote} onChange={e => setLeadNote(e.target.value)} rows={3} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px' }} />
+                </div>
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Đính Kèm Tài Liệu Cục Bộ')}</label>
+                  <input type="file" multiple onChange={handleLeadFilesChange} style={{ fontSize: '12px' }} />
+                  {leadFiles.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                      {leadFiles.map((f, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span className="lead-file-badge">📎 {f.name}</span>
+                          <button type="button" style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} onClick={() => setLeadFiles(prev => prev.filter((_, i) => i !== idx))}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditLeadModal(false)}>{t('Hủy')}</button>
                 <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
               </div>
             </form>

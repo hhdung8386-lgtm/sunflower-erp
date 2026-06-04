@@ -7,9 +7,10 @@ interface AccountingProps {
   pos: any[];
   currentUser: UserProfile;
   onRefresh: () => void;
+  users: UserProfile[];
 }
 
-export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefresh }) => {
+export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefresh, users }) => {
   const { t } = useLanguage();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
@@ -24,10 +25,11 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
   
-  // Custom manual cost adjustments for costing tab
-  const [transportCosts, setTransportCosts] = useState<{ [poId: string]: number }>({});
+  // Cost modal states
   const [customCostModalPo, setCustomCostModalPo] = useState<any | null>(null);
   const [tempTransportCost, setTempTransportCost] = useState(0);
+  const [tempLaborCost, setTempLaborCost] = useState(0);
+  const [tempOtherCost, setTempOtherCost] = useState(0);
 
   // CRUD states
   const [showAddInvoiceModal, setShowAddInvoiceModal] = useState(false);
@@ -53,6 +55,14 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
   const [editAmount, setEditAmount] = useState(0);
   const [editPaidAmount, setEditPaidAmount] = useState(0);
   const [editDueDate, setEditDueDate] = useState('');
+
+  const [addAssignedAccountantId, setAddAssignedAccountantId] = useState('');
+  const [editAssignedAccountantId, setEditAssignedAccountantId] = useState('');
+
+  const accountants = (users || []).filter(u => u.role === 'accountant');
+  const filteredInvoices = currentUser.role === 'admin'
+    ? invoices
+    : invoices.filter(inv => inv.assignedAccountantId === currentUser.uid || !inv.assignedAccountantId);
 
   const fetchAccountingData = async () => {
     const invList = await dbService.getCollection('invoices');
@@ -137,9 +147,11 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     const coreCost = Math.ceil(quantity / 5000) * 8000; // Core cost
     
     const materialCost = Math.round(decalCost + inkCost + filmCost + coreCost);
-    const transportCost = transportCosts[po.id] || 350000;
-    const totalCost = materialCost + transportCost;
+    const transportCost = po.transportCost !== undefined ? Number(po.transportCost) : 350000;
+    const laborCost = Number(po.laborCost) || 0;
+    const otherCost = Number(po.otherCost) || 0;
     
+    const totalCost = materialCost + transportCost + laborCost + otherCost;
     const grossProfit = revenue - totalCost;
     const marginPercent = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
@@ -147,6 +159,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       revenue,
       materialCost,
       transportCost,
+      laborCost,
+      otherCost,
       totalCost,
       grossProfit,
       marginPercent
@@ -155,27 +169,32 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
 
   const handleOpenCostModal = (po: any) => {
     setCustomCostModalPo(po);
-    setTempTransportCost(transportCosts[po.id] || 350000);
+    setTempTransportCost(po.transportCost !== undefined ? Number(po.transportCost) : 350000);
+    setTempLaborCost(Number(po.laborCost) || 0);
+    setTempOtherCost(Number(po.otherCost) || 0);
   };
 
-  const handleSaveCustomCost = () => {
+  const handleSaveCustomCost = async () => {
     if (customCostModalPo) {
-      setTransportCosts({
-        ...transportCosts,
-        [customCostModalPo.id]: Number(tempTransportCost)
+      await dbService.updateDocument('pos', customCostModalPo.id, {
+        transportCost: Number(tempTransportCost),
+        laborCost: Number(tempLaborCost),
+        otherCost: Number(tempOtherCost)
       });
       setCustomCostModalPo(null);
+      fetchAccountingData();
+      onRefresh();
     }
   };
 
   // CSV Export for Accountant
   const handleExportCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    csvContent += "Mã PO,Khách Hàng,Doanh Thu (đ),Chi Phí Vật Tư (đ),Vận Chuyển (đ),Tổng Chi Phí (đ),Lợi Nhuận (đ),Tỷ Suất Lãi Gộp (%)\n";
+    csvContent += "Mã PO,Khách Hàng,Doanh Thu (đ),Chi Phí Vật Tư (đ),Nhân Công (đ),Vận Chuyển (đ),Chi Phí Khác (đ),Tổng Chi Phí (đ),Lợi Nhuận (đ),Tỷ Suất Lãi Gộp (%)\n";
     
     pos.forEach(po => {
       const c = calculateCosting(po);
-      csvContent += `${po.poCode},${po.customerName},${c.revenue},${c.materialCost},${c.transportCost},${c.totalCost},${c.grossProfit},${c.marginPercent.toFixed(1)}%\n`;
+      csvContent += `${po.poCode},${po.customerName},${c.revenue},${c.materialCost},${c.laborCost},${c.transportCost},${c.otherCost},${c.totalCost},${c.grossProfit},${c.marginPercent.toFixed(1)}%\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -220,7 +239,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
               <strong>Ngày Giao Dự Kiến:</strong> ${new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}
             </div>
             <div>
-              <strong>Trạng Thái Sản Xuất:</strong> ${po.status.toUpperCase()}<br>
+              <strong>Trạng Trạng Thái Sản Xuất:</strong> ${po.status.toUpperCase()}<br>
               <strong>Ghi Chú Đơn Hàng:</strong> ${po.notes || 'Không có'}
             </div>
           </div>
@@ -284,6 +303,9 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     const finalPaid = Number(addPaidAmount);
     const finalStatus = finalPaid >= finalAmount ? 'paid' : finalPaid > 0 ? 'partially_paid' : 'unpaid';
 
+    const finalAccId = addAssignedAccountantId || (currentUser.role === 'accountant' ? currentUser.uid : '');
+    const finalAccName = accountants.find(u => u.uid === finalAccId)?.displayName || (currentUser.role === 'accountant' ? currentUser.displayName : '');
+
     await dbService.addDocument('invoices', {
       invoiceCode: addInvoiceCode,
       poId: addPoId || '',
@@ -295,6 +317,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       paidAmount: finalPaid,
       dueDate: new Date(addDueDate).toISOString(),
       status: finalStatus,
+      assignedAccountantId: finalAccId,
+      assignedAccountantName: finalAccName,
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       createdAt: new Date().toISOString()
     });
@@ -307,6 +331,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     setAddAmount(0);
     setAddPaidAmount(0);
     setAddDueDate('');
+    setAddAssignedAccountantId('');
 
     fetchAccountingData();
     onRefresh();
@@ -322,6 +347,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     setEditAmount(inv.amount);
     setEditPaidAmount(inv.paidAmount || 0);
     setEditDueDate(new Date(inv.dueDate).toISOString().split('T')[0]);
+    setEditAssignedAccountantId(inv.assignedAccountantId || '');
     setShowEditInvoiceModal(true);
   };
 
@@ -343,6 +369,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     const finalAmount = Number(editAmount);
     const finalStatus = finalPaid >= finalAmount ? 'paid' : finalPaid > 0 ? 'partially_paid' : 'unpaid';
 
+    const finalAccName = accountants.find(u => u.uid === editAssignedAccountantId)?.displayName || '';
+
     await dbService.updateDocument('invoices', selectedInvoice.id, {
       invoiceCode: editInvoiceCode,
       poId: editPoId,
@@ -354,12 +382,15 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       paidAmount: finalPaid,
       dueDate: new Date(editDueDate).toISOString(),
       status: finalStatus,
+      assignedAccountantId: editAssignedAccountantId,
+      assignedAccountantName: finalAccName,
       updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       updatedAt: new Date().toISOString()
     });
 
     setShowEditInvoiceModal(false);
     setSelectedInvoice(null);
+    setEditAssignedAccountantId('');
     fetchAccountingData();
     onRefresh();
   };
@@ -399,7 +430,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
           className={`tab-btn ${activeTab === 'invoices' ? 'active' : ''}`}
           onClick={() => setActiveTab('invoices')}
         >
-          {t('Công Nợ Phải Thu')} ({invoices.filter(i => i.type === 'receivable').length}) & Phải Trả ({invoices.filter(i => i.type === 'payable').length})
+          {t('Công Nợ Phải Thu')} ({filteredInvoices.filter(i => i.type === 'receivable').length}) & Phải Trả ({filteredInvoices.filter(i => i.type === 'payable').length})
         </button>
         <button 
           className={`tab-btn ${activeTab === 'costing' ? 'active' : ''}`}
@@ -414,10 +445,10 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
         <div className="card">
           {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-              <button className="btn btn-primary" onClick={() => {
+              <button className="btn btn-primary btn-symbol" onClick={() => {
                 setAddDueDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
                 setShowAddInvoiceModal(true);
-              }}>{t('Tạo Hóa Đơn Thủ Công')}</button>
+              }} title={t('Tạo Hóa Đơn Hàng Thủ Công')}>+</button>
             </div>
           )}
           <div className="table-container">
@@ -437,7 +468,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 </tr>
               </thead>
               <tbody>
-                {invoices.map(inv => {
+                {filteredInvoices.map(inv => {
                   const linkedPo = pos.find(p => p.id === inv.poId);
                   const isReceivable = inv.type === 'receivable';
                   const balance = Number(inv.amount) - (Number(inv.paidAmount) || 0);
@@ -452,10 +483,10 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                           {isReceivable ? t('Công Nợ Phải Thu') : t('Công Nợ Phải Trả')}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600 }}>{inv.amount.toLocaleString()} đ</td>
+                      <td style={{ fontWeight: 600 }}>{inv.amount?.toLocaleString()} đ</td>
                       <td style={{ color: 'var(--color-success)' }}>{(inv.paidAmount || 0).toLocaleString()} đ</td>
                       <td style={{ color: balance > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 700 }}>
-                        {balance.toLocaleString()} đ
+                        {balance?.toLocaleString()} đ
                       </td>
                       <td>{new Date(inv.dueDate).toLocaleDateString('vi-VN')}</td>
                       <td>
@@ -464,7 +495,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                           inv.status === 'partially_paid' ? 'badge-warning' : 'badge-danger'
                         }`}>
                           {inv.status === 'paid' ? t('Đã thanh toán') :
-                           inv.status === 'partially_paid' ? t('Thanh toán 1 phần') : t('Quá Hạn')}
+                           inv.status === 'partially_paid' ? t('Thanh toán 1 phần') : t('Chưa trả hết')}
                         </span>
                       </td>
                       <td>
@@ -472,8 +503,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                           <button className="btn btn-sm btn-outline" onClick={() => { setSelectedInvoice(inv); setShowDetailsInvoiceModal(true); }}>{t('Chi Tiết')}</button>
                           {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
                             <>
-                              <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditInvoice(inv)}>{t('Sửa')}</button>
-                              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteInvoice(inv.id)}>{t('Xóa')}</button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditInvoice(inv)} title={t('Sửa')}>✎</button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteInvoice(inv.id)} title={t('Xóa')}>✕</button>
                             </>
                           )}
                           {balance > 0 && (
@@ -489,7 +520,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                     </tr>
                   );
                 })}
-                {invoices.length === 0 && (
+                {filteredInvoices.length === 0 && (
                   <tr>
                     <td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có hóa đơn kế toán nào.')}</td>
                   </tr>
@@ -500,7 +531,6 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
         </div>
       )}
 
-      {/* TAB 2: GROSS PROFIT COSTING ANALYTICS */}
       {activeTab === 'costing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {profitMarginChartData.length > 0 && (
@@ -526,10 +556,13 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                     <th>{t('Mã PO')}</th>
                     <th>{t('Khách Hàng')}</th>
                     <th>{t('Doanh Thu')}</th>
-                    <th>{t('Chi Phí Nguyên Vật Liệu')}</th>
-                    <th>{t('Chi Phí Khác (Vận chuyển/Ngoài)')}</th>
-                    <th>{t('Lợi Nhuận Lãi Gộp')}</th>
-                    <th>{t('Tỷ Suất Lãi Gộp (%)')}</th>
+                    <th>{t('Chi Phí NVL')}</th>
+                    <th>{t('Nhân Công')}</th>
+                    <th>{t('Vận Chuyển')}</th>
+                    <th>{t('Chi Phí Khác')}</th>
+                    <th>{t('Tổng Chi Phí')}</th>
+                    <th>{t('Lãi Gộp')}</th>
+                    <th>{t('Tỷ Suất (%)')}</th>
                     <th>{t('Thao Tác')}</th>
                   </tr>
                 </thead>
@@ -542,21 +575,13 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                       <tr key={po.id}>
                         <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                         <td>{po.customerName}</td>
-                        <td style={{ fontWeight: 600 }}>{c.revenue.toLocaleString()} đ</td>
-                        <td style={{ color: 'var(--color-text-muted)' }}>{c.materialCost.toLocaleString()} đ</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span>{c.transportCost.toLocaleString()} đ</span>
-                            <button 
-                              className="btn btn-sm btn-outline" 
-                              onClick={() => handleOpenCostModal(po)}
-                              style={{ padding: '2px 6px', fontSize: '10.5px' }}
-                            >
-                              Sửa
-                            </button>
-                          </div>
-                        </td>
-                        <td style={{ color: 'var(--color-success)', fontWeight: 700 }}>{c.grossProfit.toLocaleString()} đ</td>
+                        <td style={{ fontWeight: 600 }}>{c.revenue?.toLocaleString()} đ</td>
+                        <td style={{ color: 'var(--color-text-muted)' }}>{c.materialCost?.toLocaleString()} đ</td>
+                        <td>{c.laborCost?.toLocaleString()} đ</td>
+                        <td>{c.transportCost?.toLocaleString()} đ</td>
+                        <td>{c.otherCost?.toLocaleString()} đ</td>
+                        <td style={{ fontWeight: 600 }}>{c.totalCost?.toLocaleString()} đ</td>
+                        <td style={{ color: 'var(--color-success)', fontWeight: 700 }}>{c.grossProfit?.toLocaleString()} đ</td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontWeight: 'bold', color: c.marginPercent > 30 ? 'var(--color-success)' : 'var(--color-warning)' }}>
@@ -564,14 +589,21 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                             </span>
                             {isEstimated && (
                               <span style={{ fontSize: '9.5px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                ({t('Chưa Giao Hàng (Lãi dự kiến)')})
+                                ({t('Dự kiến')})
                               </span>
                             )}
                           </div>
                         </td>
                         <td>
-                          <div className="btn-group">
-                            <button className="btn btn-sm btn-outline" onClick={() => printWorkOrder(po)}>{t('In Phiếu SX')}</button>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button 
+                              className="btn btn-sm btn-outline btn-symbol-sm" 
+                              onClick={() => handleOpenCostModal(po)}
+                              title={t('Sửa Chi Phí')}
+                            >
+                              ✎
+                            </button>
+                            <button className="btn btn-sm btn-outline" onClick={() => printWorkOrder(po)}>{t('In Phiếu')}</button>
                           </div>
                         </td>
                       </tr>
@@ -587,14 +619,14 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       {/* MANUAL INVOICE CREATION MODAL */}
       {showAddInvoiceModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '550px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Tạo Hóa Đơn Thủ Công')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowAddInvoiceModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddInvoiceSubmit}>
-              <div className="modal-body">
-                <div className="form-grid">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Số Hóa Đơn')} *</label>
                     <input type="text" value={addInvoiceCode} onChange={e => setAddInvoiceCode(e.target.value)} placeholder="VD: VAT-Manual-102" required />
@@ -612,7 +644,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                   </div>
                 </div>
 
-                <div className="form-grid" style={{ marginTop: '10px' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Chọn Đơn Hàng PO (nếu có)')}</label>
                     <select value={addPoId} onChange={e => setAddPoId(e.target.value)}>
@@ -628,7 +660,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginTop: '10px' }}>
+                <div className="form-group">
                   <label>{addType === 'receivable' ? t('Chọn Khách Hàng *') : t('Chọn Nhà Cung Cấp *')}</label>
                   <select value={addPartnerId} onChange={e => setAddPartnerId(e.target.value)}>
                     <option value="">-- Nhập thủ công phía dưới --</option>
@@ -640,13 +672,25 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 </div>
 
                 {!addPartnerId && (
-                  <div className="form-group" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
                     <label>{t('Tên Đối Tác Nhập Thủ Công')}</label>
                     <input type="text" value={addPartnerName} onChange={e => setAddPartnerName(e.target.value)} placeholder="VD: Công ty TNHH ABC" />
                   </div>
                 )}
 
-                <div className="form-grid" style={{ marginTop: '10px' }}>
+                {currentUser.role === 'admin' && (
+                  <div className="form-group" style={{ marginTop: '8px' }}>
+                    <label>{t('Kế toán phụ trách')}</label>
+                    <select value={addAssignedAccountantId} onChange={e => setAddAssignedAccountantId(e.target.value)}>
+                      <option value="">-- {t('Chưa phân công')} --</option>
+                      {accountants.map(acc => (
+                        <option key={acc.uid} value={acc.uid}>{acc.displayName} ({acc.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Trị Giá Hóa Đơn (đ)')} *</label>
                     <input type="number" min="0" value={addAmount} onChange={e => setAddAmount(Number(e.target.value))} required />
@@ -669,14 +713,14 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       {/* EDIT INVOICE MODAL */}
       {showEditInvoiceModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '550px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Chỉnh Sửa Hóa Đơn')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowEditInvoiceModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleEditInvoiceSubmit}>
-              <div className="modal-body">
-                <div className="form-grid">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Số Hóa Đơn')} *</label>
                     <input type="text" value={editInvoiceCode} onChange={e => setEditInvoiceCode(e.target.value)} required />
@@ -693,7 +737,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                   </div>
                 </div>
 
-                <div className="form-grid" style={{ marginTop: '10px' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Chọn Đơn Hàng PO')}</label>
                     <select value={editPoId} onChange={e => setEditPoId(e.target.value)}>
@@ -709,7 +753,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginTop: '10px' }}>
+                <div className="form-group">
                   <label>{editType === 'receivable' ? t('Chọn Khách Hàng') : t('Chọn Nhà Cung Cấp')}</label>
                   <select value={editPartnerId} onChange={e => setEditPartnerId(e.target.value)}>
                     <option value="">-- Nhập thủ công phía dưới --</option>
@@ -721,13 +765,25 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 </div>
 
                 {!editPartnerId && (
-                  <div className="form-group" style={{ marginTop: '10px' }}>
+                  <div className="form-group">
                     <label>{t('Tên Đối Tác Nhập Thủ Công')}</label>
                     <input type="text" value={editPartnerName} onChange={e => setEditPartnerName(e.target.value)} />
                   </div>
                 )}
 
-                <div className="form-grid" style={{ marginTop: '10px' }}>
+                {currentUser.role === 'admin' && (
+                  <div className="form-group" style={{ marginTop: '8px' }}>
+                    <label>{t('Kế toán phụ trách')}</label>
+                    <select value={editAssignedAccountantId} onChange={e => setEditAssignedAccountantId(e.target.value)}>
+                      <option value="">-- {t('Chưa phân công')} --</option>
+                      {accountants.map(acc => (
+                        <option key={acc.uid} value={acc.uid}>{acc.displayName} ({acc.email})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Trị Giá Hóa Đơn (đ)')} *</label>
                     <input type="number" min="0" value={editAmount} onChange={e => setEditAmount(Number(e.target.value))} required />
@@ -766,7 +822,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 <span style={{ fontWeight: 600 }}>{t('Loại')}:</span>
                 <span>{selectedInvoice.type === 'receivable' ? t('Công Nợ Phải Thu') : t('Công Nợ Phải Trả')}</span>
                 <span style={{ fontWeight: 600 }}>{t('Trị Giá')}:</span>
-                <span style={{ fontWeight: 700 }}>{selectedInvoice.amount.toLocaleString()} đ</span>
+                <span style={{ fontWeight: 700 }}>{selectedInvoice.amount?.toLocaleString()} đ</span>
                 <span style={{ fontWeight: 600 }}>{t('Đã Thanh Toán')}:</span>
                 <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>{(selectedInvoice.paidAmount || 0).toLocaleString()} đ</span>
                 <span style={{ fontWeight: 600 }}>{t('Cần Thu / Cần Trả')}:</span>
@@ -775,6 +831,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
                 <span style={{ fontWeight: 600 }}>{t('Trạng Thái')}:</span>
                 <span>{t(selectedInvoice.status.toUpperCase())}</span>
+                <span style={{ fontWeight: 600 }}>{t('Kế toán phụ trách')}:</span>
+                <span>{selectedInvoice.assignedAccountantName || t('Chưa phân công')}</span>
               </div>
               
               {/* Audit trail */}
@@ -787,7 +845,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
             </div>
             <div className="modal-footer">
               {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
-                <button className="btn btn-primary" onClick={() => { setShowDetailsInvoiceModal(false); handleOpenEditInvoice(selectedInvoice); }}>{t('Sửa')}</button>
+                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsInvoiceModal(false); handleOpenEditInvoice(selectedInvoice); }} title={t('Sửa')}>✎</button>
               )}
               <button className="btn btn-outline" onClick={() => setShowDetailsInvoiceModal(false)}>{t('Đóng')}</button>
             </div>
@@ -798,22 +856,20 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       {/* INVOICE PAYMENT RECORD MODAL */}
       {selectedInvoice && !showEditInvoiceModal && !showDetailsInvoiceModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700 }}>{t('Thu / Chi Công Nợ Hóa Don')}</span>
+              <span style={{ fontWeight: 700 }}>{t('Thu / Chi Công Nợ Hóa Đơn')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setSelectedInvoice(null)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handlePaymentSubmit}>
-              <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', fontSize: '13px' }}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', fontSize: '13px', backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '4px' }}>
                   <strong>{t('Số Hóa Đơn')}:</strong> <span>{selectedInvoice.invoiceCode}</span>
                   <strong>{t('Loại')}:</strong> <span>{selectedInvoice.type === 'receivable' ? t('Thu Nợ từ Khách') : t('Chi Trả mua vật tư')}</span>
                   <strong>{t('Hạn nợ thanh toán:')}</strong> <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
-                  <strong>{t('Trị Giá')}:</strong> <span style={{ fontWeight: 700 }}>{selectedInvoice.amount.toLocaleString()} đ</span>
+                  <strong>{t('Trị Giá')}:</strong> <span style={{ fontWeight: 700 }}>{selectedInvoice.amount?.toLocaleString()} đ</span>
                   <strong>{t('Đã Thanh Toán')}:</strong> <span style={{ color: 'var(--color-success)' }}>{(selectedInvoice.paidAmount || 0).toLocaleString()} đ</span>
                 </div>
-                
-                <hr style={{ border: 'none', borderTop: '1px solid var(--color-border-light)', margin: '10px 0' }} />
                 
                 <div className="form-group">
                   <label>{t('Số tiền thanh toán lần này *')}</label>
@@ -844,22 +900,40 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
         </div>
       )}
 
-      {/* CUSTOM TRANSPORT COST ADJUSTMENT MODAL */}
+      {/* CUSTOM GROSS PROFIT COST ADJUSTMENT MODAL */}
       {customCostModalPo && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700 }}>CẬP NHẬT CHI PHÍ VẬN CHUYỂN / PHÁT SINH</span>
+              <span style={{ fontWeight: 700 }}>CẬP NHẬT CHI PHÍ SẢN XUẤT ĐƠN HÀNG</span>
               <button className="btn btn-sm btn-outline" onClick={() => setCustomCostModalPo(null)}>{t('Đóng')}</button>
             </div>
-            <div className="modal-body">
-              <p style={{ fontSize: '13px' }}>Điều chỉnh chi phí vận chuyển hoặc thuê gia công ngoài cho đơn hàng: <strong>{customCostModalPo.poCode}</strong></p>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <p style={{ fontSize: '13px' }}>Điều chỉnh các cấu thành chi phí thực tế cho PO: <strong>{customCostModalPo.poCode}</strong></p>
               <div className="form-group">
-                <label>Chi phí vận chuyển & gia công phát sinh (đ)*</label>
+                <label>Chi phí vận chuyển thực tế (đ) *</label>
                 <input 
                   type="number" 
                   value={tempTransportCost} 
                   onChange={e => setTempTransportCost(Number(e.target.value))} 
+                  required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Chi phí nhân công sản xuất (đ) *</label>
+                <input 
+                  type="number" 
+                  value={tempLaborCost} 
+                  onChange={e => setTempLaborCost(Number(e.target.value))} 
+                  required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Chi phí khác phát sinh (đ) *</label>
+                <input 
+                  type="number" 
+                  value={tempOtherCost} 
+                  onChange={e => setTempOtherCost(Number(e.target.value))} 
                   required 
                 />
               </div>

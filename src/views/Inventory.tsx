@@ -10,6 +10,11 @@ interface InventoryProps {
 export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) => {
   const { t } = useLanguage();
   const [inventoryList, setInventoryList] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [exportSlips, setExportSlips] = useState<any[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+
+  const [activeTab, setActiveTab] = useState<'inventory' | 'exports' | 'nxt'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'paper' | 'ink' | 'film' | 'others'>('all');
   
@@ -23,7 +28,6 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
 
   // Add form states
   const [addName, setAddName] = useState('');
@@ -40,18 +44,42 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
   const [editUnit, setEditUnit] = useState('m²');
   const [editSupplierId, setEditSupplierId] = useState('');
 
+  // Export slips states
+  const [showAddExportModal, setShowAddExportModal] = useState(false);
+  const [exportReason, setExportReason] = useState('Xuất sản xuất');
+  const [exportPoCode, setExportPoCode] = useState('');
+  const [selectedMaterialId, setSelectedMaterialId] = useState('');
+  const [exportQty, setExportQty] = useState(1);
+
   const fetchInventory = async () => {
     const data = await dbService.getCollection('inventory');
     setInventoryList(data);
   };
 
+  const fetchExportSlips = async () => {
+    const data = await dbService.getCollection('warehouse_exports');
+    setExportSlips(data);
+  };
+
+  const fetchPurchaseOrders = async () => {
+    const data = await dbService.getCollection('purchase_orders');
+    setPurchaseOrders(data);
+  };
+
+  const fetchSuppliers = async () => {
+    const data = await dbService.getCollection('suppliers');
+    setSuppliers(data);
+  };
+
+  const refreshAllData = async () => {
+    await fetchInventory();
+    await fetchExportSlips();
+    await fetchPurchaseOrders();
+    await fetchSuppliers();
+  };
+
   useEffect(() => {
-    fetchInventory();
-    const fetchSuppliers = async () => {
-      const supList = await dbService.getCollection('suppliers');
-      setSuppliers(supList);
-    };
-    fetchSuppliers();
+    refreshAllData();
   }, []);
 
   const handleOpenAdjust = (item: any) => {
@@ -79,7 +107,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
     });
 
     setShowAdjustModal(false);
-    fetchInventory();
+    refreshAllData();
     onRefresh();
   };
 
@@ -107,7 +135,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
     setAddUnit('m²');
     setAddSupplierId('');
     
-    fetchInventory();
+    refreshAllData();
     onRefresh();
   };
 
@@ -137,16 +165,78 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
 
     setShowEditModal(false);
     setSelectedItem(null);
-    fetchInventory();
+    refreshAllData();
     onRefresh();
   };
 
   const handleDeleteItem = async (itemId: string) => {
     if (window.confirm(t('Bạn có chắc chắn muốn xóa vật tư này khỏi danh mục kho?'))) {
       await dbService.deleteDocument('inventory', itemId);
-      fetchInventory();
+      refreshAllData();
       onRefresh();
     }
+  };
+
+  const handleOpenAddExport = () => {
+    if (inventoryList.length === 0) {
+      alert('Không có nguyên vật liệu nào trong kho để xuất!');
+      return;
+    }
+    setSelectedMaterialId(inventoryList[0].id);
+    setExportQty(1);
+    setExportReason('Xuất sản xuất');
+    setExportPoCode('');
+    setShowAddExportModal(true);
+  };
+
+  const handleAddExportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMaterialId || exportQty <= 0) return;
+
+    const material = inventoryList.find(i => i.id === selectedMaterialId);
+    if (!material) return;
+
+    if (material.qtyInStock < exportQty) {
+      alert(`Số lượng tồn kho không đủ để xuất! (Hiện có: ${material.qtyInStock} ${material.unit})`);
+      return;
+    }
+
+    const pxkCode = `PXK-${new Date().toISOString().substring(2,7).replace('-','')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newExport = {
+      pxkCode,
+      exportDate: new Date().toISOString(),
+      reason: exportReason,
+      linkedCode: exportPoCode || 'Không có',
+      exportedBy: currentUser.displayName,
+      items: [
+        {
+          materialId: selectedMaterialId,
+          materialName: material.materialName,
+          quantity: Number(exportQty),
+          unit: material.unit
+        }
+      ],
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: new Date().toISOString()
+    };
+
+    // Deduct stock quantity
+    const newQty = Number(material.qtyInStock) - Number(exportQty);
+    await dbService.updateDocument('inventory', material.id, {
+      qtyInStock: newQty,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Save export slip
+    await dbService.addDocument('warehouse_exports', newExport);
+
+    setShowAddExportModal(false);
+    setExportPoCode('');
+    setExportQty(1);
+    
+    refreshAllData();
+    onRefresh();
   };
 
   const getCategoryLabel = (cat: string) => {
@@ -158,7 +248,6 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
     }
   };
 
-  // Filter and search
   const filteredInventory = inventoryList.filter(item => {
     const matchesSearch = item.materialName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
@@ -170,105 +259,224 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('KHO NGUYÊN VẬT LIỆU & TỒN KHO')}</h1>
-          <p className="page-subtitle">{t('Quản lý số lượng tồn kho khả dụng của decal cuộn, mực in, màng cán và tự động cảnh báo tồn kho thấp.')}</p>
+          <p className="page-subtitle">{t('Quản lý số lượng tồn kho khả dụng, lịch sử phiếu xuất kho vật tư và báo cáo Nhập Xuất Tồn.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>{t('Thêm Vật Tư Mới')}</button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button className="btn btn-outline" onClick={handleOpenAddExport}>{t('Tạo Phiếu Xuất Kho')}</button>
+            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddModal(true)} title={t('Thêm Vật Tư Mới')}>+</button>
+          </div>
         )}
       </div>
 
-      <div className="card">
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input 
-              type="text" 
-              placeholder={t('Nhập tên vật tư cần tìm...')} 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ maxWidth: '300px' }}
-            />
-            <button className="btn btn-outline" onClick={() => setSearchTerm('')}>{t('Đặt Lại')}</button>
+      <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid var(--color-border-light)', paddingBottom: '10px' }}>
+        <button className={`btn ${activeTab === 'inventory' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('inventory')}>{t('Tồn Kho Hiện Tại')}</button>
+        <button className={`btn ${activeTab === 'exports' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('exports')}>{t('Lịch Sử Phiếu Xuất Kho')}</button>
+        <button className={`btn ${activeTab === 'nxt' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('nxt')}>{t('Báo Cáo Nhập Xuất Tồn')}</button>
+      </div>
+
+      {activeTab === 'inventory' && (
+        <div className="card">
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input 
+                type="text" 
+                placeholder={t('Nhập tên vật tư cần tìm...')} 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{ maxWidth: '300px' }}
+              />
+              <button className="btn btn-outline" onClick={() => setSearchTerm('')}>{t('Đặt Lại')}</button>
+            </div>
+
+            <div className="tab-container" style={{ borderBottom: 'none' }}>
+              <button className={`tab-btn ${categoryFilter === 'all' ? 'active' : ''}`} onClick={() => setCategoryFilter('all')}>{t('Tất cả')}</button>
+              <button className={`tab-btn ${categoryFilter === 'paper' ? 'active' : ''}`} onClick={() => setCategoryFilter('paper')}>{t('Giấy decal cuộn')}</button>
+              <button className={`tab-btn ${categoryFilter === 'ink' ? 'active' : ''}`} onClick={() => setCategoryFilter('ink')}>{t('Mực in Flexo')}</button>
+              <button className={`tab-btn ${categoryFilter === 'film' ? 'active' : ''}`} onClick={() => setCategoryFilter('film')}>{t('Màng bóng/mờ')}</button>
+              <button className={`tab-btn ${categoryFilter === 'others' ? 'active' : ''}`} onClick={() => setCategoryFilter('others')}>{t('Vật tư phụ / Khác')}</button>
+            </div>
           </div>
 
-          <div className="tab-container" style={{ borderBottom: 'none' }}>
-            <button className={`tab-btn ${categoryFilter === 'all' ? 'active' : ''}`} onClick={() => setCategoryFilter('all')}>{t('Tất cả')}</button>
-            <button className={`tab-btn ${categoryFilter === 'paper' ? 'active' : ''}`} onClick={() => setCategoryFilter('paper')}>{t('Giấy decal cuộn')}</button>
-            <button className={`tab-btn ${categoryFilter === 'ink' ? 'active' : ''}`} onClick={() => setCategoryFilter('ink')}>{t('Mực in Flexo')}</button>
-            <button className={`tab-btn ${categoryFilter === 'film' ? 'active' : ''}`} onClick={() => setCategoryFilter('film')}>{t('Màng bóng/mờ')}</button>
-            <button className={`tab-btn ${categoryFilter === 'others' ? 'active' : ''}`} onClick={() => setCategoryFilter('others')}>{t('Vật tư phụ / Khác')}</button>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Tên Vật Tư')}</th>
+                  <th>{t('Phân Nhóm')}</th>
+                  <th>{t('Tồn Kho Thực Tế')}</th>
+                  <th>{t('Giữ Chỗ Cho LSX')}</th>
+                  <th>{t('Tồn Khả Dụng')}</th>
+                  <th>{t('Ngưỡng Tối Thiểu')}</th>
+                  <th>{t('Đơn Vị')}</th>
+                  <th>{t('Trạng Thái')}</th>
+                  <th>{t('Thao Tác')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInventory.map(item => {
+                  const isLowStock = item.qtyInStock < item.minQtyAlert;
+                  const netAvailable = item.qtyInStock - (item.qtyReserved || 0);
+
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 600 }}>{item.materialName}</td>
+                      <td>{getCategoryLabel(item.category)}</td>
+                      <td style={{ fontWeight: 600 }}>{item.qtyInStock?.toLocaleString()}</td>
+                      <td>{item.qtyReserved || 0}</td>
+                      <td style={{ fontWeight: 700, color: netAvailable < 0 ? 'var(--color-danger)' : 'var(--color-text-main)' }}>
+                        {netAvailable?.toLocaleString()}
+                      </td>
+                      <td>{item.minQtyAlert}</td>
+                      <td>{item.unit}</td>
+                      <td>
+                        {isLowStock ? (
+                          <span className="badge badge-danger">{t('Cảnh Báo Tồn Kho Thấp')}</span>
+                        ) : (
+                          <span className="badge badge-success">{t('An Toàn')}</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button className="btn btn-sm btn-outline" onClick={() => { setSelectedItem(item); setShowDetailsModal(true); }}>
+                            {t('Chi Tiết')}
+                          </button>
+                          {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+                            <>
+                              <button className="btn btn-sm btn-outline" onClick={() => handleOpenAdjust(item)}>
+                                {t('Cập Nhật Tồn Kho')}
+                              </button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEdit(item)} title={t('Sửa')}>✎</button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteItem(item.id)} title={t('Xóa')}>✕</button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredInventory.length === 0 && (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy nguyên vật liệu nào.')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
+      )}
 
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Tên Vật Tư')}</th>
-                <th>{t('Phân Nhóm')}</th>
-                <th>{t('Tồn Kho Thực Tế')}</th>
-                <th>{t('Giữ Chỗ Cho LSX')}</th>
-                <th>{t('Tồn Khả Dụng')}</th>
-                <th>{t('Ngưỡng Tối Thiểu')}</th>
-                <th>{t('Đơn Vị')}</th>
-                <th>{t('Trạng Thái')}</th>
-                <th>{t('Thao Tác')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredInventory.map(item => {
-                const isLowStock = item.qtyInStock < item.minQtyAlert;
-                const netAvailable = item.qtyInStock - (item.qtyReserved || 0);
+      {activeTab === 'exports' && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span className="card-title">{t('Nhật Ký Xuất Kho Nguyên Vật Tư')}</span>
+            {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
+              <button className="btn btn-primary" onClick={handleOpenAddExport}>{t('Tạo Phiếu Xuất Kho Mới')}</button>
+            )}
+          </div>
 
-                return (
-                  <tr key={item.id}>
-                    <td style={{ fontWeight: 600 }}>{item.materialName}</td>
-                    <td>{getCategoryLabel(item.category)}</td>
-                    <td style={{ fontWeight: 600 }}>{item.qtyInStock}</td>
-                    <td>{item.qtyReserved || 0}</td>
-                    <td style={{ fontWeight: 700, color: netAvailable < 0 ? 'var(--color-danger)' : 'var(--color-text-main)' }}>
-                      {netAvailable}
-                    </td>
-                    <td>{item.minQtyAlert}</td>
-                    <td>{item.unit}</td>
-                    <td>
-                      {isLowStock ? (
-                        <span className="badge badge-danger">{t('Cảnh Báo Tồn Kho Thấp')}</span>
-                      ) : (
-                        <span className="badge badge-success">{t('An Toàn')}</span>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button className="btn btn-sm btn-outline" onClick={() => { setSelectedItem(item); setShowDetailsModal(true); }}>
-                          {t('Chi Tiết')}
-                        </button>
-                        {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                          <>
-                            <button className="btn btn-sm btn-outline" onClick={() => handleOpenAdjust(item)}>
-                              {t('Cập Nhật Tồn Kho')}
-                            </button>
-                            <button className="btn btn-sm btn-outline" onClick={() => handleOpenEdit(item)}>
-                              {t('Sửa')}
-                            </button>
-                            <button className="btn btn-sm btn-outline btn-danger" onClick={() => handleDeleteItem(item.id)}>
-                              {t('Xóa')}
-                            </button>
-                          </>
-                        )}
-                      </div>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Số Phiếu')}</th>
+                  <th>{t('Ngày Xuất')}</th>
+                  <th>{t('Lý Do Xuất')}</th>
+                  <th>{t('Đơn LSX/PO')}</th>
+                  <th>{t('Vật Tư Xuất')}</th>
+                  <th>{t('Số Lượng Xuất')}</th>
+                  <th>{t('Người Xuất')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exportSlips.map(slip => {
+                  const slipItem = slip.items?.[0] || {};
+                  return (
+                    <tr key={slip.id}>
+                      <td style={{ fontWeight: 600 }}>{slip.pxkCode}</td>
+                      <td>{new Date(slip.exportDate).toLocaleString('vi-VN')}</td>
+                      <td style={{ fontWeight: 500 }}>{t(slip.reason)}</td>
+                      <td>{slip.linkedCode}</td>
+                      <td>{slipItem.materialName}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--color-danger)' }}>-{slipItem.quantity?.toLocaleString()} {slipItem.unit}</td>
+                      <td>{slip.exportedBy}</td>
+                    </tr>
+                  );
+                })}
+                {exportSlips.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                      {t('Chưa ghi nhận phiếu xuất kho vật tư nào.')}
                     </td>
                   </tr>
-                );
-              })}
-              {filteredInventory.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy nguyên vật liệu nào.')}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {activeTab === 'nxt' && (
+        <div className="card">
+          <span className="card-title">{t('Báo Cáo Nhập - Xuất - Tồn Kho Vật Tư')}</span>
+          <p style={{ fontSize: '12.5px', color: 'var(--color-text-muted)', marginBottom: '16px' }}>
+            {t('* Tồn đầu kỳ được tính tự động từ tồn cuối kỳ (tồn thực tế) cộng tổng lượng xuất trừ tổng lượng nhập.')}
+          </p>
+
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Tên Vật Tư')}</th>
+                  <th>{t('Nhóm Vật Tư')}</th>
+                  <th>{t('Đơn Vị')}</th>
+                  <th>{t('Tồn Đầu Kỳ')}</th>
+                  <th>{t('Nhập Trong Kỳ')}</th>
+                  <th>{t('Xuất Trong Kỳ')}</th>
+                  <th>{t('Tồn Cuối Kỳ')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inventoryList.map(item => {
+                  // Calculate dynamic Nhập
+                  const totalImported = purchaseOrders
+                    .filter(po => po.status === 'received')
+                    .reduce((sum, po) => {
+                      const found = po.items?.find((i: any) => i.materialName.toLowerCase() === item.materialName.toLowerCase());
+                      return sum + (found ? Number(found.quantity) : 0);
+                    }, 0);
+
+                  // Calculate dynamic Xuất
+                  const totalExported = exportSlips.reduce((sum, slip) => {
+                    const found = slip.items?.find((i: any) => i.materialId === item.id || i.materialName.toLowerCase() === item.materialName.toLowerCase());
+                    return sum + (found ? Number(found.quantity) : 0);
+                  }, 0);
+
+                  const endStock = item.qtyInStock;
+                  const beginStock = Math.max(0, endStock + totalExported - totalImported);
+
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 600 }}>{item.materialName}</td>
+                      <td>{getCategoryLabel(item.category)}</td>
+                      <td>{item.unit}</td>
+                      <td style={{ fontWeight: 500 }}>{beginStock?.toLocaleString()}</td>
+                      <td style={{ color: 'var(--color-success)', fontWeight: 500 }}>+{totalImported?.toLocaleString()}</td>
+                      <td style={{ color: 'var(--color-danger)', fontWeight: 500 }}>-{totalExported?.toLocaleString()}</td>
+                      <td style={{ fontWeight: 700 }}>{endStock?.toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+                {inventoryList.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>{t('Chưa có danh mục vật tư nào để tạo báo cáo.')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* STOCK ADJUSTMENT MODAL */}
       {showAdjustModal && selectedItem && (
@@ -316,18 +524,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
       {/* ADD MATERIAL MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Thêm Vật Tư Mới')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddSubmit}>
-              <div className="modal-body">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div className="form-group">
                   <label>{t('Tên Vật Tư')} *</label>
-                  <input type="text" value={addName} onChange={e => setAddName(e.target.value)} placeholder={t('Ví dụ: Decal nhựa Fasson...')} required />
+                  <input type="text" value={addName} onChange={e => setAddName(e.target.value)} placeholder={t('Ví dụ: Decal nhựa Fasson AW0339F...')} required />
                 </div>
-                <div className="form-grid">
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Phân Nhóm')} *</label>
                     <select value={addCategory} onChange={e => setAddCategory(e.target.value as any)}>
@@ -342,7 +550,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                     <input type="text" value={addUnit} onChange={e => setAddUnit(e.target.value)} placeholder="m², kg, cuộn, hộp" required />
                   </div>
                 </div>
-                <div className="form-grid">
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Số Lượng Nhập Ban Đầu')}</label>
                     <input type="number" min="0" value={addQty} onChange={e => setAddQty(Number(e.target.value))} />
@@ -374,18 +582,18 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
       {/* EDIT MATERIAL MODAL */}
       {showEditModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('Chỉnh Sửa Vật Tư')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleEditSubmit}>
-              <div className="modal-body">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div className="form-group">
                   <label>{t('Tên Vật Tư')} *</label>
                   <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required />
                 </div>
-                <div className="form-grid">
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
                     <label>{t('Phân Nhóm')} *</label>
                     <select value={editCategory} onChange={e => setEditCategory(e.target.value as any)}>
@@ -438,11 +646,11 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                 <span style={{ fontWeight: 600 }}>{t('Phân Nhóm')}:</span>
                 <span>{getCategoryLabel(selectedItem.category)}</span>
                 <span style={{ fontWeight: 600 }}>{t('Tồn Kho Thực Tế')}:</span>
-                <span>{selectedItem.qtyInStock} {selectedItem.unit}</span>
+                <span>{selectedItem.qtyInStock?.toLocaleString()} {selectedItem.unit}</span>
                 <span style={{ fontWeight: 600 }}>{t('Giữ Chỗ Cho LSX')}:</span>
                 <span>{selectedItem.qtyReserved || 0} {selectedItem.unit}</span>
                 <span style={{ fontWeight: 600 }}>{t('Tồn Khả Dụng')}:</span>
-                <span>{selectedItem.qtyInStock - (selectedItem.qtyReserved || 0)} {selectedItem.unit}</span>
+                <span>{(selectedItem.qtyInStock - (selectedItem.qtyReserved || 0))?.toLocaleString()} {selectedItem.unit}</span>
                 <span style={{ fontWeight: 600 }}>{t('Ngưỡng Tối Thiểu')}:</span>
                 <span>{selectedItem.minQtyAlert} {selectedItem.unit}</span>
                 <span style={{ fontWeight: 600 }}>{t('Nhà Cung Cấp Mặc Định')}:</span>
@@ -459,10 +667,69 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
             </div>
             <div className="modal-footer">
               {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                <button className="btn btn-primary" onClick={() => { setShowDetailsModal(false); handleOpenEdit(selectedItem); }}>{t('Sửa')}</button>
+                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsModal(false); handleOpenEdit(selectedItem); }} title={t('Sửa')}>✎</button>
               )}
               <button className="btn btn-outline" onClick={() => setShowDetailsModal(false)}>{t('Đóng')}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE WAREHOUSE EXPORT SLIP */}
+      {showAddExportModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO PHIẾU XUẤT KHO VẬT TƯ')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowAddExportModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleAddExportSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group">
+                  <label>{t('Chọn Nguyên Vật Tư Xuất *')}</label>
+                  <select value={selectedMaterialId} onChange={e => setSelectedMaterialId(e.target.value)} required>
+                    {inventoryList.map(item => (
+                      <option key={item.id} value={item.id}>{item.materialName} ({t('Tồn thực tế')}: {item.qtyInStock} {item.unit})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>{t('Số Lượng Xuất Kho *')}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={exportQty}
+                    onChange={e => setExportQty(Number(e.target.value))}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>{t('Lý Do Xuất Kho *')}</label>
+                  <select value={exportReason} onChange={e => setExportReason(e.target.value)}>
+                    <option value="Xuất sản xuất">{t('Xuất sản xuất (Cho thợ in/bế)')}</option>
+                    <option value="Xuất hủy phế phẩm">{t('Xuất hủy phế phẩm / lỗi hỏng')}</option>
+                    <option value="Xuất trả nhà cung cấp">{t('Xuất trả nhà cung cấp')}</option>
+                    <option value="Xuất khác">{t('Xuất điều chỉnh / Khác')}</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>{t('Mã Lệnh LSX / Đơn PO Liên Kết')}</label>
+                  <input
+                    type="text"
+                    placeholder="VD: LSX-06041 or PO-06042"
+                    value={exportPoCode}
+                    onChange={e => setExportPoCode(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowAddExportModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Xác Nhận Xuất Kho')}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

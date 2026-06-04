@@ -93,6 +93,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
+          {/* LSX Transfer Approvals Alert Card */}
+          {productionCommands.some(cmd => cmd.status === 'transfer_pending') && (
+            <div className="card" style={{ border: '1px solid var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)', margin: '0 0 20px 0' }}>
+              <span className="card-title" style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 700 }}>
+                ⏳ {t('Có Yêu Cầu Phê Duyệt Bàn Giao Lệnh Sản Xuất')}
+              </span>
+              <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
+                {t('Thợ máy đang báo gặp sự cố và yêu cầu chuyển giao lại lệnh in/bế cho thợ khác. Vui lòng phê duyệt.')}
+              </p>
+              <button 
+                className="btn btn-outline" 
+                onClick={() => onNavigate('production')}
+                style={{ fontWeight: 600, color: 'var(--color-warning)', borderColor: 'var(--color-warning)', padding: '6px 12px', fontSize: '12.5px' }}
+              >
+                {t('XỬ LÝ NGAY TẠI TRANG SẢN XUẤT')} →
+              </button>
+            </div>
+          )}
+
           {/* Visual Charts Container (Bar and Donut) */}
           <div className="charts-row-mobile" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', width: '100%' }}>
             <div className="card" style={{ flex: '1 1 300px' }}>

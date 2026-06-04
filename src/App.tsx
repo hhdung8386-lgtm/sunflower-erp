@@ -10,13 +10,20 @@ import { Production } from './views/Production';
 import { Delivery } from './views/Delivery';
 import { Accounting } from './views/Accounting';
 import { UserManagement } from './views/UserManagement';
+import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
+import logo from './assets/logo.png';
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const { t, language, setLanguage } = useLanguage();
+  
+  // Collapsible sidebar state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('erp_sidebar_collapsed') === 'true';
+  });
   
   // Real-time synchronization states
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -27,6 +34,11 @@ function App() {
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+
+  // Navigation state links
+  const [selectedPoId, setSelectedPoId] = useState<string>('');
+  const [selectedLsxId, setSelectedLsxId] = useState<string>('');
 
   // Login form states
   const [username, setUsername] = useState(() => {
@@ -63,6 +75,7 @@ function App() {
     const unsubDeliveries = dbService.subscribeCollection('deliveries', setDeliveries);
     const unsubInvoices = dbService.subscribeCollection('invoices', setInvoices);
     const unsubInventory = dbService.subscribeCollection('inventory', setInventory);
+    const unsubMessages = dbService.subscribeCollection('messages', setMessages);
 
     return () => {
       unsubUsers();
@@ -73,6 +86,7 @@ function App() {
       unsubDeliveries();
       unsubInvoices();
       unsubInventory();
+      unsubMessages();
     };
   }, [user]);
 
@@ -110,6 +124,36 @@ function App() {
     localStorage.setItem('erp_current_user', JSON.stringify(updatedUser));
   };
 
+  const getUnreadChannelMessagesTotal = () => {
+    if (!user) return 0;
+    
+    // Available channels for this role
+    const channels = [
+      { id: 'all', roles: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'] },
+      { id: 'accountant', roles: ['admin', 'accountant'] },
+      { id: 'production', roles: ['admin', 'producer'] },
+      { id: 'design', roles: ['admin', 'designer'] },
+      { id: 'sale', roles: ['admin', 'sale'] },
+      { id: 'purchase', roles: ['admin', 'purchaser'] },
+    ];
+    
+    const userChannels = channels.filter(ch => ch.roles.includes(user.role));
+    
+    let total = 0;
+    for (const ch of userChannels) {
+      const lastReadStr = localStorage.getItem(`erp_last_read_ch_${ch.id}`);
+      if (!lastReadStr) {
+        total += messages.filter(msg => msg.type === 'channel' && msg.targetId === ch.id && msg.senderId !== user.uid).length;
+      } else {
+        const lastReadTime = new Date(lastReadStr).getTime();
+        total += messages.filter(
+          msg => msg.type === 'channel' && msg.targetId === ch.id && msg.senderId !== user.uid && new Date(msg.createdAt).getTime() > lastReadTime
+        ).length;
+      }
+    }
+    return total;
+  };
+
   const refreshData = () => {
     // Triggers local list updates (Mock DB callbacks already trigger, this forces refresh where needed)
   };
@@ -122,19 +166,57 @@ function App() {
       case 'crm':
         return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} />;
       case 'sales':
-        return <Sales pos={pos} customers={customers} currentUser={user} onRefresh={refreshData} />;
+        return (
+          <Sales 
+            pos={pos} 
+            customers={customers} 
+            currentUser={user} 
+            onRefresh={refreshData} 
+            initialSelectedPoId={selectedPoId}
+            messages={messages}
+            users={users}
+          />
+        );
       case 'design':
         return <Design pos={pos} currentUser={user} onRefresh={refreshData} />;
       case 'purchase':
-        return <Purchase pos={pos} purchaseOrders={purchaseOrders} currentUser={user} onRefresh={refreshData} />;
+        return <Purchase pos={pos} purchaseOrders={purchaseOrders} currentUser={user} onRefresh={refreshData} users={users} />;
       case 'inventory':
         return <Inventory currentUser={user} onRefresh={refreshData} />;
       case 'production':
-        return <Production pos={pos} productionCommands={productionCommands} currentUser={user} onRefresh={refreshData} />;
+        return (
+          <Production 
+            pos={pos} 
+            productionCommands={productionCommands} 
+            currentUser={user} 
+            onRefresh={refreshData} 
+            initialSelectedLsxId={selectedLsxId}
+            messages={messages}
+            users={users}
+          />
+        );
       case 'delivery':
         return <Delivery pos={pos} currentUser={user} onRefresh={refreshData} />;
       case 'accounting':
-        return <Accounting pos={pos} currentUser={user} onRefresh={refreshData} />;
+        return <Accounting pos={pos} currentUser={user} onRefresh={refreshData} users={users} />;
+      case 'chat':
+        return (
+          <ChatPage 
+            currentUser={user}
+            messages={messages}
+            pos={pos}
+            productionCommands={productionCommands}
+            onNavigateToPO={(poId) => {
+              setSelectedPoId(poId);
+              setActivePage('sales');
+            }}
+            onNavigateToLSX={(lsxId) => {
+              setSelectedLsxId(lsxId);
+              setActivePage('production');
+            }}
+            users={users}
+          />
+        );
       case 'users':
         if (user.role !== 'admin') {
           // React state updates during render are allowed if guarded or deferred,
@@ -164,114 +246,57 @@ function App() {
   // Render Login Page
   if (!user) {
     return (
-      <div className="login-split-container">
-        {/* Left Panel: Slogans, Image, Flow, Grid */}
-        <div className="login-left-banner">
-          <div className="login-left-content">
-            <div className="login-brand-header">
-              <span className="brand-logo-icon">🌻</span>
-              <span className="brand-name">SUNFLOWER</span>
-            </div>
-            <h1 className="login-banner-title">{t('SUNFLOWER LABEL MANUFACTURING')}</h1>
-            <p className="login-banner-subtitle">{t('Hệ Thống Quản Trị Sản Xuất Tem Nhãn')}</p>
-            
-            <div className="printing-image-container">
-              <img 
-                src="/src/assets/printing_machine.png" 
-                alt="Flexo Printing Machine" 
-                className="printing-machine-img" 
-                decoding="async"
-                loading="eager"
-              />
-            </div>
-
-            {/* 6-step flow */}
-            <div className="timeline-flow-container">
-              <h3 className="timeline-title">{t('Quy Trình Hoạt Động Cốt Lõi')}</h3>
-              <div className="timeline-flow">
-                <div className="timeline-step">
-                  <div className="step-num">1</div>
-                  <div className="step-text">{t('Khách Hàng & CRM')}</div>
-                </div>
-                <div className="timeline-step">
-                  <div className="step-num">2</div>
-                  <div className="step-text">{t('Tiếp Nhận PO')}</div>
-                </div>
-                <div className="timeline-step">
-                  <div className="step-num">3</div>
-                  <div className="step-text">{t('Thiết Kế & Duyệt')}</div>
-                </div>
-                <div className="timeline-step">
-                  <div className="step-num">4</div>
-                  <div className="step-text">{t('Mua Hàng & NCC')}</div>
-                </div>
-                <div className="timeline-step">
-                  <div className="step-num">5</div>
-                  <div className="step-text">{t('Lệnh Sản Xuất')}</div>
-                </div>
-                <div className="timeline-step">
-                  <div className="step-num">6</div>
-                  <div className="step-text">{t('Giao Hàng & Ký')}</div>
-                </div>
+      <div className="login-full-page">
+        {/* Left Panel: Full-height Background Image + Overlay Text */}
+        <div className="login-hero-panel">
+          <div className="login-hero-overlay">
+            <div className="login-hero-content">
+              <div className="login-hero-badge">{t('SUNFLOWER LABEL ERP')}</div>
+              <h1 className="login-hero-title">{t('SUNFLOWER LABEL ERP')}</h1>
+              <p className="login-hero-sub">{t('Hệ thống quản trị sản xuất tem nhãn chuyên nghiệp')}</p>
+              <div className="login-hero-divider"></div>
+              <p className="login-hero-desc">
+                {t('Giải pháp ERP toàn diện giúp tối ưu quy trình sản xuất tem nhãn từ nhận PO đến giao hàng và quản lý công nợ hiệu quả.')}
+              </p>
+              <div className="login-hero-flow">
+                <span>PO</span>
+                <span className="flow-arrow">→</span>
+                <span>{t('Thiết kế')}</span>
+                <span className="flow-arrow">→</span>
+                <span>{t('Sản xuất')}</span>
+                <span className="flow-arrow">→</span>
+                <span>QC</span>
+                <span className="flow-arrow">→</span>
+                <span>{t('Giao hàng')}</span>
+                <span className="flow-arrow">→</span>
+                <span>{t('Thu công nợ')}</span>
               </div>
-            </div>
-
-            {/* 8-box grid */}
-            <div className="feature-grid-container">
-              <h3 className="grid-title">{t('Hệ Thống Phân Hệ Chức Năng')}</h3>
-              <div className="feature-grid">
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Khách Hàng (CRM)')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Tiếp Nhận Đơn (Sale PO)')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Thiết Kế & Layout')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Mua Hàng & NCC')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Kho Nguyên Vật Tư')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Lệnh Sản Xuất (LSX)')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Kế Hoạch Giao Hàng')}</div>
-                </div>
-                <div className="grid-item">
-                  <div className="grid-item-name">{t('Kế Toán & Lãi Gộp')}</div>
-                </div>
+              <div className="login-hero-modules">
+                <div className="hero-module">{t('Quản lý PO')}</div>
+                <div className="hero-module">{t('Thiết kế & Duyệt mẫu')}</div>
+                <div className="hero-module">{t('Theo dõi Sản xuất')}</div>
+                <div className="hero-module">{t('Quản lý Nguyên vật liệu')}</div>
+                <div className="hero-module">{t('Kiểm soát Chất lượng')}</div>
+                <div className="hero-module">{t('Giao nhận & Giao hàng')}</div>
+                <div className="hero-module">{t('Công nợ Khách hàng')}</div>
+                <div className="hero-module">{t('Báo cáo & Phân tích')}</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Panel: Login card */}
-        <div className="login-right-pane">
-          <div className="login-right-header">
-            <button 
-              className="lang-toggle-btn" 
-              onClick={() => setLanguage(language === 'vi' ? 'en' : 'vi')}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-              </svg>
-              <span>{language === 'vi' ? 'English' : 'Tiếng Việt'}</span>
-            </button>
-          </div>
-
-          <div className="login-right-card">
-            <h2 className="login-card-title">{t('Chào mừng đến với SUNFLOWER')}</h2>
-            <p className="login-card-subtitle">{t('Đăng nhập để bắt đầu phiên làm việc')}</p>
+        {/* Right Panel: Floating Login Card */}
+        <div className="login-form-panel">
+          <div className="login-card-glass">
+            <div className="login-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <img src={logo} alt="Logo" style={{ height: '48px', width: '48px', marginBottom: '12px', objectFit: 'contain' }} />
+              <h2 className="login-card-title">{t('Chào mừng trở lại')}</h2>
+              <p className="login-card-subtitle">{t('Đăng nhập để tiếp tục làm việc')}</p>
+            </div>
 
             <form onSubmit={handleLogin} className="login-form">
               <div className="form-group">
-                <label>{t('Tên đăng nhập')}</label>
+                <label className="login-label">{t('Tên đăng nhập')}</label>
                 <div className="input-wrapper">
                   <input 
                     type="text" 
@@ -285,11 +310,11 @@ function App() {
               </div>
 
               <div className="form-group">
-                <label>{t('Mật Khẩu Đăng Nhập')}</label>
+                <label className="login-label">{t('Mật khẩu')}</label>
                 <div className="input-wrapper password-input-wrapper">
                   <input 
                     type={showPassword ? "text" : "password"}
-                    placeholder={t('Mật khẩu của bạn')}
+                    placeholder={t('Nhập mật khẩu')}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
@@ -302,13 +327,11 @@ function App() {
                     aria-label="Toggle password visibility"
                   >
                     {showPassword ? (
-                      /* Eye Off Icon */
                       <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                         <line x1="1" y1="1" x2="23" y2="23"></line>
                       </svg>
                     ) : (
-                      /* Eye Icon */
                       <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                         <circle cx="12" cy="12" r="3"></circle>
@@ -330,27 +353,30 @@ function App() {
               </div>
 
               {errorMsg && (
-                <div className="login-error-alert">
-                  {errorMsg}
-                </div>
+                <div className="login-error-alert">{errorMsg}</div>
               )}
 
               <button type="submit" className="login-btn-submit">
-                {t('Đăng Nhập')}
+                {t('Đăng Nhập Hệ Thống')}
               </button>
             </form>
 
-            {/* Demo Credentials Section */}
-            <div className="demo-credentials">
-              <h4>{t('Tài khoản Demo thử nghiệm nhanh:')}</h4>
-              <ul>
-                <li><strong>{t('Giám đốc')}:</strong> <code>admin</code> / <code>admin123</code></li>
-                <li><strong>Sale:</strong> <code>sale</code> / <code>sale123</code></li>
-                <li><strong>{t('Thiết kế')}:</strong> <code>designer</code> / <code>design123</code></li>
-                <li><strong>{t('Mua hàng')}:</strong> <code>purchase</code> / <code>purchase123</code></li>
-                <li><strong>{t('Sản xuất')}:</strong> <code>produce</code> / <code>produce123</code></li>
-                <li><strong>{t('Kế toán')}:</strong> <code>accountant</code> / <code>account123</code></li>
-              </ul>
+            <div className="login-card-footer">
+              <button 
+                className="lang-toggle-btn" 
+                onClick={() => setLanguage(language === 'vi' ? 'en' : 'vi')}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <span>{language === 'vi' ? 'English' : 'Tiếng Việt'}</span>
+              </button>
+              <div className="login-footer-brand">
+                <span>SUNFLOWER LABEL ERP v1.0</span>
+                <span>© 2026 Sunflower Printing Solutions</span>
+              </div>
             </div>
           </div>
         </div>
@@ -359,8 +385,10 @@ function App() {
   }
 
   // Render Dashboard Layout
+  const unreadChannelCount = getUnreadChannelMessagesTotal();
+
   return (
-    <div className="app-container">
+    <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Mobile backdrop overlay */}
       <div 
         className={`sidebar-overlay-mobile ${isSidebarOpen ? 'show' : ''}`} 
@@ -369,7 +397,8 @@ function App() {
 
       {/* APP SIDEBAR NAVIGATION (Strictly Text Links, No Icons) */}
       <aside className={`app-sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-logo">
+        <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src={logo} alt="Logo" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
           <span className="sidebar-logo-text">SUNFLOWER</span>
         </div>
         <nav className="sidebar-menu">
@@ -378,6 +407,15 @@ function App() {
             onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
           >
             {t('Tổng Quan Dashboards')}
+          </button>
+
+          <button 
+            className={`sidebar-item ${activePage === 'chat' ? 'active' : ''}`}
+            onClick={() => { setActivePage('chat'); setIsSidebarOpen(false); }}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <span>{t('Kênh Thảo Luận')}</span>
+            {unreadChannelCount > 0 && <span className="chat-channel-badge">{unreadChannelCount}</span>}
           </button>
           
           <button 
@@ -473,6 +511,19 @@ function App() {
       {/* APP HEADER */}
       <header className="app-header">
         <div className="header-title-container">
+          {/* Desktop sidebar toggle button */}
+          <button 
+            className="desktop-menu-btn" 
+            onClick={() => {
+              const nextVal = !isSidebarCollapsed;
+              setIsSidebarCollapsed(nextVal);
+              localStorage.setItem('erp_sidebar_collapsed', String(nextVal));
+            }}
+            title={isSidebarCollapsed ? t('Hiện menu') : t('Ẩn menu')}
+          >
+            ☰
+          </button>
+          
           {/* Hamburger menu toggle button for mobile */}
           <button 
             className="mobile-menu-btn" 

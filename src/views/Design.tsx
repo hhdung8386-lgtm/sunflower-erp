@@ -445,11 +445,12 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
             {/* Designer button */}
             {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
               <button 
-                className="btn btn-primary" 
+                className="btn btn-primary btn-symbol" 
                 style={{ width: '100%', marginTop: '10px' }} 
                 onClick={() => setShowAddVersionModal(true)}
+                title={t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')}
               >
-                {t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')}
+                +
               </button>
             )}
           </div>
@@ -481,8 +482,8 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                     </div>
                     {(currentUser.role === 'admin' || currentUser.role === 'designer') && activeVer.versionNumber === selectedDesign.currentVersion && (
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-sm btn-primary" onClick={() => handleOpenEditVersionModal(activeVer)}>{t('Sửa')}</button>
-                        <button className="btn btn-sm btn-danger" onClick={handleDeleteLastVersion}>{t('Xóa')}</button>
+                        <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditVersionModal(activeVer)} title={t('Sửa')}>✎</button>
+                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={handleDeleteLastVersion} title={t('Xóa')}>✕</button>
                       </div>
                     )}
                   </div>
