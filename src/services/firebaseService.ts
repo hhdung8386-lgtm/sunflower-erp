@@ -436,12 +436,13 @@ const seedFirestoreIfNeeded = async () => {
       }
     }
 
-    // 2. Seed other collections if they are completely empty
+    // 2. Seed other collections by checking for missing document IDs
     const checkAndSeed = async (colName: string, defaults: any[]) => {
       const snap = await getDocs(collection(realDb, colName));
-      if (snap.empty && defaults.length > 0) {
-        for (const item of defaults) {
-          const docId = item.id || `${colName.substring(0, 3)}-${Math.random().toString(36).substr(2, 9)}`;
+      const existingIds = new Set(snap.docs.map(doc => doc.id));
+      for (const item of defaults) {
+        const docId = item.id || `${colName.substring(0, 3)}-${Math.random().toString(36).substr(2, 9)}`;
+        if (!existingIds.has(docId)) {
           await setDoc(doc(realDb, colName, docId), { ...item, id: docId });
         }
       }
