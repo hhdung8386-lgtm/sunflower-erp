@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { PO_STATES } from './Sales';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 interface DesignProps {
   pos: any[];
@@ -450,7 +451,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                 onClick={() => setShowAddVersionModal(true)}
                 title={t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')}
               >
-                +
+                <Plus size={18} />
               </button>
             )}
           </div>
@@ -482,8 +483,12 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                     </div>
                     {(currentUser.role === 'admin' || currentUser.role === 'designer') && activeVer.versionNumber === selectedDesign.currentVersion && (
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditVersionModal(activeVer)} title={t('Sửa')}>✎</button>
-                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={handleDeleteLastVersion} title={t('Xóa')}>✕</button>
+                        <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditVersionModal(activeVer)} title={t('Sửa')}>
+                          <Pencil size={14} />
+                        </button>
+                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={handleDeleteLastVersion} title={t('Xóa')}>
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     )}
                   </div>

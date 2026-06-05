@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 interface UserManagementProps {
   users: UserProfile[];
@@ -207,7 +208,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
           <h1 className="page-title">{t('QUẢN LÝ TÀI KHOẢN & PHÂN QUYỀN')}</h1>
           <p className="page-subtitle">{t('Xem danh sách nhân sự, phân quyền vai trò phòng ban và quản lý trạng thái hoạt động.')}</p>
         </div>
-        <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Người Dùng Mới')}>+</button>
+        <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Người Dùng Mới')}>
+          <Plus size={18} />
+        </button>
       </div>
 
       <div className="card">
@@ -275,7 +278,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                     <td>{u.createdAt || 'N/A'}</td>
                     <td>
                       <div className="btn-group">
-                        <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(u)} title={t('Sửa')}>✎</button>
+                        <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(u)} title={t('Sửa')}>
+                          <Pencil size={14} />
+                        </button>
                         {!isSelf && (
                           <>
                             <button 
@@ -284,7 +289,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                             >
                               {u.active ? t('Khóa Tài Khoản') : t('Kích Hoạt')}
                             </button>
-                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteUser(u)} title={t('Xóa')}>✕</button>
+                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteUser(u)} title={t('Xóa')}>
+                              <Trash2 size={14} />
+                            </button>
                           </>
                         )}
                       </div>

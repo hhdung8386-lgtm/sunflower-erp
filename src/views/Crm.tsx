@@ -2,6 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
+import { 
+  Plus, 
+  Trash2, 
+  Pencil, 
+  X, 
+  UserCheck, 
+  MessageSquare, 
+  Paperclip, 
+  Folder, 
+  FileText, 
+  Download, 
+  Upload,
+  Phone,
+  Mail,
+  User,
+  Eye
+} from 'lucide-react';
 
 interface CrmProps {
   customers: any[];
@@ -798,7 +815,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
         {crmActiveTab === 'cooperative' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>+</button>
+          <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>
+            <Plus size={18} />
+          </button>
         )}
       </div>
 
@@ -875,7 +894,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '300px' }}
             />
-             <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>✕</button>
+             <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>
+                <X size={16} />
+             </button>
           </div>
           <div className="tab-container" style={{ borderBottom: 'none' }}>
             <button 
@@ -942,8 +963,12 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>{t('Chi Tiết')}</button>
                         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                           <>
-                             <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(cust)} title={t('Sửa')}>✎</button>
-                             <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteCustomer(cust.id)} title={t('Xóa')}>✕</button>
+                             <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(cust)} title={t('Sửa')}>
+                               <Pencil size={14} />
+                             </button>
+                             <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteCustomer(cust.id)} title={t('Xóa')}>
+                               <Trash2 size={14} />
+                             </button>
                           </>
                         )}
                       </div>
@@ -1045,7 +1070,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('DANH MỤC MÃ SẢN PHẨM KHÁCH HÀNG')}</span>
                {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                 <button className="btn btn-primary btn-symbol" onClick={handleOpenAddProduct} title={t('Thêm Mã Sản Phẩm Mới')}>+</button>
+                 <button className="btn btn-primary btn-symbol" onClick={handleOpenAddProduct} title={t('Thêm Mã Sản Phẩm Mới')}>
+                   <Plus size={18} />
+                 </button>
                )}
             </div>
             <div className="table-container">
@@ -1094,7 +1121,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                           {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                             <>
                                <button className="btn btn-sm btn-outline" onClick={() => handleOpenRequote(prod)}>{t('Báo Giá Lại')}</button>
-                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteProduct(prod.id)} title={t('Xóa')}>✕</button>
+                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteProduct(prod.id)} title={t('Xóa')}>
+                                 <Trash2 size={14} />
+                               </button>
                             </>
                           )}
                         </div>
@@ -1115,7 +1144,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('HỢP ĐỒNG & VĂN BẢN KÝ KẾT')}</span>
               {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                 <button className="btn btn-primary btn-symbol" onClick={() => setShowAddContractModal(true)} title={t('Thêm Hợp Đồng Mới')}>+</button>
+                 <button className="btn btn-primary btn-symbol" onClick={() => setShowAddContractModal(true)} title={t('Thêm Hợp Đồng Mới')}>
+                   <Plus size={18} />
+                 </button>
               )}
             </div>
             <div className="table-container">
@@ -1154,7 +1185,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       </td>
                       <td>
                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                           <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteContract(contr.id)} title={t('Xóa')}>✕</button>
+                           <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteContract(contr.id)} title={t('Xóa')}>
+                             <Trash2 size={14} />
+                           </button>
                          )}
                       </td>
                     </tr>
@@ -1172,7 +1205,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           {/* CUSTOMER FILE REPOSITORY CARD */}
           <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <span className="card-title">📁 {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}</span>
+              <span className="card-title" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Folder size={18} />
+                <span>{t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}</span>
+              </span>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input 
                   type="text" 
@@ -1181,8 +1217,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   onChange={e => setNewFolderName(e.target.value)}
                   style={{ width: '180px', padding: '4px 8px', fontSize: '12.5px' }}
                 />
-                <button type="button" className="btn btn-sm btn-primary" onClick={handleAddFolder}>
-                  + {t('Tạo Thư Mục')}
+                <button type="button" className="btn btn-sm btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }} onClick={handleAddFolder}>
+                  <Plus size={14} />
+                  <span>{t('Tạo Thư Mục')}</span>
                 </button>
               </div>
             </div>
@@ -1203,14 +1240,18 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     ).map(([folderName, folderFiles]: any) => (
                       <div key={folderName} style={{ marginBottom: '20px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border-light)', paddingBottom: '6px', marginBottom: '10px' }}>
-                          <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>📁 {folderName}</span>
+                          <span style={{ fontWeight: 700, color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <Folder size={16} />
+                            <span>{folderName}</span>
+                          </span>
                           <button 
                             type="button" 
                             className="btn btn-sm btn-danger" 
-                            style={{ padding: '2px 8px', fontSize: '11px' }}
+                            style={{ padding: '2px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             onClick={() => handleDeleteRepoFolder(folderName)}
                           >
-                            ✕ {t('Xóa thư mục')}
+                            <Trash2 size={12} />
+                            <span>{t('Xóa thư mục')}</span>
                           </button>
                         </div>
                         
@@ -1229,7 +1270,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                                     title={t('Click để xem lớn')}
                                   />
                                 ) : (
-                                  <span style={{ fontSize: '1.5rem' }}>📄</span>
+                                  <FileText size={28} style={{ color: 'var(--color-primary)' }} />
                                 )}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
@@ -1239,19 +1280,21 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                                 </div>
                                 <div style={{ display: 'flex', gap: '6px' }}>
                                   {isImage && (
-                                    <button type="button" className="btn btn-sm btn-outline" style={{ padding: '2px 6px', fontSize: '11px' }} onClick={() => setPreviewImage(file.base64)}>
-                                      👁️ {t('Xem')}
+                                    <button type="button" className="btn btn-sm btn-outline" style={{ padding: '2px 6px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }} onClick={() => setPreviewImage(file.base64)}>
+                                      <Eye size={12} />
+                                      <span>{t('Xem')}</span>
                                     </button>
                                   )}
-                                  <a href={file.base64} download={file.name} className="btn btn-sm btn-primary" style={{ padding: '2px 6px', fontSize: '11px', textDecoration: 'none' }}>
-                                    📥 {t('Tải')}
+                                  <a href={file.base64} download={file.name} className="btn btn-sm btn-primary" style={{ padding: '2px 6px', fontSize: '11px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <Download size={12} />
+                                    <span>{t('Tải')}</span>
                                   </a>
                                   <button 
                                     type="button" 
                                     className="btn btn-sm btn-danger btn-symbol-sm" 
                                     onClick={() => handleDeleteRepoFile(folderName, file.name)}
                                   >
-                                    ✕
+                                    <Trash2 size={12} />
                                   </button>
                                 </div>
                               </div>
@@ -1304,8 +1347,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       style={{ fontSize: '12.5px' }}
                     />
                   </div>
-                  <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
-                    📥 {t('Tải Lên Kho Tệp')}
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <Upload size={14} />
+                    <span>{t('Tải Lên Kho Tệp')}</span>
                   </button>
                 </form>
               </div>
@@ -1360,9 +1404,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       <div key={lead.id} className="kanban-card" onClick={() => openEditLeadModal(lead)}>
                         <div className="kanban-card-title">{lead.name}</div>
                         <div className="kanban-card-details">
-                          {lead.phone && <div>📞 {lead.phone}</div>}
-                          {lead.email && <div>✉️ {lead.email}</div>}
-                          {lead.note && <div style={{ fontStyle: 'italic', fontSize: '11px', marginTop: '4px' }}>💬 {lead.note.substring(0, 50)}{lead.note.length > 50 ? '...' : ''}</div>}
+                          {lead.phone && <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Phone size={12} /><span>{lead.phone}</span></div>}
+                          {lead.email && <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: lead.phone ? '8px' : '0' }}><Mail size={12} /><span>{lead.email}</span></div>}
+                          {lead.note && <div style={{ fontStyle: 'italic', fontSize: '11px', marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MessageSquare size={12} /><span>{lead.note.substring(0, 50)}{lead.note.length > 50 ? '...' : ''}</span></div>}
                           
                           {/* Reminder Time alert indicator */}
                           {lead.reminderTime && renderReminderAlert(lead.reminderTime)}
@@ -1372,19 +1416,31 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         {lead.files && lead.files.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
                             {lead.files.map((file: any, fIdx: number) => (
-                              <span key={fIdx} className="lead-file-badge">📎 {file.name}</span>
+                              <span key={fIdx} className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <Paperclip size={12} />
+                                <span>{file.name}</span>
+                              </span>
                             ))}
                           </div>
                         )}
 
                         <div className="kanban-card-meta">
-                          <span style={{ fontSize: '10px' }}>👤 {lead.assignedSaleName}</span>
+                          <span style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <User size={12} />
+                            <span>{lead.assignedSaleName}</span>
+                          </span>
                           <div className="btn-group" onClick={e => e.stopPropagation()}>
-                            <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditLeadModal(lead)} title={t('Sửa')}>✎</button>
+                            <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditLeadModal(lead)} title={t('Sửa')}>
+                              <Pencil size={14} />
+                            </button>
                             {col.stage !== 'lost' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                              <button className="btn btn-sm btn-success btn-symbol-sm" onClick={() => handleConvertLeadToCustomer(lead)} title={t('Chuyển thành khách hàng chính thức')}>🤝</button>
+                              <button className="btn btn-sm btn-success btn-symbol-sm" onClick={() => handleConvertLeadToCustomer(lead)} title={t('Chuyển thành khách hàng chính thức')}>
+                                <UserCheck size={14} />
+                              </button>
                             )}
-                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLead(lead.id)} title={t('Xóa')}>✕</button>
+                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLead(lead.id)} title={t('Xóa')}>
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1918,7 +1974,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <div className="modal-content">
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM KHÁCH HÀNG TIỀM NĂNG (LEAD) MỚI')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddLeadModal(false)}>✕</button>
+              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setShowAddLeadModal(false)}>
+                <X size={16} />
+              </button>
             </div>
             <form onSubmit={handleAddLead}>
               <div className="modal-body">
@@ -1962,7 +2020,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   {leadFiles.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
                       {leadFiles.map((f, idx) => (
-                        <span key={idx} className="lead-file-badge">📎 {f.name}</span>
+                        <span key={idx} className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Paperclip size={12} />
+                          <span>{f.name}</span>
+                        </span>
                       ))}
                     </div>
                   )}
@@ -1983,7 +2044,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <div className="modal-content">
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CẬP NHẬT THÔNG TIN LEAD')}: {selectedLead.name}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditLeadModal(false)}>✕</button>
+              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setShowEditLeadModal(false)}>
+                <X size={16} />
+              </button>
             </div>
             <form onSubmit={handleEditLead}>
               <div className="modal-body">
@@ -2028,8 +2091,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
                       {leadFiles.map((f, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span className="lead-file-badge">📎 {f.name}</span>
-                          <button type="button" style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }} onClick={() => setLeadFiles(prev => prev.filter((_, i) => i !== idx))}>✕</button>
+                          <span className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Paperclip size={12} />
+                            <span>{f.name}</span>
+                          </span>
+                          <button type="button" style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} onClick={() => setLeadFiles(prev => prev.filter((_, i) => i !== idx))}>
+                            <X size={12} />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -2048,10 +2116,15 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       {previewImage && (
         <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 1200 }}>
           <div className="modal-content" style={{ maxWidth: '90%', maxHeight: '90%', padding: '10px', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <button type="button" className="btn btn-sm btn-outline" style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '1.2rem', zIndex: 10 }} onClick={() => setPreviewImage(null)}>✕</button>
+            <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 10 }} onClick={() => setPreviewImage(null)}>
+              <X size={20} />
+            </button>
             <img src={previewImage} alt="Preview Zoom" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
             <div style={{ textAlign: 'center', marginTop: '10px' }}>
-              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary">📥 {t('Tải Ảnh Về')}</a>
+              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                <Download size={14} />
+                <span>{t('Tải Ảnh Về')}</span>
+              </a>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus, Trash2, Pencil, Undo2 } from 'lucide-react';
 
 interface DeliveryProps {
   pos: any[];
@@ -460,7 +461,9 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
           <p className="page-subtitle">{t('Gom đơn hàng đã đóng gói theo khu vực, lập chuyến xe ghép và xác nhận giao lẻ hoặc Force Close đơn.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary btn-symbol" onClick={handleOpenAddTrip} title={t('Lập Chuyến Xe Ghép')}>+</button>
+          <button className="btn btn-primary btn-symbol" onClick={handleOpenAddTrip} title={t('Lập Chuyến Xe Ghép')}>
+            <Plus size={18} />
+          </button>
         )}
       </div>
 
@@ -596,8 +599,12 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
             <div style={{ display: 'flex', gap: '8px' }}>
               {selectedTrip.status === 'planning' && (currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
                 <>
-                  <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditTrip(selectedTrip)} title={t('Sửa')}>✎</button>
-                  <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteTrip(selectedTrip.id)} title={t('Xóa')}>✕</button>
+                  <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditTrip(selectedTrip)} title={t('Sửa')}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteTrip(selectedTrip.id)} title={t('Xóa')}>
+                    <Trash2 size={14} />
+                  </button>
                 </>
               )}
               <button className="btn btn-sm btn-outline" onClick={() => setSelectedTrip(null)}>{t('Đóng chi tiết')}</button>
@@ -624,8 +631,9 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               <button className="btn btn-success" style={{ flex: 1 }} onClick={() => updateTripStatus(selectedTrip.id, 'completed')}>
                 {t('Giao Thành Công Toàn Bộ')}
               </button>
-              <button className="btn btn-outline" style={{ flex: 1, borderColor: 'var(--color-warning)', color: 'var(--color-warning)', fontWeight: 600 }} onClick={() => handleRevertTripStatus(selectedTrip)}>
-                {t('↩ Hoãn Giao Hàng')}
+              <button className="btn btn-outline" style={{ flex: 1, borderColor: 'var(--color-warning)', color: 'var(--color-warning)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => handleRevertTripStatus(selectedTrip)}>
+                <Undo2 size={14} />
+                <span>{t('Hoãn Giao Hàng')}</span>
               </button>
             </div>
           )}

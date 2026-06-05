@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 interface InventoryProps {
   currentUser: UserProfile;
@@ -264,7 +265,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
         {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
           <div style={{ display: 'flex', gap: '12px' }}>
             <button className="btn btn-outline" onClick={handleOpenAddExport}>{t('Tạo Phiếu Xuất Kho')}</button>
-            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddModal(true)} title={t('Thêm Vật Tư Mới')}>+</button>
+            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddModal(true)} title={t('Thêm Vật Tư Mới')}>
+              <Plus size={18} />
+            </button>
           </div>
         )}
       </div>
@@ -346,8 +349,12 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                               <button className="btn btn-sm btn-outline" onClick={() => handleOpenAdjust(item)}>
                                 {t('Cập Nhật Tồn Kho')}
                               </button>
-                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEdit(item)} title={t('Sửa')}>✎</button>
-                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteItem(item.id)} title={t('Xóa')}>✕</button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEdit(item)} title={t('Sửa')}>
+                                <Pencil size={14} />
+                              </button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteItem(item.id)} title={t('Xóa')}>
+                                <Trash2 size={14} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -667,7 +674,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
             </div>
             <div className="modal-footer">
               {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsModal(false); handleOpenEdit(selectedItem); }} title={t('Sửa')}>✎</button>
+                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsModal(false); handleOpenEdit(selectedItem); }} title={t('Sửa')}>
+                  <Pencil size={16} />
+                </button>
               )}
               <button className="btn btn-outline" onClick={() => setShowDetailsModal(false)}>{t('Đóng')}</button>
             </div>

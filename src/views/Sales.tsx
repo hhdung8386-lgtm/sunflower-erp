@@ -2,6 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
+import { 
+  Plus, 
+  Trash2, 
+  Pencil, 
+  X, 
+  Check, 
+  Folder, 
+  FileText, 
+  FileSpreadsheet
+} from 'lucide-react';
 
 interface SalesProps {
   pos: any[];
@@ -608,7 +618,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
-          <button className="btn btn-primary btn-symbol" onClick={handleOpenAddModal} title={t('TẠO ĐƠN HÀNG PO MỚI')}>+</button>
+          <button className="btn btn-primary btn-symbol" onClick={handleOpenAddModal} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
+            <Plus size={18} />
+          </button>
         )}
       </div>
 
@@ -622,9 +634,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '400px', flex: 1 }}
             />
-            <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>×</button>
-            <button className="btn btn-outline" onClick={handleExportCSV}>
-              {t('Xuất Excel')}
+            <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>
+              <X size={16} />
+            </button>
+            <button className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
+              <FileSpreadsheet size={16} />
+              <span>{t('Xuất Excel')}</span>
             </button>
           </div>
 
@@ -694,8 +709,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               <div style={{ display: 'flex', gap: '8px' }}>
                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                   <>
-                    <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditModal(selectedPO)} title={t('Sửa')}>✎</button>
-                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeletePO(selectedPO.id)} title={t('Xóa')}>✕</button>
+                    <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditModal(selectedPO)} title={t('Sửa')}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeletePO(selectedPO.id)} title={t('Xóa')}>
+                      <Trash2 size={14} />
+                    </button>
                   </>
                 )}
                 <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>{t('Đóng chi tiết')}</button>
@@ -732,7 +751,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       key={state.value} 
                       className={`timeline-step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
                     >
-                      <div className="step-bubble">{isCompleted ? '✓' : idx + 1}</div>
+                      <div className="step-bubble">
+                        {isCompleted ? <Check size={12} strokeWidth={3} /> : idx + 1}
+                      </div>
                       <span className="step-label">{t(state.label)}</span>
                     </div>
                   );
@@ -981,13 +1002,14 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <button 
                         type="button" 
                         className="btn btn-sm btn-outline" 
-                        style={{ marginBottom: '12px', width: '100%', display: 'block' }}
+                        style={{ marginBottom: '12px', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                         onClick={() => {
                           setIsEditRepoMode(false);
                           setShowRepoModal(true);
                         }}
                       >
-                        📁 {t('Nhúp từ kho tệp khách hàng')}
+                        <Folder size={14} />
+                        <span>{t('Nhúp từ kho tệp khách hàng')}</span>
                       </button>
                     )}
                     <div className="form-group" style={{ marginBottom: '8px' }}>
@@ -1053,7 +1075,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                   <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h4 style={{ color: 'var(--color-primary)' }}>{t('2. Danh Sách Mã Hàng Chọn Đặt (PO Items)')}</h4>
-                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>+</button>
+                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>
+                        <Plus size={16} />
+                      </button>
                     </div>
 
                     <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
@@ -1082,8 +1106,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                               <td>{item.purchasePrice?.toLocaleString()} đ</td>
                               <td>
                                 <div style={{ display: 'flex', gap: '6px' }}>
-                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>✎</button>
-                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>✕</button>
+                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>
+                                    <Trash2 size={14} />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -1151,13 +1179,14 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <button 
                         type="button" 
                         className="btn btn-sm btn-outline" 
-                        style={{ marginBottom: '12px', width: '100%', display: 'block' }}
+                        style={{ marginBottom: '12px', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                         onClick={() => {
                           setIsEditRepoMode(true);
                           setShowRepoModal(true);
                         }}
                       >
-                        📁 {t('Nhúp từ kho tệp khách hàng')}
+                        <Folder size={14} />
+                        <span>{t('Nhúp từ kho tệp khách hàng')}</span>
                       </button>
                     )}
                     <div className="form-group" style={{ marginBottom: '8px' }}>
@@ -1223,7 +1252,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                   <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h4 style={{ color: 'var(--color-primary)' }}>{t('2. Danh Sách Mã Hàng Chọn Đặt (PO Items)')}</h4>
-                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>+</button>
+                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>
+                        <Plus size={16} />
+                      </button>
                     </div>
 
                     <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
@@ -1252,8 +1283,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                               <td>{item.purchasePrice?.toLocaleString()} đ</td>
                               <td>
                                 <div style={{ display: 'flex', gap: '6px' }}>
-                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>✎</button>
-                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>✕</button>
+                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>
+                                    <Trash2 size={14} />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -1406,12 +1441,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         <div className="modal-overlay" style={{ zIndex: 1100 }}>
           <div className="modal-content" style={{ maxWidth: '600px', width: '90%' }}>
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>
-                📂 {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}: {
-                  isEditRepoMode 
-                    ? selectedPO.customerName 
-                    : customers.find(c => c.id === customerId)?.companyName || ''
-                }
+              <span style={{ fontWeight: 700, fontSize: '16px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Folder size={18} />
+                <span>
+                  {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}: {
+                    isEditRepoMode 
+                      ? selectedPO.customerName 
+                      : customers.find(c => c.id === customerId)?.companyName || ''
+                  }
+                </span>
               </span>
               <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowRepoModal(false)}>{t('Đóng')}</button>
             </div>
@@ -1444,13 +1482,17 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       }, {})
                     ).map(([folderName, folderFiles]: any) => (
                       <div key={folderName} style={{ marginBottom: '16px' }}>
-                        <h5 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '4px', marginBottom: '8px', color: 'var(--color-primary)' }}>
-                          📁 {folderName}
+                        <h5 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '4px', marginBottom: '8px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Folder size={14} />
+                          <span>{folderName}</span>
                         </h5>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           {folderFiles.map((file: any, fIdx: number) => (
                             <div key={fIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', backgroundColor: 'var(--color-bg-light)', border: '1px solid var(--color-border-light)', borderRadius: '4px' }}>
-                              <span style={{ fontWeight: 500, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px' }} title={file.name}>📄 {file.name}</span>
+                              <span style={{ fontWeight: 500, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px', display: 'inline-flex', alignItems: 'center', gap: '6px' }} title={file.name}>
+                                <FileText size={14} />
+                                <span>{file.name}</span>
+                              </span>
                               <div>
                                 <select 
                                   onChange={(e) => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
+import { Plus, Trash2, Pencil, X, FileSpreadsheet } from 'lucide-react';
 
 interface ProductionProps {
   pos: any[];
@@ -644,8 +645,9 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <span className="card-title" style={{ margin: 0 }}>{t('Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong')}</span>
-              <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>
-                {t('Xuất Excel')}
+              <button className="btn btn-sm btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
+                <FileSpreadsheet size={16} />
+                <span>{t('Xuất Excel')}</span>
               </button>
             </div>
             <div className="table-container">
@@ -691,8 +693,12 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                               <button className="btn btn-sm btn-success" onClick={() => setSelectedLsx(cmd)}>
                                 {t('Báo Cáo Hoàn Thành')}
                               </button>
-                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(cmd)} title={t('Sửa')}>✎</button>
-                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(cmd.id)} title={t('Xóa')}>✕</button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(cmd)} title={t('Sửa')}>
+                                <Pencil size={14} />
+                              </button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(cmd.id)} title={t('Xóa')}>
+                                <Trash2 size={14} />
+                              </button>
                             </>
                           ) : (
                             <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>{t('Chi Tiết')}</button>
@@ -987,8 +993,12 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
               <div style={{ display: 'flex', gap: '8px' }}>
                 {selectedLsx.status === 'producing' && !isOperator && (currentUser.role === 'admin' || currentUser.role === 'producer') && (
                   <>
-                    <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(selectedLsx)} title={t('Sửa')}>✎</button>
-                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(selectedLsx.id)} title={t('Xóa')}>✕</button>
+                    <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(selectedLsx)} title={t('Sửa')}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(selectedLsx.id)} title={t('Xóa')}>
+                      <Trash2 size={14} />
+                    </button>
                   </>
                 )}
                 <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(null)}>{t('Đóng')}</button>
@@ -1081,7 +1091,9 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           <div className="modal-content" style={{ maxWidth: '450px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700 }}>{t('BÀN GIAO / CHUYỂN LỆNH SẢN XUẤT')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowTransferModal(false)}>✕</button>
+              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setShowTransferModal(false)}>
+                <X size={16} />
+              </button>
             </div>
             <form onSubmit={handleTransferSubmit}>
               <div className="modal-body">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus, Trash2, Pencil, X, Download, FileSpreadsheet } from 'lucide-react';
 
 interface PurchaseProps {
   pos: any[];
@@ -517,8 +518,12 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn btn-outline btn-symbol" onClick={() => setShowAddSupplierModal(true)} title={t('Thêm Nhà Cung Cấp')}>+</button>
-            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddPurModal(true)} title={t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}>+</button>
+            <button className="btn btn-outline btn-symbol" onClick={() => setShowAddSupplierModal(true)} title={t('Thêm Nhà Cung Cấp')}>
+              <Plus size={18} />
+            </button>
+            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddPurModal(true)} title={t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}>
+              <Plus size={18} />
+            </button>
           </div>
         )}
       </div>
@@ -527,8 +532,9 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <span className="card-title" style={{ margin: 0 }}>{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
-            <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>
-              📥 {t('Xuất Excel')}
+            <button className="btn btn-sm btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
+              <FileSpreadsheet size={16} />
+              <span>{t('Xuất Excel')}</span>
             </button>
           </div>
           <div className="table-container">
@@ -588,8 +594,12 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                        <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditSupplier(sup)} title={t('Sửa')}>✎</button>
-                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteSupplier(sup.id)} title={t('Xóa')}>✕</button>
+                        <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditSupplier(sup)} title={t('Sửa')}>
+                          <Pencil size={14} />
+                        </button>
+                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteSupplier(sup.id)} title={t('Xóa')}>
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -672,8 +682,12 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
               <div style={{ display: 'flex', gap: '8px' }}>
                 {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
                   <>
-                    <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditPur(selectedPur)} title={t('Sửa')}>✎</button>
-                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeletePur(selectedPur.id)} title={t('Xóa')}>✕</button>
+                    <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditPur(selectedPur)} title={t('Sửa')}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeletePur(selectedPur.id)} title={t('Xóa')}>
+                      <Trash2 size={14} />
+                    </button>
                   </>
                 )}
                 <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
@@ -1040,7 +1054,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   <h4 style={{ color: 'var(--color-primary)' }}>{t('Danh Sách Hợp Đồng Cung Ứng')}</h4>
                   {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
                     <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => setShowAddContractModal(true)} title={t('Thêm Hợp Đồng')}>
-                      +
+                      <Plus size={14} />
                     </button>
                   )}
                 </div>
@@ -1076,7 +1090,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                           <td>
                             {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteContract(contr.id)} title={t('Xóa')}>
-                                ✕
+                                <Trash2 size={14} />
                               </button>
                             )}
                           </td>

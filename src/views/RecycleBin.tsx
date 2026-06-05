@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Trash2, Archive, RefreshCw } from 'lucide-react';
 
 interface RecycleBinProps {
   currentUser: UserProfile;
@@ -120,7 +121,10 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1 className="view-title">{t('Kho Rác Hệ Thống')}</h1>
+          <h1 className="view-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Trash2 size={24} style={{ color: 'var(--accent-red)' }} />
+            <span>{t('Kho Rác Hệ Thống')}</span>
+          </h1>
           <p className="view-subtitle">{t('Quản lý các tài liệu đã bị xóa tạm thời (Soft-deleted)')}</p>
         </div>
       </div>
@@ -158,7 +162,8 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
           <div>{t('Đang tải dữ liệu Kho Rác...')}</div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card text-center text-muted" style={{ padding: '50px' }}>
+        <div className="card text-center text-muted" style={{ padding: '50px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <Archive size={48} style={{ color: '#94a3b8', marginBottom: '12px' }} />
           <p>{t('Kho rác trống. Không có tài liệu nào bị xóa tạm thời.')}</p>
         </div>
       ) : (
@@ -204,20 +209,28 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
                         border: '1px solid var(--accent-green)',
                         marginRight: '8px',
                         padding: '4px 10px',
-                        fontSize: '0.85rem'
+                        fontSize: '0.85rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      {t('Khôi phục')}
+                      <RefreshCw size={14} />
+                      <span>{t('Khôi phục')}</span>
                     </button>
                     <button
                       onClick={() => handleHardDelete(item)}
                       className="btn btn-danger"
                       style={{
                         padding: '4px 10px',
-                        fontSize: '0.85rem'
+                        fontSize: '0.85rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      {t('Xóa vĩnh viễn')}
+                      <Trash2 size={14} />
+                      <span>{t('Xóa vĩnh viễn')}</span>
                     </button>
                   </td>
                 </tr>

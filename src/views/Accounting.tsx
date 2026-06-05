@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { BarChart } from '../components/VisualCharts';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 interface AccountingProps {
   pos: any[];
@@ -448,7 +449,9 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
               <button className="btn btn-primary btn-symbol" onClick={() => {
                 setAddDueDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
                 setShowAddInvoiceModal(true);
-              }} title={t('Tạo Hóa Đơn Hàng Thủ Công')}>+</button>
+              }} title={t('Tạo Hóa Đơn Hàng Thủ Công')}>
+                <Plus size={18} />
+              </button>
             </div>
           )}
           <div className="table-container">
@@ -503,8 +506,12 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                           <button className="btn btn-sm btn-outline" onClick={() => { setSelectedInvoice(inv); setShowDetailsInvoiceModal(true); }}>{t('Chi Tiết')}</button>
                           {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
                             <>
-                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditInvoice(inv)} title={t('Sửa')}>✎</button>
-                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteInvoice(inv.id)} title={t('Xóa')}>✕</button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditInvoice(inv)} title={t('Sửa')}>
+                                <Pencil size={14} />
+                              </button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteInvoice(inv.id)} title={t('Xóa')}>
+                                <Trash2 size={14} />
+                              </button>
                             </>
                           )}
                           {balance > 0 && (
@@ -601,7 +608,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                               onClick={() => handleOpenCostModal(po)}
                               title={t('Sửa Chi Phí')}
                             >
-                              ✎
+                              <Pencil size={14} />
                             </button>
                             <button className="btn btn-sm btn-outline" onClick={() => printWorkOrder(po)}>{t('In Phiếu')}</button>
                           </div>
@@ -845,7 +852,9 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
             </div>
             <div className="modal-footer">
               {(currentUser.role === 'admin' || currentUser.role === 'accountant') && (
-                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsInvoiceModal(false); handleOpenEditInvoice(selectedInvoice); }} title={t('Sửa')}>✎</button>
+                <button className="btn btn-primary btn-symbol" onClick={() => { setShowDetailsInvoiceModal(false); handleOpenEditInvoice(selectedInvoice); }} title={t('Sửa')}>
+                  <Pencil size={16} />
+                </button>
               )}
               <button className="btn btn-outline" onClick={() => setShowDetailsInvoiceModal(false)}>{t('Đóng')}</button>
             </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { X } from 'lucide-react';
 
 interface FloatingChatProps {
   currentUser: UserProfile;
@@ -305,11 +306,12 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({
                   background: 'none',
                   color: 'var(--color-text-muted)',
                   cursor: 'pointer',
-                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
                   padding: '0 4px'
                 }}
               >
-                ✕
+                <X size={14} />
               </button>
             </div>
           )}
