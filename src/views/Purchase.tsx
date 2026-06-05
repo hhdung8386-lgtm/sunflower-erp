@@ -74,12 +74,57 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   const [editAssignedPurchaserId, setEditAssignedPurchaserId] = useState('');
 
   const purchasers = (users || []).filter(u => u.role === 'purchaser');
-  const filteredPurchaseOrders = currentUser.role === 'admin'
-    ? purchaseOrders
-    : purchaseOrders.filter(pur => 
-        pur.assignedPurchaserId === currentUser.uid || 
-        (!pur.assignedPurchaserId && (pur.createdBy || '').includes(currentUser.displayName))
-      );
+
+  const handleExportCSV = () => {
+    const headers = [
+      t('Mã Đơn Mua'),
+      t('Nhà Cung Cấp'),
+      t('Chi Tiết Vật Tư'),
+      t('Giá Trị'),
+      t('PO Liên Kết'),
+      t('Người Phụ Trách'),
+      t('Ngày Nhận Dự Kiến'),
+      t('Trạng Thái')
+    ];
+
+    const rows = filteredPurchaseOrders.map(pur => [
+      pur.purCode,
+      pur.supplierName,
+      pur.items?.map((i: any) => `${i.materialName} (${i.quantity} ${i.unit})`).join('; ') || '',
+      pur.totalPrice,
+      pur.linkedPoCode || '',
+      pur.assignedPurchaserName || '',
+      pur.expectedReceiveDate ? new Date(pur.expectedReceiveDate).toLocaleDateString('vi-VN') : '',
+      pur.status === 'received' ? t('Đã nhận kho') : t(pur.status)
+    ]);
+
+    let csvContent = '\uFEFF'; // BOM
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(val => {
+        const strVal = String(val ?? '');
+        return `"${strVal.replace(/"/g, '""')}"`;
+      });
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ERP_DanhSach_MuaHang_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredPurchaseOrders = (purchaseOrders || [])
+    .filter(pur => !pur.deleted)
+    .filter(pur => {
+      if (currentUser.role === 'admin' || currentUser.role === 'accountant') return true;
+      return pur.assignedPurchaserId === currentUser.uid || 
+             (!pur.assignedPurchaserId && (pur.createdBy || '').includes(currentUser.displayName));
+    });
 
   const handleOpenEditSupplier = (sup: any) => {
     setSelectedSupplier(sup);
@@ -112,10 +157,18 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   };
 
   const handleDeleteSupplier = async (supId: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa nhà cung cấp này?'))) {
-      await dbService.deleteDocument('suppliers', supId);
+    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
+    if (password === 'admin123' || password === '123456') {
+      await dbService.updateDocument('suppliers', supId, {
+        deleted: true,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
+      });
       const updated = await dbService.getCollection('suppliers');
       setSuppliers(updated);
+      alert(t('Đã chuyển nhà cung cấp vào Kho Rác.'));
+    } else if (password !== null) {
+      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
     }
   };
 
@@ -172,10 +225,18 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
   };
 
   const handleDeletePur = async (purId: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa đơn mua hàng này?'))) {
-      await dbService.deleteDocument('purchase_orders', purId);
+    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
+    if (password === 'admin123' || password === '123456') {
+      await dbService.updateDocument('purchase_orders', purId, {
+        deleted: true,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
+      });
       setSelectedPur(null);
       onRefresh();
+      alert(t('Đã chuyển đơn mua hàng NCC vào Kho Rác.'));
+    } else if (password !== null) {
+      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
     }
   };
 
@@ -464,7 +525,12 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
 
       <div className="details-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <div className="card">
-          <span className="card-title">{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span className="card-title" style={{ margin: 0 }}>{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
+            <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>
+              📥 {t('Xuất Excel')}
+            </button>
+          </div>
           <div className="table-container">
             <table>
               <thead>
@@ -513,7 +579,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 </tr>
               </thead>
               <tbody>
-                {suppliers.map(sup => (
+                {suppliers.filter(s => !s.deleted).map(sup => (
                   <tr key={sup.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedSupplier(sup)}>
                     <td style={{ fontWeight: 600 }}>{sup.supplierName}</td>
                     <td>

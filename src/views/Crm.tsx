@@ -17,6 +17,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [filterType, setFilterType] = useState<'all' | 'needs_care'>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   
+  const [chartMonth, setChartMonth] = useState<string>('all');
+  const [chartYear, setChartYear] = useState<string>('2026');
+  const [showTop15, setShowTop15] = useState<boolean>(false);
+  
   // Tab state
   const [crmActiveTab, setCrmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
 
@@ -44,6 +48,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [leadReminderTime, setLeadReminderTime] = useState('');
   const [leadFiles, setLeadFiles] = useState<any[]>([]);
   
+  // File Repository states
+  const [newFolderName, setNewFolderName] = useState('');
+  const [selectedFolderForUpload, setSelectedFolderForUpload] = useState('');
+  const [repoUploadFile, setRepoUploadFile] = useState('');
+  const [repoUploadFileName, setRepoUploadFileName] = useState('');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -60,6 +71,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [debtLimit, setDebtLimit] = useState(0);
   const [paymentTerms, setPaymentTerms] = useState('30 ngày');
   const [note, setNote] = useState('');
+  
+  const [procurementPhone, setProcurementPhone] = useState('');
+  const [warehousePhone, setWarehousePhone] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
 
   const saleUsers = users.filter(u => u.role === 'sale');
 
@@ -129,6 +144,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setDebtLimit(50000000);
     setPaymentTerms('30 ngày');
     setNote('');
+    setProcurementPhone('');
+    setWarehousePhone('');
+    setBankAccount('');
     setShowAddModal(true);
   };
 
@@ -145,6 +163,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setDebtLimit(cust.debtLimit);
     setPaymentTerms(cust.paymentTerms);
     setNote(cust.note);
+    setProcurementPhone(cust.procurementPhone || '');
+    setWarehousePhone(cust.warehousePhone || '');
+    setBankAccount(cust.bankAccount || '');
     setSelectedCustomer(cust);
     setShowEditModal(true);
   };
@@ -166,6 +187,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       debtLimit: Number(debtLimit),
       paymentTerms,
       note,
+      procurementPhone,
+      warehousePhone,
+      bankAccount,
+      files: [], // Repository for custom folders/files
       lastOrderAt: null,
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       createdAt: new Date().toISOString(),
@@ -199,6 +224,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       debtLimit: Number(debtLimit),
       paymentTerms,
       note,
+      procurementPhone,
+      warehousePhone,
+      bankAccount,
       updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       updatedAt: new Date().toISOString()
     });
@@ -210,11 +238,137 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Delete customer
   const handleDeleteCustomer = async (id: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa khách hàng này?'))) {
-      await dbService.deleteDocument('customers', id);
+    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
+    if (password === 'admin123' || password === '123456') {
+      await dbService.updateDocument('customers', id, {
+        deleted: true,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
+      });
       setSelectedCustomer(null);
       onRefresh();
+      alert(t('Đã chuyển khách hàng vào Kho Rác.'));
+    } else if (password !== null) {
+      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
     }
+  };
+
+  const handleRepoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRepoUploadFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setRepoUploadFile(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Add folder
+  const handleAddFolder = async () => {
+    if (!selectedCustomer) return;
+    const folderNameTrim = newFolderName.trim();
+    if (!folderNameTrim) return;
+    
+    const updatedFiles = selectedCustomer.files || [];
+    const folderExists = updatedFiles.some((f: any) => f.folder === folderNameTrim);
+    if (folderExists) {
+      alert(t('Thư mục này đã tồn tại.'));
+      return;
+    }
+    
+    const newPlaceholder = {
+      folder: folderNameTrim,
+      name: '.placeholder',
+      base64: '',
+      createdAt: new Date().toISOString()
+    };
+    
+    const newFiles = [...updatedFiles, newPlaceholder];
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      files: newFiles
+    });
+    
+    setNewFolderName('');
+    setSelectedCustomer((prev: any) => ({ ...prev, files: newFiles }));
+    onRefresh();
+    alert(t('Đã tạo thư mục thành công.'));
+  };
+
+  // Upload file to customer repo
+  const handleUploadRepoFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    if (!selectedFolderForUpload || !repoUploadFile || !repoUploadFileName) {
+      alert(t('Vui lòng chọn thư mục và chọn file để tải lên!'));
+      return;
+    }
+    
+    const updatedFiles = selectedCustomer.files || [];
+    const filteredFiles = updatedFiles.filter((f: any) => !(f.folder === selectedFolderForUpload && f.name === '.placeholder'));
+    
+    const newFileObj = {
+      folder: selectedFolderForUpload,
+      name: repoUploadFileName,
+      base64: repoUploadFile,
+      createdAt: new Date().toISOString()
+    };
+    
+    const newFiles = [...filteredFiles, newFileObj];
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      files: newFiles
+    });
+    
+    setRepoUploadFile('');
+    setRepoUploadFileName('');
+    setSelectedCustomer((prev: any) => ({ ...prev, files: newFiles }));
+    onRefresh();
+    alert(t('Đã tải tệp lên kho lưu trữ thành công.'));
+  };
+
+  // Delete file/folder from customer repo
+  const handleDeleteRepoFile = async (folder: string, name: string) => {
+    if (!selectedCustomer) return;
+    if (!window.confirm(t('Bạn có chắc chắn muốn xóa tệp này khỏi kho lưu trữ?'))) {
+      return;
+    }
+    const updatedFiles = selectedCustomer.files || [];
+    const newFiles = updatedFiles.filter((f: any) => !(f.folder === folder && f.name === name));
+    
+    const folderFiles = newFiles.filter((f: any) => f.folder === folder);
+    if (folderFiles.length === 0) {
+      newFiles.push({
+        folder,
+        name: '.placeholder',
+        base64: '',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      files: newFiles
+    });
+    
+    setSelectedCustomer((prev: any) => ({ ...prev, files: newFiles }));
+    onRefresh();
+    alert(t('Đã xóa tệp thành công.'));
+  };
+
+  const handleDeleteRepoFolder = async (folder: string) => {
+    if (!selectedCustomer) return;
+    if (!window.confirm(t('CẢNH BÁO: Xóa thư mục sẽ xóa toàn bộ các tệp tin bên trong thư mục này. Bạn có chắc chắn muốn tiếp tục?'))) {
+      return;
+    }
+    const updatedFiles = selectedCustomer.files || [];
+    const newFiles = updatedFiles.filter((f: any) => f.folder !== folder);
+    
+    await dbService.updateDocument('customers', selectedCustomer.id, {
+      files: newFiles
+    });
+    
+    setSelectedCustomer((prev: any) => ({ ...prev, files: newFiles }));
+    onRefresh();
+    alert(t('Đã xóa thư mục thành công.'));
   };
 
   // Lead Helpers & Handlers
@@ -586,6 +740,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   // Filter and search
   const today = new Date();
   const filteredCustomers = customers.filter(c => {
+    if (c.deleted === true) return false;
     // Filter by sales rep role: only see assigned customers
     if (currentUser.role === 'sale' && c.assignedSaleId && c.assignedSaleId !== currentUser.uid) {
       return false;
@@ -603,15 +758,37 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     return matchesSearch;
   });
 
-  // Top 5 customers by sales volume
+  // Top 5/15 customers by sales volume with time filters
   const topCustomerSales = customers
-    .map(c => ({
-      label: c.companyName,
-      value: pos.filter(po => po.customerId === c.id).length
-    }))
+    .filter(c => !c.deleted)
+    .map(c => {
+      const customerPOs = pos.filter(po => {
+        if (po.deleted === true) return false;
+        if (po.customerId !== c.id) return false;
+        
+        // Month and Year filter
+        if (po.orderDate) {
+          const poDate = new Date(po.orderDate);
+          const y = String(poDate.getFullYear());
+          const m = String(poDate.getMonth() + 1);
+          
+          if (chartYear !== 'all' && y !== chartYear) return false;
+          if (chartMonth !== 'all' && m !== chartMonth) return false;
+        } else {
+          if (chartYear !== 'all' || chartMonth !== 'all') return false;
+        }
+        return true;
+      });
+
+      return {
+        label: c.companyName,
+        value: customerPOs.length
+      };
+    })
     .filter(item => item.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
+    .sort((a, b) => b.value - a.value);
+
+  const chartData = topCustomerSales.slice(0, showTop15 ? 15 : 5);
 
   return (
     <div className="crm-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -645,15 +822,48 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         <>
           {/* Top customer chart */}
           {topCustomerSales.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">{t('Sản Lượng Đơn Hàng Theo Khách Hàng (Top 5)')}</span>
-          </div>
-          <div style={{ maxWidth: '600px', width: '100%' }}>
-            <HorizontalBarChart data={topCustomerSales} valueSuffix={` ${t('đơn')}`} />
-          </div>
-        </div>
-      )}
+            <div className="card">
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <span className="card-title">
+                  {t('Sản Lượng Đơn Hàng Theo Khách Hàng')} ({showTop15 ? t('Top 15') : t('Top 5')})
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <select 
+                    value={chartYear} 
+                    onChange={(e) => setChartYear(e.target.value)}
+                    style={{ padding: '4px 8px', fontSize: '12px', width: '90px' }}
+                  >
+                    <option value="all">{t('Tất cả năm')}</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                  </select>
+                  <select 
+                    value={chartMonth} 
+                    onChange={(e) => setChartMonth(e.target.value)}
+                    style={{ padding: '4px 8px', fontSize: '12px', width: '110px' }}
+                  >
+                    <option value="all">{t('Tất cả tháng')}</option>
+                    {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(m => (
+                      <option key={m} value={m}>{t('Tháng')} {m}</option>
+                    ))}
+                  </select>
+                  <button 
+                    type="button"
+                    className="btn btn-sm btn-outline" 
+                    onClick={() => setShowTop15(!showTop15)}
+                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                  >
+                    {showTop15 ? t('Thu gọn (Top 5)') : t('Xem thêm (Top 15)')}
+                  </button>
+                </div>
+              </div>
+              <div style={{ width: '100%', padding: '10px 0' }}>
+                <div style={{ maxWidth: '700px', width: '100%' }}>
+                  <HorizontalBarChart data={chartData} valueSuffix={` ${t('đơn')}`} />
+                </div>
+              </div>
+            </div>
+          )}
 
       <div className="card">
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -958,6 +1168,149 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               </table>
             </div>
           </div>
+
+          {/* CUSTOMER FILE REPOSITORY CARD */}
+          <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <span className="card-title">📁 {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder={t('Tên thư mục mới...')} 
+                  value={newFolderName}
+                  onChange={e => setNewFolderName(e.target.value)}
+                  style={{ width: '180px', padding: '4px 8px', fontSize: '12.5px' }}
+                />
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleAddFolder}>
+                  + {t('Tạo Thư Mục')}
+                </button>
+              </div>
+            </div>
+            
+            <div style={{ padding: '16px 0 0 0', borderTop: '1px solid var(--color-border-light)', display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px' }}>
+              <div>
+                {!selectedCustomer.files || selectedCustomer.files.length === 0 ? (
+                  <p className="text-muted text-center" style={{ padding: '30px' }}>{t('Kho lưu trữ hiện tại trống. Vui lòng tạo thư mục và tải lên tệp tin.')}</p>
+                ) : (
+                  <div>
+                    {Object.entries(
+                      (selectedCustomer.files || []).reduce((acc: any, file: any) => {
+                        const f = file.folder || t('Chưa phân mục');
+                        if (!acc[f]) acc[f] = [];
+                        acc[f].push(file);
+                        return acc;
+                      }, {})
+                    ).map(([folderName, folderFiles]: any) => (
+                      <div key={folderName} style={{ marginBottom: '20px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border-light)', paddingBottom: '6px', marginBottom: '10px' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>📁 {folderName}</span>
+                          <button 
+                            type="button" 
+                            className="btn btn-sm btn-danger" 
+                            style={{ padding: '2px 8px', fontSize: '11px' }}
+                            onClick={() => handleDeleteRepoFolder(folderName)}
+                          >
+                            ✕ {t('Xóa thư mục')}
+                          </button>
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {folderFiles.map((file: any, fIdx: number) => {
+                            if (file.name === '.placeholder') return null;
+                            const isImage = file.base64?.startsWith('data:image/');
+                            return (
+                              <div key={fIdx} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px', backgroundColor: 'var(--color-bg-light)', border: '1px solid var(--color-border-light)', borderRadius: '4px' }}>
+                                {isImage ? (
+                                  <img 
+                                    src={file.base64} 
+                                    alt={file.name} 
+                                    style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--color-border)', cursor: 'pointer' }}
+                                    onClick={() => setPreviewImage(file.base64)}
+                                    title={t('Click để xem lớn')}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: '1.5rem' }}>📄</span>
+                                )}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
+                                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                    {t('Tải lên lúc')}: {file.createdAt ? new Date(file.createdAt).toLocaleString('vi-VN') : 'N/A'}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  {isImage && (
+                                    <button type="button" className="btn btn-sm btn-outline" style={{ padding: '2px 6px', fontSize: '11px' }} onClick={() => setPreviewImage(file.base64)}>
+                                      👁️ {t('Xem')}
+                                    </button>
+                                  )}
+                                  <a href={file.base64} download={file.name} className="btn btn-sm btn-primary" style={{ padding: '2px 6px', fontSize: '11px', textDecoration: 'none' }}>
+                                    📥 {t('Tải')}
+                                  </a>
+                                  <button 
+                                    type="button" 
+                                    className="btn btn-sm btn-danger btn-symbol-sm" 
+                                    onClick={() => handleDeleteRepoFile(folderName, file.name)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {folderFiles.filter((f: any) => f.name !== '.placeholder').length === 0 && (
+                            <p className="text-muted" style={{ fontStyle: 'italic', fontSize: '12px', paddingLeft: '8px' }}>{t('Thư mục trống.')}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div style={{ borderLeft: '1px solid var(--color-border-light)', paddingLeft: '20px' }}>
+                <h4 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Tải Lên Tệp Tin')}</h4>
+                <form onSubmit={handleUploadRepoFile} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>{t('Thư mục lưu trữ *')}</label>
+                    <select 
+                      value={selectedFolderForUpload}
+                      onChange={e => setSelectedFolderForUpload(e.target.value)}
+                      required
+                      style={{ fontSize: '12.5px' }}
+                    >
+                      <option value="">-- {t('Chọn thư mục')} --</option>
+                      {Array.from(new Set((selectedCustomer.files || []).map((f: any) => f.folder))).map((folder: any) => (
+                        <option key={folder} value={folder}>{folder}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Chọn Tệp Tin *')}</label>
+                    <input 
+                      type="file" 
+                      onChange={handleRepoFileChange} 
+                      required 
+                      style={{ fontSize: '11px' }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tên Tệp Trên Hệ Thống *')}</label>
+                    <input 
+                      type="text" 
+                      value={repoUploadFileName}
+                      onChange={e => setRepoUploadFileName(e.target.value)}
+                      required
+                      placeholder={t('Tên file đính kèm...')}
+                      style={{ fontSize: '12.5px' }}
+                    />
+                  </div>
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
+                    📥 {t('Tải Lên Kho Tệp')}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
         </div>
       )}
       
@@ -1075,6 +1428,20 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
+                    <label>{t('SĐT Thu Mua')}</label>
+                    <input type="text" value={procurementPhone} onChange={e => setProcurementPhone(e.target.value)} placeholder={t('SĐT người làm việc mua hàng...')} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('SĐT Nhận Hàng / Kho')}</label>
+                    <input type="text" value={warehousePhone} onChange={e => setWarehousePhone(e.target.value)} placeholder={t('SĐT liên hệ kho hàng...')} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Tài Khoản Ngân Hàng')}</label>
+                  <input type="text" value={bankAccount} onChange={e => setBankAccount(e.target.value)} placeholder={t('Số tài khoản, tên ngân hàng, chi nhánh...')} />
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
                     <label>{t('Mã Số Thuế')}</label>
                     <input type="text" value={taxCode} onChange={e => setTaxCode(e.target.value)} />
                   </div>
@@ -1154,6 +1521,20 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     <label>{t('Số Điện Thoại')}</label>
                     <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
                   </div>
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('SĐT Thu Mua')}</label>
+                    <input type="text" value={procurementPhone} onChange={e => setProcurementPhone(e.target.value)} placeholder={t('SĐT người làm việc mua hàng...')} />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('SĐT Nhận Hàng / Kho')}</label>
+                    <input type="text" value={warehousePhone} onChange={e => setWarehousePhone(e.target.value)} placeholder={t('SĐT liên hệ kho hàng...')} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{t('Tài Khoản Ngân Hàng')}</label>
+                  <input type="text" value={bankAccount} onChange={e => setBankAccount(e.target.value)} placeholder={t('Số tài khoản, tên ngân hàng, chi nhánh...')} />
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
@@ -1660,6 +2041,18 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Image Preview Zoom Modal */}
+      {previewImage && (
+        <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 1200 }}>
+          <div className="modal-content" style={{ maxWidth: '90%', maxHeight: '90%', padding: '10px', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button type="button" className="btn btn-sm btn-outline" style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '1.2rem', zIndex: 10 }} onClick={() => setPreviewImage(null)}>✕</button>
+            <img src={previewImage} alt="Preview Zoom" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+            <div style={{ textAlign: 'center', marginTop: '10px' }}>
+              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary">📥 {t('Tải Ảnh Về')}</a>
+            </div>
           </div>
         </div>
       )}

@@ -34,6 +34,9 @@ export const PO_STATES = [
 
 export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, messages, users }) => {
   const { t } = useLanguage();
+  const isFull = currentUser.role === 'admin' || currentUser.role === 'accountant';
+  const isSaleOnly = currentUser.role === 'sale' || currentUser.role === 'designer';
+  const isPurchaseOnly = currentUser.role === 'purchaser';
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -89,6 +92,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const [editCorelFile, setEditCorelFile] = useState('');
   const [editContractFile, setEditContractFile] = useState('');
   const [editQuoteFile, setEditQuoteFile] = useState('');
+
+  const [customerPoCode, setCustomerPoCode] = useState('');
+  const [editCustomerPoCode, setEditCustomerPoCode] = useState('');
+  const [showRepoModal, setShowRepoModal] = useState(false);
+  const [isEditRepoMode, setIsEditRepoMode] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const handleLinkFileChange = (e: React.ChangeEvent<HTMLInputElement>, setBase64: (base64: string) => void) => {
     const file = e.target.files?.[0];
@@ -147,6 +156,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     setEditCorelFile(po.links?.corelLink || '');
     setEditContractFile(po.links?.contractLink || '');
     setEditQuoteFile(po.links?.quoteLink || '');
+    setEditCustomerPoCode(po.customerPoCode || '');
     setSelectedPO(po);
     setShowEditModal(true);
   };
@@ -174,6 +184,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     await dbService.updateDocument('pos', selectedPO.id, {
       expectedDeliveryDate: new Date(editExpectedDeliveryDate).toISOString(),
       notes: editNotes,
+      customerPoCode: editCustomerPoCode,
       items: poItems,
       totalAmount: subtotal,
       discountAmount,
@@ -197,10 +208,18 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   };
 
   const handleDeletePO = async (poId: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa đơn hàng PO này?'))) {
-      await dbService.deleteDocument('pos', poId);
+    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
+    if (password === 'admin123' || password === '123456') {
+      await dbService.updateDocument('pos', poId, {
+        deleted: true,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
+      });
       setSelectedPO(null);
       onRefresh();
+      alert(t('Đã chuyển đơn hàng PO vào Kho Rác.'));
+    } else if (password !== null) {
+      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
     }
   };
 
@@ -296,6 +315,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     setCorelFile('');
     setContractFile('');
     setQuoteFile('');
+    setCustomerPoCode('');
     setShowAddModal(true);
   };
 
@@ -415,10 +435,30 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     const subtotal = poItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.price)), 0);
     const discountAmount = Math.round(subtotal * (customer.discountRate / 100));
     const netAmount = subtotal - discountAmount;
-    const poCode = `PO-${new Date().toISOString().substring(2,7).replace('-','')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Auto sequential YYYYMM code
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `PO-${yyyy}${mm}-`;
+    
+    const monthPOs = pos.filter(p => p.poCode && p.poCode.startsWith(prefix));
+    let maxSeq = 0;
+    monthPOs.forEach(p => {
+      const parts = p.poCode.split('-');
+      if (parts.length === 3) {
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    });
+    const nextSeq = String(maxSeq + 1).padStart(4, '0');
+    const poCode = `${prefix}${nextSeq}`;
 
     const newPO = {
       poCode,
+      customerPoCode: customerPoCode || poCode, // If custom code empty, fallback to generated code
       customerId,
       customerName: customer.companyName,
       saleId: currentUser.uid,
@@ -499,13 +539,62 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     onRefresh();
   };
 
+  const handleExportCSV = () => {
+    const headers = [
+      t('Mã PO Nội bộ'),
+      t('Mã PO Khách hàng'),
+      t('Tên Khách Hàng'),
+      t('Ngày Đặt Hàng'),
+      t('Ngày Giao Dự Kiến'),
+      t('Tổng Giá Trị'),
+      t('Trạng Thái')
+    ];
+
+    const rows = filteredPOs.map(po => [
+      po.poCode,
+      po.customerPoCode || '',
+      po.customerName,
+      po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : '',
+      po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : '',
+      po.netAmount,
+      t(PO_STATES.find(s => s.value === po.status)?.label || po.status)
+    ]);
+
+    let csvContent = '\uFEFF'; // BOM for Excel UTF-8
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(val => {
+        const strVal = String(val ?? '');
+        return `"${strVal.replace(/"/g, '""')}"`;
+      });
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ERP_DanhSach_PO_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredPOs = pos.filter(po => {
-    // Filter by sale role: only show POs where saleId matches
-    if (currentUser.role === 'sale' && po.saleId && po.saleId !== currentUser.uid) {
-      return false;
+    if (po.deleted === true) return false;
+    
+    // Filter by sale role: only show POs where saleId matches or assignedSaleId matches or created by self
+    if (currentUser.role === 'sale') {
+      const createdBySelf = po.createdBy && po.createdBy.includes(currentUser.displayName);
+      const isOwner = po.saleId === currentUser.uid;
+      const isAssigned = po.assignedSaleId === currentUser.uid;
+      if (!isOwner && !isAssigned && !createdBySelf) {
+        return false;
+      }
     }
     return (
       po.poCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (po.customerPoCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       po.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       po.items.some((i: any) => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
     );
@@ -518,69 +607,81 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <h1 className="page-title">{t('TIẾP NHẬN ĐƠN HÀNG (SALES PO)')}</h1>
           <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
-        {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+        {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
           <button className="btn btn-primary btn-symbol" onClick={handleOpenAddModal} title={t('TẠO ĐƠN HÀNG PO MỚI')}>+</button>
         )}
       </div>
 
-      <div className="card">
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <input 
-            type="text" 
-            placeholder={t('Nhập mã PO, tên sản phẩm hoặc khách hàng...')} 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ maxWidth: '400px' }}
-          />
-          <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>✕</button>
-        </div>
+      {!selectedPO && (
+        <div className="card">
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <input 
+              type="text" 
+              placeholder={t('Nhập mã PO, tên sản phẩm hoặc khách hàng...')} 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ maxWidth: '400px', flex: 1 }}
+            />
+            <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>✕</button>
+            <button className="btn btn-outline" onClick={handleExportCSV}>
+              📥 {t('Xuất Excel')}
+            </button>
+          </div>
 
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Mã PO')}</th>
-                <th>{t('Tên Công Ty')}</th>
-                <th>{t('Sản Phẩm')}</th>
-                <th>{t('Số Lượng')}</th>
-                <th>{t('Thành Tiền')}</th>
-                <th>{t('Ngày Giao Dự Kiến')}</th>
-                <th>{t('Trạng Thái')}</th>
-                <th>{t('Thao Tác')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPOs.map(po => {
-                const item = po.items[0] || {};
-                return (
-                  <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPO(po)}>
-                    <td style={{ fontWeight: 600 }}>{po.poCode}</td>
-                    <td>{po.customerName}</td>
-                    <td style={{ fontWeight: 500 }}>{item.productName}</td>
-                    <td>{item.quantity?.toLocaleString()}</td>
-                    <td>{po.netAmount?.toLocaleString()} đ</td>
-                    <td>{new Date(po.expectedDeliveryDate).toLocaleDateString(t('vi-VN'))}</td>
-                    <td>
-                      <span className={`badge ${
-                        po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
-                        po.status === 'producing' ? 'badge-info' : 'badge-warning'
-                      }`}>{t(PO_STATES.find(s => s.value === po.status)?.label || '')}</span>
-                    </td>
-                    <td>
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(po)}>{t('Chi Tiết')}</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredPOs.length === 0 && (
+          <div className="table-container">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy đơn hàng PO nào.')}</td>
+                  <th>{t('Mã PO')}</th>
+                  <th>{t('Tên Công Ty')}</th>
+                  <th>{t('Sản Phẩm')}</th>
+                  <th>{t('Số Lượng')}</th>
+                  <th>{t('Thành Tiền')}</th>
+                  <th>{t('Ngày Giao Dự Kiến')}</th>
+                  <th>{t('Trạng Thái')}</th>
+                  <th>{t('Thao Tác')}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredPOs.map(po => {
+                  const item = po.items[0] || {};
+                  return (
+                    <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPO(po)}>
+                      <td style={{ fontWeight: 600 }}>
+                        {po.poCode}
+                        {po.customerPoCode && po.customerPoCode !== po.poCode && (
+                          <span style={{ display: 'block', fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>
+                            ({po.customerPoCode})
+                          </span>
+                        )}
+                      </td>
+                      <td>{po.customerName}</td>
+                      <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                      <td>{item.quantity?.toLocaleString()}</td>
+                      <td>{po.netAmount?.toLocaleString()} đ</td>
+                      <td>{new Date(po.expectedDeliveryDate).toLocaleDateString(t('vi-VN'))}</td>
+                      <td>
+                        <span className={`badge ${
+                          po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
+                          po.status === 'producing' ? 'badge-info' : 'badge-warning'
+                        }`}>{t(PO_STATES.find(s => s.value === po.status)?.label || '')}</span>
+                      </td>
+                      <td>
+                        <button className="btn btn-sm btn-outline" onClick={(e) => { e.stopPropagation(); setSelectedPO(po); }}>{t('Chi Tiết')}</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredPOs.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy đơn hàng PO nào.')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* PO DETAIL PANEL WITH 15-STATE TIMELINE */}
       {selectedPO && (
@@ -652,33 +753,79 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           <th>{t('Tên Hàng')}</th>
                           <th>{t('Quy Cách')}</th>
                           <th>{t('Số Lượng')}</th>
-                          <th>{t('Đơn Giá')}</th>
-                          <th>{t('Thành Tiền')}</th>
-                          <th>{t('Phân Bổ NCC')}</th>
+                          
+                          {/* Sale columns */}
+                          {(isFull || isSaleOnly) && (
+                            <>
+                              <th>{t('Đơn Giá Bán')}</th>
+                              <th>{t('Thành Tiền Bán')}</th>
+                            </>
+                          )}
+                          
+                          {/* Purchase columns */}
+                          {(isFull || isPurchaseOnly) && (
+                            <>
+                              <th>{t('Nhà Cung Cấp')}</th>
+                              <th>{t('Đơn Giá Mua')}</th>
+                              <th>{t('Thành Tiền Mua')}</th>
+                            </>
+                          )}
+                          
+                          {/* Profit columns */}
+                          {isFull && (
+                            <th>{t('Lợi Nhuận Gộp')}</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedPO.items?.map((item: any, idx: number) => (
-                          <tr key={item.itemId || idx}>
-                            <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
-                            <td>{item.productName}</td>
-                            <td style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                              {item.size} ({item.material})
-                            </td>
-                            <td>{item.quantity?.toLocaleString()}</td>
-                            <td>{item.price?.toLocaleString()} đ</td>
-                            <td>{(item.quantity * item.price)?.toLocaleString()} đ</td>
-                            <td>
-                              {item.supplierName ? (
-                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                  {item.supplierName} ({item.purchasePrice?.toLocaleString()} đ)
-                                </span>
-                              ) : (
-                                <span style={{ fontStyle: 'italic', color: 'var(--color-warning)' }}>{t('Chưa phân bổ')}</span>
+                        {selectedPO.items?.map((item: any, idx: number) => {
+                          const sellingTotal = item.quantity * item.price;
+                          const buyingTotal = item.quantity * (item.purchasePrice || 0);
+                          const profit = sellingTotal - buyingTotal;
+                          
+                          return (
+                            <tr key={item.itemId || idx}>
+                              <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
+                              <td>{item.productName}</td>
+                              <td style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                {item.size} ({item.material})
+                              </td>
+                              <td>{item.quantity?.toLocaleString()}</td>
+                              
+                              {/* Sale cells */}
+                              {(isFull || isSaleOnly) && (
+                                <>
+                                  <td>{item.price?.toLocaleString()} đ</td>
+                                  <td>{sellingTotal?.toLocaleString()} đ</td>
+                                </>
                               )}
-                            </td>
-                          </tr>
-                        ))}
+                              
+                              {/* Purchase cells */}
+                              {(isFull || isPurchaseOnly) && (
+                                <>
+                                  <td>
+                                    {item.supplierName ? (
+                                      <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                        {item.supplierName}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontStyle: 'italic', color: 'var(--color-warning)' }}>{t('Chưa phân bổ')}</span>
+                                    )}
+                                  </td>
+                                  <td>{(item.purchasePrice || 0)?.toLocaleString()} đ</td>
+                                  <td>{buyingTotal?.toLocaleString()} đ</td>
+                                </>
+                              )}
+                              
+                              {/* Profit cells */}
+                              {isFull && (
+                                <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 'bold' }}>
+                                  {profit?.toLocaleString()} đ
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -691,38 +838,56 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                 {/* File link manager */}
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
                   <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Tài Liệu Đính Kèm Đơn Hàng:')}</h3>
-                  <div className="file-links-list">
-                    {selectedPO.links?.pdfLink && (
-                      <a href={selectedPO.links.pdfLink} download={`PDF_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải PDF Đơn Hàng')}
-                      </a>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                    {Object.entries(selectedPO.links || {}).map(([key, value]) => {
+                      if (!value || typeof value !== 'string') return null;
+                      const isImage = value.startsWith('data:image/');
+                      
+                      const labels: { [key: string]: string } = {
+                        pdfLink: t('PDF Đơn Hàng'),
+                        excelLink: t('Excel Báo Giá'),
+                        aiLink: t('Thiết Kế Gốc AI'),
+                        corelLink: t('Thiết Kế Corel (.cdr)'),
+                        contractLink: t('Hợp Đồng'),
+                        quoteLink: t('Bản Báo Giá')
+                      };
+                      const label = labels[key] || key;
+                      
+                      return (
+                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', border: '1px solid var(--color-border)', borderRadius: '4px', backgroundColor: 'var(--color-bg-light)' }}>
+                          {isImage ? (
+                            <img 
+                              src={value} 
+                              alt={label} 
+                              style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--color-border)' }} 
+                              onClick={() => setPreviewImage(value)}
+                              title={t('Click để phóng to')}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '1.8rem' }}>📄</span>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                              {isImage ? t('Hình ảnh (Base64)') : t('Tài liệu đính kèm')}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {isImage && (
+                              <button type="button" className="btn btn-sm btn-outline" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => setPreviewImage(value)}>
+                                👁️ {t('Xem')}
+                              </button>
+                            )}
+                            <a href={value} download={`${label}_${selectedPO.poCode}`} className="btn btn-sm btn-primary" style={{ padding: '2px 8px', fontSize: '10px', textDecoration: 'none', textAlign: 'center' }}>
+                              📥 {t('Tải')}
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!Object.values(selectedPO.links || {}).some(Boolean) && (
+                      <span className="text-muted" style={{ gridColumn: 'span 2' }}>{t('Chưa có tài liệu đính kèm nào được tải lên.')}</span>
                     )}
-                    {selectedPO.links?.excelLink && (
-                      <a href={selectedPO.links.excelLink} download={`Excel_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải Excel Báo Giá')}
-                      </a>
-                    )}
-                    {selectedPO.links?.aiLink && (
-                      <a href={selectedPO.links.aiLink} download={`AI_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải Thiết Kế Gốc AI')}
-                      </a>
-                    )}
-                    {selectedPO.links?.corelLink && (
-                      <a href={selectedPO.links.corelLink} download={`Corel_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải Thiết Kế Corel (.cdr)')}
-                      </a>
-                    )}
-                    {selectedPO.links?.contractLink && (
-                      <a href={selectedPO.links.contractLink} download={`HopDong_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải Hợp Đồng')}
-                      </a>
-                    )}
-                    {selectedPO.links?.quoteLink && (
-                      <a href={selectedPO.links.quoteLink} download={`BaoGia_${selectedPO.poCode}`} className="file-link-item" style={{ marginRight: '8px', marginBottom: '8px', display: 'inline-block' }}>
-                        {t('Tải Bản Báo Giá')}
-                      </a>
-                    )}
-                    {!Object.values(selectedPO.links || {}).some(Boolean) && <span>{t('Chưa có tài liệu đính kèm nào được tải lên.')}</span>}
                   </div>
                 </div>
               </div>
@@ -793,6 +958,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     </select>
                   </div>
                   <div className="form-group">
+                    <label>{t('Mã PO Khách Hàng (Tùy chọn)')}</label>
+                    <input 
+                      type="text" 
+                      value={customerPoCode} 
+                      onChange={(e) => setCustomerPoCode(e.target.value)} 
+                      placeholder={t('Ví dụ: VFT26-553...')} 
+                    />
+                  </div>
+                  <div className="form-group">
                     <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
                     <input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} required />
                   </div>
@@ -803,6 +977,19 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
                   <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px' }}>
                     <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Tải Bản Cứng Đơn Hàng / Báo Giá')}</h4>
+                    {customerId && (
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-outline" 
+                        style={{ marginBottom: '12px', width: '100%', display: 'block' }}
+                        onClick={() => {
+                          setIsEditRepoMode(false);
+                          setShowRepoModal(true);
+                        }}
+                      >
+                        📁 {t('Nhúp từ kho tệp khách hàng')}
+                      </button>
+                    )}
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '11.5px' }}>{t('File PDF Đơn Hàng')}</label>
                       <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setPdfFile)} style={{ fontSize: '11px' }} />
@@ -941,6 +1128,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     <input type="text" value={selectedPO.customerName} disabled style={{ backgroundColor: '#f1f5f9' }} />
                   </div>
                   <div className="form-group">
+                    <label>{t('Mã PO Khách Hàng')}</label>
+                    <input 
+                      type="text" 
+                      value={editCustomerPoCode} 
+                      onChange={(e) => setEditCustomerPoCode(e.target.value)} 
+                      placeholder={t('Ví dụ: VFT26-553...')} 
+                    />
+                  </div>
+                  <div className="form-group">
                     <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
                     <input type="date" value={editExpectedDeliveryDate} onChange={(e) => setEditExpectedDeliveryDate(e.target.value)} required />
                   </div>
@@ -951,6 +1147,19 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
                   <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px' }}>
                     <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Tải Bản Cứng Đơn Hàng / Báo Giá')}</h4>
+                    {selectedPO.customerId && (
+                      <button 
+                        type="button" 
+                        className="btn btn-sm btn-outline" 
+                        style={{ marginBottom: '12px', width: '100%', display: 'block' }}
+                        onClick={() => {
+                          setIsEditRepoMode(true);
+                          setShowRepoModal(true);
+                        }}
+                      >
+                        📁 {t('Nhúp từ kho tệp khách hàng')}
+                      </button>
+                    )}
                     <div className="form-group" style={{ marginBottom: '8px' }}>
                       <label style={{ fontSize: '11.5px' }}>{t('File PDF Đơn Hàng')}</label>
                       <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setEditPdfFile)} style={{ fontSize: '11px' }} />
@@ -1190,6 +1399,121 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           messages={messages}
           users={users}
         />
+      )}
+
+      {/* Customer Repo Pick Modal */}
+      {showRepoModal && (isEditRepoMode ? selectedPO : true) && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '600px', width: '90%' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>
+                📂 {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}: {
+                  isEditRepoMode 
+                    ? selectedPO.customerName 
+                    : customers.find(c => c.id === customerId)?.companyName || ''
+                }
+              </span>
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowRepoModal(false)}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {(() => {
+                const targetCust = isEditRepoMode 
+                  ? customers.find(c => c.id === selectedPO.customerId)
+                  : customers.find(c => c.id === customerId);
+                
+                if (!targetCust || !targetCust.files || targetCust.files.length === 0) {
+                  return (
+                    <p className="text-center text-muted" style={{ padding: '20px' }}>
+                      {t('Kho lưu trữ của khách hàng này hiện tại chưa có tệp tin nào.')}
+                    </p>
+                  );
+                }
+
+                return (
+                  <div>
+                    <p style={{ fontSize: '12.5px', marginBottom: '12px', color: 'var(--color-text-muted)' }}>
+                      {t('Chọn một tệp từ kho lưu trữ để đính kèm vào phần tương ứng:')}
+                    </p>
+                    
+                    {Object.entries(
+                      targetCust.files.reduce((acc: any, file: any) => {
+                        const folderName = file.folder || t('Chưa phân mục');
+                        if (!acc[folderName]) acc[folderName] = [];
+                        acc[folderName].push(file);
+                        return acc;
+                      }, {})
+                    ).map(([folderName, folderFiles]: any) => (
+                      <div key={folderName} style={{ marginBottom: '16px' }}>
+                        <h5 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '4px', marginBottom: '8px', color: 'var(--color-primary)' }}>
+                          📁 {folderName}
+                        </h5>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {folderFiles.map((file: any, fIdx: number) => (
+                            <div key={fIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', backgroundColor: 'var(--color-bg-light)', border: '1px solid var(--color-border-light)', borderRadius: '4px' }}>
+                              <span style={{ fontWeight: 500, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px' }} title={file.name}>📄 {file.name}</span>
+                              <div>
+                                <select 
+                                  onChange={(e) => {
+                                    const target = e.target.value;
+                                    if (!target) return;
+                                    
+                                    if (isEditRepoMode) {
+                                      if (target === 'pdf') setEditPdfFile(file.base64);
+                                      if (target === 'excel') setEditExcelFile(file.base64);
+                                      if (target === 'ai') setEditAiFile(file.base64);
+                                      if (target === 'corel') setEditCorelFile(file.base64);
+                                      if (target === 'contract') setEditContractFile(file.base64);
+                                      if (target === 'quote') setEditQuoteFile(file.base64);
+                                    } else {
+                                      if (target === 'pdf') setPdfFile(file.base64);
+                                      if (target === 'excel') setExcelFile(file.base64);
+                                      if (target === 'ai') setAiFile(file.base64);
+                                      if (target === 'corel') setCorelFile(file.base64);
+                                      if (target === 'contract') setContractFile(file.base64);
+                                      if (target === 'quote') setQuoteFile(file.base64);
+                                    }
+                                    
+                                    alert(t(`Đã đính kèm tệp "${file.name}" vào trường ${target.toUpperCase()}`));
+                                    e.target.value = ''; // reset
+                                  }}
+                                  style={{ padding: '2px 6px', fontSize: '11.5px', width: '150px' }}
+                                >
+                                  <option value="">-- {t('Đính kèm vào')} --</option>
+                                  <option value="pdf">{t('PDF Đơn Hàng')}</option>
+                                  <option value="excel">{t('Bản Báo Giá Excel')}</option>
+                                  <option value="ai">{t('File Thiết kế AI')}</option>
+                                  <option value="corel">{t('File Thiết kế Corel')}</option>
+                                  <option value="contract">{t('File Hợp Đồng')}</option>
+                                  <option value="quote">{t('Bản Báo Giá PDF')}</option>
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setShowRepoModal(false)}>{t('Hoàn thành')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Zoom Modal */}
+      {previewImage && (
+        <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 1200 }}>
+          <div className="modal-content" style={{ maxWidth: '90%', maxHeight: '90%', padding: '10px', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button type="button" className="btn btn-sm btn-outline" style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '1.2rem', zIndex: 10 }} onClick={() => setPreviewImage(null)}>✕</button>
+            <img src={previewImage} alt="Preview Zoom" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+            <div style={{ textAlign: 'center', marginTop: '10px' }}>
+              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary">📥 {t('Tải Ảnh Về')}</a>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

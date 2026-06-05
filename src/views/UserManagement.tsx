@@ -50,11 +50,48 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     }
   };
 
+  const [allowedPages, setAllowedPages] = useState<string[]>([]);
+
+  const ALL_PAGES = [
+    { id: 'dashboard', label: t('Bảng Điều Khiển') },
+    { id: 'chat', label: t('Kênh Trao Đổi') },
+    { id: 'crm', label: t('Quản Lý Khách Hàng') },
+    { id: 'sales', label: t('Tiếp Nhận Đơn PO') },
+    { id: 'design', label: t('Quản Lý Thiết Kế') },
+    { id: 'purchase', label: t('Mua Hàng NCC') },
+    { id: 'inventory', label: t('Quản Lý Kho') },
+    { id: 'production', label: t('Lệnh Sản Xuất') },
+    { id: 'delivery', label: t('Phiếu Giao Hàng') },
+    { id: 'accounting', label: t('Quản Lý Kế Toán') },
+    { id: 'users', label: t('Quản Lý Tài Khoản') },
+    { id: 'recycle_bin', label: t('Kho Rác Hệ Thống') },
+  ];
+
+  const getDefaultPagesForRole = (r: string): string[] => {
+    switch (r) {
+      case 'admin':
+        return ['dashboard', 'chat', 'crm', 'sales', 'design', 'purchase', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
+      case 'sale':
+        return ['dashboard', 'chat', 'crm', 'sales'];
+      case 'designer':
+        return ['dashboard', 'chat', 'design'];
+      case 'purchaser':
+        return ['dashboard', 'chat', 'purchase', 'inventory'];
+      case 'producer':
+        return ['dashboard', 'chat', 'production'];
+      case 'accountant':
+        return ['dashboard', 'chat', 'accounting'];
+      default:
+        return ['dashboard', 'chat'];
+    }
+  };
+
   const openAddModal = () => {
     setDisplayName('');
     setEmail('');
     setRole('sale');
     setActive(true);
+    setAllowedPages(getDefaultPagesForRole('sale'));
     setShowAddModal(true);
   };
 
@@ -63,6 +100,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     setDisplayName(user.displayName);
     setRole(user.role);
     setActive(user.active);
+    setAllowedPages(user.allowedPages || getDefaultPagesForRole(user.role));
     setShowEditModal(true);
   };
 
@@ -86,6 +124,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       email: emailTrim,
       role,
       active,
+      allowedPages,
       createdAt: new Date().toISOString().split('T')[0],
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
     };
@@ -115,6 +154,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       displayName: displayName.trim(),
       role,
       active,
+      allowedPages,
       updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       updatedAt: new Date().toISOString()
     });
@@ -265,7 +305,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       {/* ADD USER MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM NGƯỜI DÙNG MỚI')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
@@ -297,7 +337,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                     <label>{t('Vai Trò Phòng Ban *')}</label>
                     <select 
                       value={role} 
-                      onChange={e => setRole(e.target.value as any)}
+                      onChange={e => {
+                        const newRole = e.target.value as any;
+                        setRole(newRole);
+                        setAllowedPages(getDefaultPagesForRole(newRole));
+                      }}
                     >
                       <option value="admin">{t('Giám Đốc')}</option>
                       <option value="sale">{t('Nhân Viên Sale')}</option>
@@ -316,6 +360,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                       <option value="true">{t('Đang hoạt động')}</option>
                       <option value="false">{t('Tạm khóa')}</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>{t('Trang Được Phép Truy Cập')}</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '10px', backgroundColor: 'var(--color-bg-light)', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                    {ALL_PAGES.map(page => (
+                      <label key={page.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                        <input
+                          type="checkbox"
+                          checked={allowedPages.includes(page.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAllowedPages([...allowedPages, page.id]);
+                            } else {
+                              setAllowedPages(allowedPages.filter(id => id !== page.id));
+                            }
+                          }}
+                        />
+                        {page.label}
+                      </label>
+                    ))}
                   </div>
                 </div>
 
@@ -342,7 +408,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       {/* EDIT USER MODAL */}
       {showEditModal && selectedUser && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN TÀI KHOẢN')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
@@ -367,7 +433,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                     <label>{t('Vai Trò Phòng Ban *')}</label>
                     <select 
                       value={role} 
-                      onChange={e => setRole(e.target.value as any)}
+                      onChange={e => {
+                        const newRole = e.target.value as any;
+                        setRole(newRole);
+                        setAllowedPages(getDefaultPagesForRole(newRole));
+                      }}
                       disabled={selectedUser.uid === currentUser.uid} // Admin can't change their own role
                     >
                       <option value="admin">{t('Giám Đốc')}</option>
@@ -388,6 +458,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                       <option value="true">{t('Đang hoạt động')}</option>
                       <option value="false">{t('Vô hiệu hóa (Khóa)')}</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontWeight: 'bold', marginBottom: '8px', display: 'block' }}>{t('Trang Được Phép Truy Cập')}</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '10px', backgroundColor: 'var(--color-bg-light)', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                    {ALL_PAGES.map(page => (
+                      <label key={page.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                        <input
+                          type="checkbox"
+                          checked={allowedPages.includes(page.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAllowedPages([...allowedPages, page.id]);
+                            } else {
+                              setAllowedPages(allowedPages.filter(id => id !== page.id));
+                            }
+                          }}
+                        />
+                        {page.label}
+                      </label>
+                    ))}
                   </div>
                 </div>
 
@@ -417,3 +509,4 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     </div>
   );
 };
+

@@ -198,9 +198,14 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   };
 
   const handleDeleteLsx = async (lsxId: string) => {
+    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (admin123 hoặc 123456):'));
+    if (password !== 'admin123' && password !== '123456') {
+      alert(t('Mật khẩu không chính xác! Không thể xóa.'));
+      return;
+    }
     if (window.confirm(t('Bạn có chắc chắn muốn xóa lệnh sản xuất này?'))) {
       const lsx = productionCommands.find(l => l.id === lsxId);
-      await dbService.deleteDocument('production_commands', lsxId);
+      await dbService.updateDocument('production_commands', lsxId, { deleted: true });
       
       if (lsx) {
         const po = pos.find(p => p.id === lsx.poId);
@@ -224,6 +229,61 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       setSelectedLsx(null);
       onRefresh();
     }
+  };
+
+  const activeCommands = (productionCommands || []).filter(cmd => !cmd.deleted);
+
+  const handleExportCSV = () => {
+    const headers = [
+      t('Mã LSX'),
+      t('Mã PO'),
+      t('Tên Tem Cần Bế'),
+      t('Máy Sản Xuất'),
+      t('Ca Sản Xuất'),
+      t('Lõi Giấy'),
+      t('Giấy NVL'),
+      t('SL Đặt'),
+      t('Phế phẩm'),
+      t('Trạng Thái'),
+      t('Người Vận Hành'),
+      t('Ngày Lập Lệnh'),
+      t('Ngày Hoàn Thành')
+    ];
+
+    const rows = activeCommands.map(cmd => [
+      cmd.lsxCode || '',
+      cmd.poCode || '',
+      cmd.productNameToBeCut || cmd.productName || '',
+      cmd.machineId || '',
+      cmd.shift || '',
+      cmd.paperCore || '76mm',
+      `${cmd.paperMaterialCode || ''} (${cmd.paperQuantity || 0} cuộn)`,
+      cmd.qtyToProduce || 0,
+      cmd.scrapQty || 0,
+      cmd.status === 'completed' ? t('Đã hoàn thành') : cmd.status === 'transfer_pending' ? t('Bàn giao chờ duyệt') : t('Đang in'),
+      cmd.operatorName || '',
+      cmd.startedAt ? new Date(cmd.startedAt).toLocaleDateString('vi-VN') : '',
+      cmd.completedAt ? new Date(cmd.completedAt).toLocaleDateString('vi-VN') : ''
+    ]);
+
+    let csvContent = '\uFEFF'; // BOM
+    csvContent += headers.join(',') + '\n';
+    rows.forEach(row => {
+      const escapedRow = row.map(val => {
+        const strVal = String(val ?? '');
+        return `"${strVal.replace(/"/g, '""')}"`;
+      });
+      csvContent += escapedRow.join(',') + '\n';
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ERP_DanhSach_LSX_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleCompleteLsx = async (e: React.FormEvent) => {
@@ -449,7 +509,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))', gap: '20px' }}>
-            {productionCommands
+            {activeCommands
               .filter(cmd => {
                 if (currentUser.role === 'producer' && cmd.operatorId !== currentUser.uid) {
                   return false;
@@ -528,7 +588,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                 </div>
               ))}
 
-            {productionCommands.filter(cmd => {
+            {activeCommands.filter(cmd => {
               if (currentUser.role === 'producer' && cmd.operatorId !== currentUser.uid) return false;
               return operatorTab === 'producing' ? (cmd.status === 'producing' || cmd.status === 'transfer_pending') : cmd.status === 'completed';
             }).length === 0 && (
@@ -542,7 +602,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
         /* STANDARD ADMIN/COORDINATOR VIEW */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
           {/* LSX Transfer Approvals */}
-          {productionCommands.some(cmd => cmd.status === 'transfer_pending') && (
+          {activeCommands.some(cmd => cmd.status === 'transfer_pending') && (
             <div className="card" style={{ border: '1px solid var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)' }}>
               <span className="card-title" style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 ⏳ {t('Yêu Cầu Phê Duyệt Bàn Giao Lệnh')}
@@ -559,7 +619,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                     </tr>
                   </thead>
                   <tbody>
-                    {productionCommands
+                    {activeCommands
                       .filter(cmd => cmd.status === 'transfer_pending')
                       .map(cmd => (
                         <tr key={cmd.id}>
@@ -582,7 +642,12 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           )}
 
           <div className="card">
-            <span className="card-title">{t('Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong')}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <span className="card-title" style={{ margin: 0 }}>{t('Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong')}</span>
+              <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>
+                📥 {t('Xuất Excel')}
+              </button>
+            </div>
             <div className="table-container">
               <table>
                 <thead>
@@ -600,7 +665,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   </tr>
                 </thead>
                 <tbody>
-                  {productionCommands.map(cmd => (
+                  {activeCommands.map(cmd => (
                     <tr key={cmd.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedLsx(cmd)}>
                       <td style={{ fontWeight: 600 }}>{cmd.lsxCode}</td>
                       <td>{cmd.poCode}</td>
@@ -626,8 +691,8 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                               <button className="btn btn-sm btn-success" onClick={() => setSelectedLsx(cmd)}>
                                 {t('Báo Cáo Hoàn Thành')}
                               </button>
-                               <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(cmd)} title={t('Sửa')}>✎</button>
-                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(cmd.id)} title={t('Xóa')}>✕</button>
+                              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditLsx(cmd)} title={t('Sửa')}>✎</button>
+                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLsx(cmd.id)} title={t('Xóa')}>✕</button>
                             </>
                           ) : (
                             <button className="btn btn-sm btn-outline" onClick={() => setSelectedLsx(cmd)}>{t('Chi Tiết')}</button>
@@ -636,7 +701,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                       </td>
                     </tr>
                   ))}
-                  {productionCommands.length === 0 && (
+                  {activeCommands.length === 0 && (
                     <tr>
                       <td colSpan={10} style={{ textAlign: 'center', padding: '24px' }}>{t('Không có lệnh sản xuất nào được ghi nhận.')}</td>
                     </tr>

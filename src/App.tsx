@@ -12,6 +12,7 @@ import { Accounting } from './views/Accounting';
 import { UserManagement } from './views/UserManagement';
 import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
+import { RecycleBin } from './views/RecycleBin';
 import logo from './assets/logo.png';
 
 function App() {
@@ -19,6 +20,31 @@ function App() {
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const { t, language, setLanguage } = useLanguage();
+
+  const getDefaultPagesForRole = (role: string): string[] => {
+    switch (role) {
+      case 'admin':
+        return ['dashboard', 'chat', 'crm', 'sales', 'design', 'purchase', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
+      case 'sale':
+        return ['dashboard', 'chat', 'crm', 'sales'];
+      case 'designer':
+        return ['dashboard', 'chat', 'design'];
+      case 'purchaser':
+        return ['dashboard', 'chat', 'purchase', 'inventory'];
+      case 'producer':
+        return ['dashboard', 'chat', 'production'];
+      case 'accountant':
+        return ['dashboard', 'chat', 'accounting'];
+      default:
+        return ['dashboard', 'chat'];
+    }
+  };
+
+  const isPageAllowed = (pageId: string): boolean => {
+    if (!user) return false;
+    const allowed = user.allowedPages || getDefaultPagesForRole(user.role);
+    return allowed.includes(pageId);
+  };
   
   // Collapsible sidebar state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -164,8 +190,10 @@ function App() {
 
     switch (activePage) {
       case 'crm':
+        if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} />;
       case 'sales':
+        if (!isPageAllowed('sales')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
           <Sales 
             pos={pos} 
@@ -178,12 +206,16 @@ function App() {
           />
         );
       case 'design':
+        if (!isPageAllowed('design')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Design pos={pos} currentUser={user} onRefresh={refreshData} />;
       case 'purchase':
+        if (!isPageAllowed('purchase')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Purchase pos={pos} purchaseOrders={purchaseOrders} currentUser={user} onRefresh={refreshData} users={users} />;
       case 'inventory':
+        if (!isPageAllowed('inventory')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Inventory currentUser={user} onRefresh={refreshData} />;
       case 'production':
+        if (!isPageAllowed('production')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
           <Production 
             pos={pos} 
@@ -196,10 +228,13 @@ function App() {
           />
         );
       case 'delivery':
+        if (!isPageAllowed('delivery')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Delivery pos={pos} currentUser={user} onRefresh={refreshData} />;
       case 'accounting':
+        if (!isPageAllowed('accounting')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Accounting pos={pos} currentUser={user} onRefresh={refreshData} users={users} />;
       case 'chat':
+        if (!isPageAllowed('chat')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
           <ChatPage 
             currentUser={user}
@@ -217,11 +252,11 @@ function App() {
             users={users}
           />
         );
+      case 'recycle_bin':
+        if (!isPageAllowed('recycle_bin')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
+        return <RecycleBin currentUser={user} onRefresh={refreshData} />;
       case 'users':
-        if (user.role !== 'admin') {
-          // React state updates during render are allowed if guarded or deferred,
-          // but we can schedule it in useEffect or do a simple redirect check.
-          // Let's do activePage state reset.
+        if (!isPageAllowed('users')) {
           setTimeout(() => setActivePage('dashboard'), 0);
           return null;
         }
@@ -402,30 +437,36 @@ function App() {
           <span className="sidebar-logo-text">SUNFLOWER</span>
         </div>
         <nav className="sidebar-menu">
-          <button 
-            className={`sidebar-item ${activePage === 'dashboard' ? 'active' : ''}`}
-            onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
-          >
-            {t('Tổng Quan Dashboards')}
-          </button>
+          {isPageAllowed('dashboard') && (
+            <button 
+              className={`sidebar-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
+            >
+              {t('Tổng Quan Dashboards')}
+            </button>
+          )}
 
-          <button 
-            className={`sidebar-item ${activePage === 'chat' ? 'active' : ''}`}
-            onClick={() => { setActivePage('chat'); setIsSidebarOpen(false); }}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <span>{t('Kênh Thảo Luận')}</span>
-            {unreadChannelCount > 0 && <span className="chat-channel-badge">{unreadChannelCount}</span>}
-          </button>
+          {isPageAllowed('chat') && (
+            <button 
+              className={`sidebar-item ${activePage === 'chat' ? 'active' : ''}`}
+              onClick={() => { setActivePage('chat'); setIsSidebarOpen(false); }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span>{t('Kênh Thảo Luận')}</span>
+              {unreadChannelCount > 0 && <span className="chat-channel-badge">{unreadChannelCount}</span>}
+            </button>
+          )}
           
-          <button 
-            className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
-            onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
-          >
-            {t('Khách Hàng (CRM)')}
-          </button>
+          {isPageAllowed('crm') && (
+            <button 
+              className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
+              onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
+            >
+              {t('Khách Hàng (CRM)')}
+            </button>
+          )}
 
-          {(user.role === 'admin' || user.role === 'sale') && (
+          {isPageAllowed('sales') && (
             <button 
               className={`sidebar-item ${activePage === 'sales' ? 'active' : ''}`}
               onClick={() => { setActivePage('sales'); setIsSidebarOpen(false); }}
@@ -434,7 +475,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'designer') && (
+          {isPageAllowed('design') && (
             <button 
               className={`sidebar-item ${activePage === 'design' ? 'active' : ''}`}
               onClick={() => { setActivePage('design'); setIsSidebarOpen(false); }}
@@ -443,7 +484,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'purchaser') && (
+          {isPageAllowed('purchase') && (
             <button 
               className={`sidebar-item ${activePage === 'purchase' ? 'active' : ''}`}
               onClick={() => { setActivePage('purchase'); setIsSidebarOpen(false); }}
@@ -452,7 +493,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'purchaser' || user.role === 'producer') && (
+          {isPageAllowed('inventory') && (
             <button 
               className={`sidebar-item ${activePage === 'inventory' ? 'active' : ''}`}
               onClick={() => { setActivePage('inventory'); setIsSidebarOpen(false); }}
@@ -461,7 +502,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'producer') && (
+          {isPageAllowed('production') && (
             <button 
               className={`sidebar-item ${activePage === 'production' ? 'active' : ''}`}
               onClick={() => { setActivePage('production'); setIsSidebarOpen(false); }}
@@ -470,7 +511,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'producer' || user.role === 'sale') && (
+          {isPageAllowed('delivery') && (
             <button 
               className={`sidebar-item ${activePage === 'delivery' ? 'active' : ''}`}
               onClick={() => { setActivePage('delivery'); setIsSidebarOpen(false); }}
@@ -479,7 +520,7 @@ function App() {
             </button>
           )}
 
-          {(user.role === 'admin' || user.role === 'accountant') && (
+          {isPageAllowed('accounting') && (
             <button 
               className={`sidebar-item ${activePage === 'accounting' ? 'active' : ''}`}
               onClick={() => { setActivePage('accounting'); setIsSidebarOpen(false); }}
@@ -488,7 +529,17 @@ function App() {
             </button>
           )}
 
-          {user.role === 'admin' && (
+          {isPageAllowed('recycle_bin') && (
+            <button 
+              className={`sidebar-item ${activePage === 'recycle_bin' ? 'active' : ''}`}
+              onClick={() => { setActivePage('recycle_bin'); setIsSidebarOpen(false); }}
+              style={{ color: 'var(--color-danger)' }}
+            >
+              🗑️ {t('Thùng Rác')}
+            </button>
+          )}
+
+          {isPageAllowed('users') && (
             <button 
               className={`sidebar-item ${activePage === 'users' ? 'active' : ''}`}
               onClick={() => { setActivePage('users'); setIsSidebarOpen(false); }}

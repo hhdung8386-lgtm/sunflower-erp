@@ -24,7 +24,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const { t } = useLanguage();
   const [activeChannelId, setActiveChannelId] = useState<string>('all');
   const [messageText, setMessageText] = useState('');
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleRecallMessage = async (msgId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn thu hồi tin nhắn này?'))) {
+      await dbService.updateDocument('messages', msgId, { recalled: true });
+    }
+  };
 
   // Auto-complete suggestions states
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -115,11 +122,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       senderName: currentUser.displayName,
       senderRole: currentUser.role,
       messageText: messageText.trim(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(replyingTo ? {
+        replyTo: {
+          id: replyingTo.id,
+          senderName: replyingTo.senderName,
+          text: replyingTo.messageText
+        }
+      } : {})
     };
 
     await dbService.addDocument('messages', newMessage);
     setMessageText('');
+    setReplyingTo(null);
     localStorage.setItem(`erp_last_read_ch_${activeChannelId}`, new Date().toISOString());
     setTimeout(scrollToBottom, 50);
   };
@@ -238,14 +253,62 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               const isMe = msg.senderId === currentUser.uid;
               return (
                 <div key={msg.id} className={`chat-message-row ${isMe ? 'me' : 'other'}`}>
-                  <div className="chat-message-meta">
+                  <div className="chat-message-meta" style={{ display: 'flex', gap: '6px', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'center' }}>
                     <span style={{ fontWeight: 600 }}>{msg.senderName}</span>
                     <span style={{ fontSize: '10px', opacity: 0.8 }}>({msg.senderRole.toUpperCase()})</span>
                     <span>•</span>
                     <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    {!msg.recalled && (
+                      <>
+                        <span>•</span>
+                        <button 
+                          onClick={() => setReplyingTo(msg)}
+                          style={{ border: 'none', background: 'none', color: 'var(--color-primary)', cursor: 'pointer', padding: 0, fontSize: '10px' }}
+                        >
+                          {t('Trả lời')}
+                        </button>
+                        {(isMe || currentUser.role === 'admin') && (
+                          <>
+                            <span>•</span>
+                            <button 
+                              onClick={() => handleRecallMessage(msg.id)}
+                              style={{ border: 'none', background: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: 0, fontSize: '10px' }}
+                            >
+                              {t('Thu hồi')}
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="chat-message-bubble">
-                    {renderMessageContent(msg.messageText)}
+                    {msg.recalled ? (
+                      <span style={{ fontStyle: 'italic', color: '#94a3b8' }}>
+                        {t('Tin nhắn đã bị thu hồi')}
+                      </span>
+                    ) : (
+                      <>
+                        {msg.replyTo && (
+                          <div style={{
+                            padding: '4px 8px',
+                            backgroundColor: isMe ? 'rgba(255, 255, 255, 0.15)' : '#f1f5f9',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            marginBottom: '6px',
+                            borderLeft: '3px solid var(--color-primary)',
+                            color: isMe ? '#e2e8f0' : 'var(--color-text-muted)',
+                            fontStyle: 'italic',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <strong>@{msg.replyTo.senderName}:</strong> "{msg.replyTo.text}"
+                          </div>
+                        )}
+                        {renderMessageContent(msg.messageText)}
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -278,6 +341,38 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+            {replyingTo && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '6px 12px',
+                backgroundColor: '#f1f5f9',
+                borderTop: '1px solid var(--color-border-light)',
+                fontSize: '12px',
+                color: 'var(--color-text-muted)',
+                borderRadius: '4px 4px 0 0',
+                margin: '0 10px -1px 10px'
+              }}>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                  <strong>{t('Trả lời')} {replyingTo.senderName}:</strong> "{replyingTo.messageText}"
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setReplyingTo(null)}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: 'var(--color-text-muted)',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    padding: '0 4px'
+                  }}
+                >
+                  ✕
+                </button>
               </div>
             )}
             <form onSubmit={handleSendMessage} className="chat-input-bar">
