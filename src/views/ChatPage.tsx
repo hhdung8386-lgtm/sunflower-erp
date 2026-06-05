@@ -158,7 +158,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           if (!po) return null;
           return (
             <div key={po.id} className="chat-task-card">
-              <span className="chat-task-card-title">📋 {t('Đơn Hàng')} {poCode}</span>
+              <span className="chat-task-card-title">{t('Đơn Hàng')} {poCode}</span>
               <span className="chat-task-card-desc">{po.customerName} - {po.items?.[0]?.productName || t('Tem Nhãn')} ({po.status.replace('_', ' ').toUpperCase()})</span>
               <button 
                 type="button" 
@@ -177,7 +177,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           if (!lsx) return null;
           return (
             <div key={lsx.id} className="chat-task-card">
-              <span className="chat-task-card-title">⚙️ {t('Lệnh Sản Xuất')} {lsxCode}</span>
+              <span className="chat-task-card-title">{t('Lệnh Sản Xuất')} {lsxCode}</span>
               <span className="chat-task-card-desc">{lsx.productName} - Qty: {lsx.qtyToProduce?.toLocaleString()} ({t(lsx.status)})</span>
               <button 
                 type="button" 
@@ -371,7 +371,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     padding: '0 4px'
                   }}
                 >
-                  ✕
+                  ×
                 </button>
               </div>
             )}

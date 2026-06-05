@@ -864,7 +864,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                               title={t('Click để phóng to')}
                             />
                           ) : (
-                            <span style={{ fontSize: '1.8rem' }}>📄</span>
+                            <span style={{ padding: '6px 8px', backgroundColor: '#e2e8f0', borderRadius: '4px', fontSize: '10px', fontWeight: 700, color: '#475569', border: '1px solid #cbd5e1' }}>DOC</span>
                           )}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
@@ -875,11 +875,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {isImage && (
                               <button type="button" className="btn btn-sm btn-outline" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => setPreviewImage(value)}>
-                                👁️ {t('Xem')}
+                                {t('Xem')}
                               </button>
                             )}
                             <a href={value} download={`${label}_${selectedPO.poCode}`} className="btn btn-sm btn-primary" style={{ padding: '2px 8px', fontSize: '10px', textDecoration: 'none', textAlign: 'center' }}>
-                              📥 {t('Tải')}
+                              {t('Tải về')}
                             </a>
                           </div>
                         </div>
@@ -1507,10 +1507,10 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       {previewImage && (
         <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 1200 }}>
           <div className="modal-content" style={{ maxWidth: '90%', maxHeight: '90%', padding: '10px', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <button type="button" className="btn btn-sm btn-outline" style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '1.2rem', zIndex: 10 }} onClick={() => setPreviewImage(null)}>✕</button>
+            <button type="button" className="btn btn-sm btn-outline" style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '1.2rem', zIndex: 10 }} onClick={() => setPreviewImage(null)}>×</button>
             <img src={previewImage} alt="Preview Zoom" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
             <div style={{ textAlign: 'center', marginTop: '10px' }}>
-              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary">📥 {t('Tải Ảnh Về')}</a>
+              <a href={previewImage} download={`Preview_${Date.now()}.jpg`} className="btn btn-primary">{t('Tải Ảnh Về')}</a>
             </div>
           </div>
         </div>

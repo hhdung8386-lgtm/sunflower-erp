@@ -160,7 +160,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({
     return (
       <div className="floating-chat-container">
         <button className="floating-chat-bubble" onClick={() => setIsOpen(true)}>
-          <span>💬 Chat {targetCode}</span>
+          <span>Chat {targetCode}</span>
           {unreadCount > 0 && <span className="floating-chat-badge">{unreadCount}</span>}
         </button>
       </div>
@@ -171,8 +171,8 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({
     <div className="floating-chat-container">
       <div className="floating-chat-panel">
         <div className="floating-chat-header">
-          <span>💬 Chat: {targetCode}</span>
-          <button onClick={() => setIsOpen(false)}>✕</button>
+          <span>Chat: {targetCode}</span>
+          <button onClick={() => setIsOpen(false)}>×</button>
         </div>
         
         <div className="floating-chat-body">

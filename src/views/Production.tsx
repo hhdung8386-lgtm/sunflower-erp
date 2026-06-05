@@ -581,7 +581,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                     )}
                     {cmd.status === 'transfer_pending' && (
                       <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--color-border-light)', textAlign: 'center', fontSize: '12.5px', color: 'var(--color-warning)', fontWeight: 600, backgroundColor: 'var(--color-warning-bg)', padding: '6px', borderRadius: '4px', border: '1px solid var(--color-warning-border)' }}>
-                        ⏳ {t('Chờ duyệt chuyển sang:')} {cmd.proposedOperatorName}
+                        {t('Chờ duyệt chuyển sang:')} {cmd.proposedOperatorName}
                       </div>
                     )}
                   </div>
@@ -605,7 +605,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           {activeCommands.some(cmd => cmd.status === 'transfer_pending') && (
             <div className="card" style={{ border: '1px solid var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)' }}>
               <span className="card-title" style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                ⏳ {t('Yêu Cầu Phê Duyệt Bàn Giao Lệnh')}
+                {t('Yêu Cầu Phê Duyệt Bàn Giao Lệnh')}
               </span>
               <div className="table-container">
                 <table>
@@ -645,7 +645,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <span className="card-title" style={{ margin: 0 }}>{t('Danh Sách Lệnh Sản Xuất Đang Chạy và Đã Xong')}</span>
               <button className="btn btn-sm btn-outline" onClick={handleExportCSV}>
-                📥 {t('Xuất Excel')}
+                {t('Xuất Excel')}
               </button>
             </div>
             <div className="table-container">

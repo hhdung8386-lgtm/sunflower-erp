@@ -154,7 +154,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {activeProductionCommandsList.some(cmd => cmd.status === 'transfer_pending') && (
             <div className="card" style={{ border: '1px solid var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)', margin: '0 0 20px 0' }}>
               <span className="card-title" style={{ color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 700 }}>
-                ⏳ {t('Có Yêu Cầu Phê Duyệt Bàn Giao Lệnh Sản Xuất')}
+                {t('Có Yêu Cầu Phê Duyệt Bàn Giao Lệnh Sản Xuất')}
               </span>
               <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
                 {t('Thợ máy đang báo gặp sự cố và yêu cầu chuyển giao lại lệnh in/bế cho thợ khác. Vui lòng phê duyệt.')}
