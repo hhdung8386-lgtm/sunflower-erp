@@ -535,7 +535,7 @@ function App() {
               onClick={() => { setActivePage('recycle_bin'); setIsSidebarOpen(false); }}
               style={{ color: 'var(--color-danger)' }}
             >
-              🗑️ {t('Thùng Rác')}
+              {t('Thùng Rác')}
             </button>
           )}
 

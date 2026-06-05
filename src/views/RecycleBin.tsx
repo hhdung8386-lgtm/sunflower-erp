@@ -110,7 +110,7 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
   if (currentUser.role !== 'admin') {
     return (
       <div className="card text-center" style={{ padding: '40px' }}>
-        <h2 style={{ color: 'var(--accent-red)' }}>⚠️ Quyền truy cập bị từ chối</h2>
+        <h2 style={{ color: 'var(--accent-red)' }}>{t('Quyền truy cập bị từ chối')}</h2>
         <p>Chỉ Giám Đốc mới có quyền truy cập vào Kho Rác hệ thống.</p>
       </div>
     );
@@ -120,7 +120,7 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
     <div className="view-container">
       <div className="view-header">
         <div>
-          <h1 className="view-title">🗑️ {t('Kho Rác Hệ Thống')}</h1>
+          <h1 className="view-title">{t('Kho Rác Hệ Thống')}</h1>
           <p className="view-subtitle">{t('Quản lý các tài liệu đã bị xóa tạm thời (Soft-deleted)')}</p>
         </div>
       </div>
@@ -155,11 +155,10 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
 
       {loading ? (
         <div className="card text-center" style={{ padding: '30px' }}>
-          <div>⏳ Đang tải dữ liệu Kho Rác...</div>
+          <div>{t('Đang tải dữ liệu Kho Rác...')}</div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="card text-center text-muted" style={{ padding: '50px' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '10px' }}>✨</div>
           <p>{t('Kho rác trống. Không có tài liệu nào bị xóa tạm thời.')}</p>
         </div>
       ) : (
@@ -208,7 +207,7 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
                         fontSize: '0.85rem'
                       }}
                     >
-                      ↩ {t('Khôi phục')}
+                      {t('Khôi phục')}
                     </button>
                     <button
                       onClick={() => handleHardDelete(item)}
@@ -218,7 +217,7 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
                         fontSize: '0.85rem'
                       }}
                     >
-                      ✕ {t('Xóa vĩnh viễn')}
+                      {t('Xóa vĩnh viễn')}
                     </button>
                   </td>
                 </tr>

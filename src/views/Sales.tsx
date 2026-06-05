@@ -622,9 +622,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '400px', flex: 1 }}
             />
-            <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>✕</button>
+            <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>×</button>
             <button className="btn btn-outline" onClick={handleExportCSV}>
-              📥 {t('Xuất Excel')}
+              {t('Xuất Excel')}
             </button>
           </div>
 
