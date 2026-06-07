@@ -75,6 +75,19 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       versions: updatedVersions
     });
 
+    // Sync to PO
+    const po = pos.find(p => p.id === selectedDesign.poId);
+    if (po) {
+      const updatedLinks = {
+        ...(po.links || {}),
+        aiLink: editAiLink || po.links?.aiLink || '',
+        corelLink: editCorelLink || po.links?.corelLink || ''
+      };
+      await dbService.updateDocument('pos', po.id, {
+        links: updatedLinks
+      });
+    }
+
     setShowEditVersionModal(false);
     
     // Refresh
@@ -254,9 +267,15 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
           note: `Upload bản thiết kế v${nextVersionNumber} - Chờ duyệt màu.`
         }
       ];
+      const updatedLinks = {
+        ...(po.links || {}),
+        aiLink: newAiLink || po.links?.aiLink || '',
+        corelLink: newCorelLink || po.links?.corelLink || ''
+      };
       await dbService.updateDocument('pos', po.id, {
         status: 'design_sent',
-        historyLogs: updatedLogs
+        historyLogs: updatedLogs,
+        links: updatedLinks
       });
     }
 
@@ -316,10 +335,17 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
         updatedItems[0].previewImage = selectedDesign.versions[lastVersionIndex].previewImage;
       }
 
+      const updatedLinks = {
+        ...(po.links || {}),
+        aiLink: selectedDesign.versions[lastVersionIndex].aiLink || po.links?.aiLink || '',
+        corelLink: selectedDesign.versions[lastVersionIndex].corelLink || po.links?.corelLink || ''
+      };
+
       await dbService.updateDocument('pos', po.id, {
         status: nextPOStatus,
         historyLogs: updatedLogs,
-        items: updatedItems
+        items: updatedItems,
+        links: updatedLinks
       });
     }
 
