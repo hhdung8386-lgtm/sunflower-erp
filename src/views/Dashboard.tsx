@@ -1,7 +1,13 @@
-import React from 'react';
-import { UserProfile } from '../services/firebaseService';
+import React, { useState, useEffect } from 'react';
+import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { BarChart, DonutChart } from '../components/VisualCharts';
+import { 
+  ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
+  AlertCircle, Calendar, User, DollarSign, Sliders, 
+  BarChart2, PieChart, Bell, Eye, Pencil, MessageSquare, ChevronDown, ChevronUp
+} from 'lucide-react';
+import { PO_STATES } from './Sales';
 
 interface DashboardProps {
   user: UserProfile;
@@ -27,6 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onNavigate
 }) => {
   const { t } = useLanguage();
+
   // Filter out deleted documents
   const activePOsList = (pos || []).filter(po => !po.deleted);
   const activeCustomersList = (customers || []).filter(c => !c.deleted);
@@ -37,18 +44,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const activeInvoicesList = (invoices || []).filter(inv => !inv.deleted);
 
   // Timeframe states
-  const [selectedMonth, setSelectedMonth] = React.useState<string>('all');
-  const [selectedYear, setSelectedYear] = React.useState<string>(new Date().getFullYear().toString());
+  const [filterMode, setFilterMode] = useState<'month' | 'range'>('month');
+  const [selectedMonth, setSelectedMonth] = useState<string>((new Date().getMonth() + 1).toString());
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Drill-down sub-view state
+  const [selectedProgressCategory, setSelectedProgressCategory] = useState<string | null>(null);
+  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Reminders DB state
+  const [reminders, setReminders] = useState<any[]>([]);
+  const [newReminderText, setNewReminderText] = useState('');
+  const [newReminderDate, setNewReminderDate] = useState('');
+
+  // Load reminders
+  useEffect(() => {
+    const fetchReminders = async () => {
+      try {
+        const data = await dbService.getCollection('reminders');
+        setReminders(data);
+      } catch (err) {
+        console.error("Error loading reminders:", err);
+      }
+    };
+    fetchReminders();
+  }, []);
 
   const matchesTimeframe = (dateString?: string) => {
     if (!dateString) return false;
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return false;
     
-    const yearMatch = date.getFullYear().toString() === selectedYear;
-    const monthMatch = selectedMonth === 'all' || (date.getMonth() + 1).toString() === selectedMonth;
-    
-    return yearMatch && monthMatch;
+    if (filterMode === 'range') {
+      if (!startDate && !endDate) return true;
+      const start = startDate ? new Date(startDate + 'T00:00:00') : new Date('1970-01-01');
+      const end = endDate ? new Date(endDate + 'T23:59:59') : new Date('2100-01-01');
+      return date >= start && date <= end;
+    } else {
+      const yearMatch = date.getFullYear().toString() === selectedYear;
+      const monthMatch = selectedMonth === 'all' || (date.getMonth() + 1).toString() === selectedMonth;
+      return yearMatch && monthMatch;
+    }
   };
 
   const filteredPOs = activePOsList.filter(po => matchesTimeframe(po.orderDate || po.createdAt));
@@ -59,9 +98,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Calculations helper
   const activePOs = filteredPOs.filter(po => !['delivered', 'debt_collected', 'discounted'].includes(po.status));
-  const newPOs = filteredPOs.filter(po => po.status === 'receive_po');
-  const producingPOs = filteredPOs.filter(po => po.status === 'producing');
-  const pendingApprovalPOs = filteredPOs.filter(po => po.status === 'layout_pending' || po.status === 'design_sent');
   
   // CSKH: Customers with lastOrderAt older than 30 days
   const today = new Date();
@@ -88,44 +124,504 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Warning for low stock materials
   const lowStockMaterials = activeInventoryList.filter(item => item.qtyInStock < item.minQtyAlert);
 
+  // Category filters mapping for clicking
+  const getCategoryPOs = (category: string) => {
+    switch(category) {
+      case 'receive_po':
+        return filteredPOs.filter(p => p.status === 'receive_po');
+      case 'design':
+        return filteredPOs.filter(p => ['design_sent', 'layout_pending', 'bom_extracted'].includes(p.status));
+      case 'production':
+        return filteredPOs.filter(p => ['supplier_ordered', 'supplier_confirmed', 'production_pending', 'producing', 'production_done', 'qc_passed', 'packed'].includes(p.status));
+      case 'delivery':
+        return filteredPOs.filter(p => ['delivering', 'delivered', 'invoiced', 'debt_collected'].includes(p.status));
+      default:
+        return [];
+    }
+  };
+
+  const categoryLabels: { [key: string]: string } = {
+    receive_po: t('Mới Nhận PO'),
+    design: t('Đang Thiết Kế'),
+    production: t('Đang Sản Xuất'),
+    delivery: t('Đã Giao Hàng & Thu Nợ')
+  };
+
+  // Reminder managers
+  const handleAddReminderSubmit = async (poId: string, poCode: string) => {
+    if (!newReminderText.trim() || !newReminderDate) return;
+    const newRem = {
+      poId,
+      poCode,
+      message: newReminderText.trim(),
+      date: newReminderDate,
+      completed: false,
+      createdBy: user.displayName,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      const created = await dbService.addDocument('reminders', newRem);
+      setReminders(prev => [...prev, created]);
+      setNewReminderText('');
+      setNewReminderDate('');
+      alert(t('Đã thêm nhắc nhở thành công!'));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteReminder = async (remId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa nhắc nhở này?'))) {
+      try {
+        await dbService.deleteDocument('reminders', remId);
+        setReminders(prev => prev.filter(r => r.id !== remId));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleToggleReminder = async (remId: string, completed: boolean) => {
+    try {
+      await dbService.updateDocument('reminders', remId, { completed });
+      setReminders(prev => prev.map(r => r.id === remId ? { ...r, completed } : r));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateStatus = async (poId: string, status: string) => {
+    try {
+      const targetPo = pos.find(p => p.id === poId);
+      if (!targetPo) return;
+      
+      const updatedLogs = [
+        ...targetPo.historyLogs,
+        {
+          status,
+          updatedBy: user.displayName,
+          updatedAt: new Date().toISOString(),
+          note: `Thay đổi trạng thái từ Bảng Điều Khiển sang: ${PO_STATES.find(s => s.value === status)?.label}`
+        }
+      ];
+
+      await dbService.updateDocument('pos', poId, {
+        status,
+        updatedBy: `${user.displayName} (${user.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString(),
+        historyLogs: updatedLogs
+      });
+      alert(t('Cập nhật trạng thái thành công!'));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // DRILL-DOWN SUB-VIEW RENDERING
+  if (selectedProgressCategory) {
+    const categoryPOs = getCategoryPOs(selectedProgressCategory);
+
+    return (
+      <div className="dashboard-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            type="button" 
+            className="btn btn-outline btn-symbol"
+            onClick={() => {
+              setSelectedProgressCategory(null);
+              setExpandedPoId(null);
+            }}
+            title={t('Quay lại Dashboard')}
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h1 className="page-title">{t('CHI TIẾT TIẾN ĐỘ ĐƠN HÀNG')}</h1>
+            <p className="page-subtitle">
+              {t('Phân nhóm:')} <strong>{categoryLabels[selectedProgressCategory]}</strong> ({categoryPOs.length} {t('đơn hàng')})
+            </p>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '20px' }}>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: '40px' }}></th>
+                  <th>{t('Mã PO')}</th>
+                  <th>{t('Tên Khách Hàng')}</th>
+                  <th>{t('Ngày Đặt')}</th>
+                  <th>{t('Hạn Giao Hàng')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('Tổng Tiền (gồm VAT)')}</th>
+                  <th>{t('Trạng Thái Hiện Tại')}</th>
+                  <th>{t('Người Phụ Trách')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryPOs.map(po => {
+                  const isExpanded = expandedPoId === po.id;
+                  const poReminders = reminders.filter(r => r.poId === po.id);
+                  
+                  return (
+                    <React.Fragment key={po.id}>
+                      <tr 
+                        onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
+                        style={{ cursor: 'pointer', backgroundColor: isExpanded ? 'var(--color-bg-light)' : 'transparent' }}
+                      >
+                        <td style={{ textAlign: 'center' }}>
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </td>
+                        <td style={{ fontWeight: 'bold', color: 'var(--color-primary-dark)' }}>{po.poCode}</td>
+                        <td>{po.customerName}</td>
+                        <td>{po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : ''}</td>
+                        <td>{po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : ''}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{(po.netAmount || po.totalAmount || 0).toLocaleString()} đ</td>
+                        <td>
+                          <span className={`badge ${
+                            po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
+                            ['design_sent', 'layout_pending'].includes(po.status) ? 'badge-warning' :
+                            ['producing', 'production_done'].includes(po.status) ? 'badge-info' : 'badge-primary'
+                          }`}>
+                            {PO_STATES.find(s => s.value === po.status)?.label || po.status}
+                          </span>
+                        </td>
+                        <td>{po.createdBy || t('Không rõ')}</td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} style={{ padding: '20px', backgroundColor: '#f8fafc', borderBottom: '2px solid var(--color-border)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }} className="po-details-expand-grid">
+                              {/* Left: Items list & Calculations */}
+                              <div>
+                                <h4 style={{ color: 'var(--color-primary-dark)', fontSize: '14px', fontWeight: 700, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Sliders size={16} />
+                                  <span>{t('Danh Sách Sản Phẩm & Quy Cách')}</span>
+                                </h4>
+
+                                <div className="po-inline-grid-container" style={{ marginBottom: '14px' }}>
+                                  <table className="po-inline-grid" style={{ minWidth: '700px' }}>
+                                    <thead>
+                                      <tr>
+                                        <th style={{ padding: '6px 8px' }}>STT</th>
+                                        <th style={{ padding: '6px 8px' }}>Mã Hàng</th>
+                                        <th style={{ padding: '6px 8px' }}>Tên Hàng</th>
+                                        <th style={{ padding: '6px 8px' }}>Quy Cách & Chất Liệu</th>
+                                        <th style={{ padding: '6px 8px' }}>ĐVT</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>SL</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Đơn Giá</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>CK (%)</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành Tiền (chưa VAT)</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thuế (%)</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành Tiền (gồm VAT)</th>
+                                        <th style={{ padding: '6px 8px' }}>Layout</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(po.items || []).map((item: any, idx: number) => {
+                                        const qty = Number(item.quantity) || 0;
+                                        const prc = Number(item.price || item.unitPrice) || 0;
+                                        const disc = Number(item.discountRate) || 0;
+                                        const vat = Number(item.vatRate) || 8;
+                                        
+                                        const subtotal = qty * prc * (1 - disc / 100);
+                                        const totalWithVat = subtotal * (1 + vat / 100);
+
+                                        const images = item.previewImages || (item.previewImage ? [item.previewImage] : []);
+
+                                        return (
+                                          <tr key={idx}>
+                                            <td>{idx + 1}</td>
+                                            <td style={{ fontWeight: 'bold' }}>{item.productCode}</td>
+                                            <td>{item.productName}</td>
+                                            <td>{item.size} ({item.material})</td>
+                                            <td>{item.unit || 'cái'}</td>
+                                            <td style={{ textAlign: 'right' }}>{qty.toLocaleString()}</td>
+                                            <td style={{ textAlign: 'right' }}>{prc.toLocaleString()} đ</td>
+                                            <td style={{ textAlign: 'right' }}>{disc}%</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{Math.round(subtotal).toLocaleString()} đ</td>
+                                            <td style={{ textAlign: 'right' }}>{vat}%</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>{Math.round(totalWithVat).toLocaleString()} đ</td>
+                                            <td>
+                                              <div style={{ display: 'flex', gap: '4px' }}>
+                                                {images.map((img: string, iIdx: number) => (
+                                                  <img 
+                                                    key={iIdx}
+                                                    src={img} 
+                                                    alt="layout" 
+                                                    style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--color-border)' }}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setPreviewImage(img);
+                                                    }}
+                                                  />
+                                                ))}
+                                                {images.length === 0 && <span style={{ fontStyle: 'italic', fontSize: '11px', color: 'var(--color-text-muted)' }}>{t('Chưa có')}</span>}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Quick transition status */}
+                                {(user.role === 'admin' || user.role === 'sale' || user.role === 'producer') && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'white', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--color-border-light)' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('Cập nhật nhanh trạng thái PO:')}</span>
+                                    <select 
+                                      value={po.status} 
+                                      onChange={(e) => handleUpdateStatus(po.id, e.target.value)}
+                                      style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--color-border)' }}
+                                    >
+                                      {PO_STATES.map(state => (
+                                        <option key={state.value} value={state.value}>{state.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Right: Vertical Timeline & Reminders */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                {/* REMINDERS MANAGER */}
+                                <div style={{ backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '14px' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-dark)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Bell size={14} />
+                                    <span>{t('Lời Nhắc Nhở Đơn Hàng')} ({poReminders.length})</span>
+                                  </h4>
+
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '140px', overflowY: 'auto', marginBottom: '10px' }}>
+                                    {poReminders.map(rem => (
+                                      <div key={rem.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', borderBottom: '1px solid #f1f5f9', fontSize: '12.5px' }}>
+                                        <input 
+                                          type="checkbox" 
+                                          checked={rem.completed} 
+                                          onChange={(e) => handleToggleReminder(rem.id, e.target.checked)}
+                                        />
+                                        <span style={{ 
+                                          flex: 1, 
+                                          textDecoration: rem.completed ? 'line-through' : 'none',
+                                          color: rem.completed ? 'var(--color-text-muted)' : 'var(--color-text-main)'
+                                        }}>
+                                          {rem.message}
+                                        </span>
+                                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                          ({new Date(rem.date).toLocaleDateString('vi-VN')})
+                                        </span>
+                                        <button 
+                                          type="button" 
+                                          onClick={() => handleDeleteReminder(rem.id)}
+                                          style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    {poReminders.length === 0 && (
+                                      <span style={{ fontStyle: 'italic', fontSize: '12px', color: 'var(--color-text-muted)', padding: '6px 0' }}>
+                                        {t('Chưa có lời nhắc nhở nào cho đơn này.')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: '6px' }}>
+                                    <input 
+                                      type="text" 
+                                      placeholder={t('Nội dung nhắc...')}
+                                      value={newReminderText}
+                                      onChange={(e) => setNewReminderText(e.target.value)}
+                                      style={{ flex: 1, padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}
+                                    />
+                                    <input 
+                                      type="date"
+                                      value={newReminderDate}
+                                      onChange={(e) => setNewReminderDate(e.target.value)}
+                                      style={{ padding: '4px 6px', fontSize: '12px', borderRadius: '4px', border: '1px solid var(--color-border)', width: '120px' }}
+                                    />
+                                    <button 
+                                      type="button" 
+                                      className="btn btn-sm btn-primary"
+                                      onClick={() => handleAddReminderSubmit(po.id, po.poCode)}
+                                      style={{ padding: '4px 10px' }}
+                                    >
+                                      <Plus size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* VERTICAL TIMELINE OF 15 STATES */}
+                                <div style={{ backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '14px' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-dark)', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Clock size={14} />
+                                    <span>{t('Nhật Ký & Timeline Tiến Độ')}</span>
+                                  </h4>
+
+                                  <div className="timeline" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                    {(po.historyLogs || []).map((log: any, lIdx: number) => (
+                                      <div key={lIdx} className="timeline-item" style={{ paddingBottom: '10px' }}>
+                                        <div className="timeline-marker" style={{ width: '8px', height: '8px', top: '4px' }}></div>
+                                        <div className="timeline-content" style={{ marginLeft: '16px' }}>
+                                          <span className="timeline-title" style={{ fontSize: '12px', fontWeight: 700 }}>
+                                            {PO_STATES.find(s => s.value === log.status)?.label || log.status}
+                                          </span>
+                                          <span className="timeline-date" style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'block' }}>
+                                            {new Date(log.updatedAt).toLocaleString('vi-VN')} - {t('Nhân sự:')} {log.updatedBy}
+                                          </span>
+                                          {log.note && <span style={{ fontSize: '11.5px', display: 'block', color: 'var(--color-text-main)' }}>{log.note}</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+
+                {categoryPOs.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>
+                      {t('Không có đơn hàng PO nào thuộc nhóm tiến độ này.')}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* LIGHTBOX LAYOUT ZOOM */}
+        {previewImage && (
+          <div 
+            className="modal-overlay" 
+            onClick={() => setPreviewImage(null)} 
+            style={{ zIndex: 1300, background: 'rgba(0,0,0,0.8)' }}
+          >
+            <div 
+              className="modal-content" 
+              style={{ maxWidth: '90%', maxHeight: '90%', padding: '10px', position: 'relative', background: 'transparent', boxShadow: 'none' }} 
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                type="button" 
+                style={{ 
+                  position: 'absolute', 
+                  top: '-10px', 
+                  right: '-10px', 
+                  backgroundColor: 'white', 
+                  color: 'black', 
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '28px', 
+                  height: '28px', 
+                  fontSize: '16px', 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }} 
+                onClick={() => setPreviewImage(null)}
+              >
+                ×
+              </button>
+              <img 
+                src={previewImage} 
+                alt="Layout Zoom" 
+                style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: '4px', border: '2px solid white' }} 
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // STANDARD DASHBOARD VIEW
   return (
     <div className="dashboard-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      
+      {/* HEADER SECTION */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 className="page-title">{t('BẢNG ĐIỀU KHIỂN TỔNG QUAN')}</h1>
           <p className="page-subtitle">{t('Xin chào,')} {user.displayName} | {t('Vai trò:')} {user.role.toUpperCase()}</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Tháng')}</label>
-            <select 
-              value={selectedMonth} 
-              onChange={e => setSelectedMonth(e.target.value)}
-              style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '13px', backgroundColor: '#fff' }}
+        
+        {/* TIME RANGE & DATE FILTERS */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', backgroundColor: '#f1f5f9', padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--color-border-light)' }}>
+          {/* Toggle filter mode */}
+          <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: '6px', overflow: 'hidden', marginRight: '6px' }}>
+            <button 
+              className={`btn btn-sm ${filterMode === 'month' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '4px 10px', fontSize: '12px', borderRadius: 0, border: 'none' }}
+              onClick={() => setFilterMode('month')}
             >
-              <option value="all">{t('Tất cả tháng')}</option>
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={i + 1} value={(i + 1).toString()}>{t('Tháng')} {i + 1}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Năm')}</label>
-            <select 
-              value={selectedYear} 
-              onChange={e => setSelectedYear(e.target.value)}
-              style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '13px', backgroundColor: '#fff' }}
+              {t('Theo Tháng')}
+            </button>
+            <button 
+              className={`btn btn-sm ${filterMode === 'range' ? 'btn-primary' : 'btn-outline'}`}
+              style={{ padding: '4px 10px', fontSize: '12px', borderRadius: 0, border: 'none' }}
+              onClick={() => setFilterMode('range')}
             >
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-            </select>
+              {t('Khoảng Ngày')}
+            </button>
           </div>
+
+          {filterMode === 'month' ? (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <select 
+                  value={selectedMonth} 
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '12.5px', backgroundColor: '#fff' }}
+                >
+                  <option value="all">{t('Tất cả tháng')}</option>
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <option key={i + 1} value={(i + 1).toString()}>{t('Tháng')} {i + 1}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <select 
+                  value={selectedYear} 
+                  onChange={e => setSelectedYear(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '12.5px', backgroundColor: '#fff' }}
+                >
+                  <option value="2026">2026</option>
+                  <option value="2025">2025</option>
+                  <option value="2024">2024</option>
+                </select>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input 
+                type="date"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '12.5px' }}
+              />
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('đến')}</span>
+              <input 
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                style={{ padding: '5px 8px', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '12.5px' }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* ADMIN / GIÁM ĐỐC VIEW */}
-      {(user.role === 'admin') && (
+      {user.role === 'admin' && (
         <>
           <div className="metrics-grid">
             <div className="metric-card">
@@ -169,8 +665,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           )}
 
-          {/* Visual Charts Container (Bar and Donut) */}
-          <div className="charts-row-mobile" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', width: '100%' }}>
+          {/* CHARTS CONTAINER + DYNAMIC INTERACTIVE CARDS */}
+          <div className="charts-row-mobile" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', width: '100%', marginBottom: '10px' }}>
             <div className="card" style={{ flex: '1 1 300px' }}>
               <div className="card-header">
                 <span className="card-title">{t('Cơ Cấu Doanh Thu & Công Nợ')}</span>
@@ -184,18 +680,75 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 yAxisSuffix=" đ" 
               />
             </div>
-            <div className="card" style={{ flex: '1 1 300px' }}>
+
+            <div className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-header">
                 <span className="card-title">{t('Tiến Độ Các Đơn Hàng PO Hiện Tại')}</span>
               </div>
-              <DonutChart 
-                data={[
-                  { label: t('Mới Nhận PO'), value: filteredPOs.filter(p => p.status === 'receive_po').length, color: '#94a3b8' },
-                  { label: t('Đang Thiết Kế'), value: filteredPOs.filter(p => ['design_sent', 'layout_pending'].includes(p.status)).length, color: '#f59e0b' },
-                  { label: t('Đang Sản Xuất'), value: filteredPOs.filter(p => ['production_pending', 'producing'].includes(p.status)).length, color: '#3b82f6' },
-                  { label: t('Đã Giao Hàng'), value: filteredPOs.filter(p => ['delivered', 'debt_collected'].includes(p.status)).length, color: '#10b981' }
-                ]} 
-              />
+              
+              <div style={{ display: 'flex', gap: '20px', flex: 1, alignItems: 'center' }} className="po-donut-row-interactive">
+                {/* Visual Donut Chart */}
+                <div style={{ flex: 1.2, maxWidth: '240px' }}>
+                  <DonutChart 
+                    data={[
+                      { label: t('Mới Nhận PO'), value: filteredPOs.filter(p => p.status === 'receive_po').length, color: '#94a3b8' },
+                      { label: t('Đang Thiết Kế'), value: filteredPOs.filter(p => ['design_sent', 'layout_pending'].includes(p.status)).length, color: '#f59e0b' },
+                      { label: t('Đang Sản Xuất'), value: filteredPOs.filter(p => ['production_pending', 'producing'].includes(p.status)).length, color: '#3b82f6' },
+                      { label: t('Đã Giao Hàng'), value: filteredPOs.filter(p => ['delivered', 'debt_collected'].includes(p.status)).length, color: '#10b981' }
+                    ]} 
+                  />
+                </div>
+
+                {/* Clickable cards legend replacement */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {(() => {
+                    const totalPoCount = filteredPOs.length || 1;
+                    const items = [
+                      { key: 'receive_po', label: t('Mới Nhận PO'), count: filteredPOs.filter(p => p.status === 'receive_po').length, bg: '#e2e8f0', text: '#475569', color: '#94a3b8' },
+                      { key: 'design', label: t('Đang Thiết Kế'), count: filteredPOs.filter(p => ['design_sent', 'layout_pending', 'bom_extracted'].includes(p.status)).length, bg: '#fef3c7', text: '#b45309', color: '#f59e0b' },
+                      { key: 'production', label: t('Đang Sản Xuất'), count: filteredPOs.filter(p => ['supplier_ordered', 'supplier_confirmed', 'production_pending', 'producing', 'production_done', 'qc_passed', 'packed'].includes(p.status)).length, bg: '#dbeafe', text: '#1d4ed8', color: '#3b82f6' },
+                      { key: 'delivery', label: t('Đã Giao Hàng'), count: filteredPOs.filter(p => ['delivering', 'delivered', 'invoiced', 'debt_collected'].includes(p.status)).length, bg: '#d1fae5', text: '#047857', color: '#10b981' }
+                    ];
+
+                    return items.map(item => {
+                      const percent = Math.round((item.count / totalPoCount) * 100);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setSelectedProgressCategory(item.key)}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            border: `1px solid ${item.color}`,
+                            backgroundColor: item.bg,
+                            color: item.text,
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            textAlign: 'left',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                          }}
+                          className="po-progress-card-btn"
+                          title={t('Click để xem danh sách đơn hàng chi tiết')}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
+                            <span>{item.label}</span>
+                          </div>
+                          <span>
+                            {item.count} ({percent}%)
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -305,9 +858,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="card">
-            <div className="card-header">
-              <span className="card-title">{t('Theo Dõi Đơn Hàng Mới Nhất')}</span>
-              <button className="btn btn-sm btn-primary" onClick={() => onNavigate('sales')}>{t('Tạo đơn hàng mới')}</button>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="card-title">{t('Theo Dõi Tiến Độ Đơn Hàng PO Gần Đây')}</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Visual navigation category buttons */}
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('receive_po')}>{t('Mới Nhận PO')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('design')}>{t('Đang Thiết Kế')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Đang Sản Xuất')}</button>
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => onNavigate('sales')}>{t('Tạo đơn hàng mới')}</button>
+              </div>
             </div>
             <div className="table-container">
               <table>
@@ -321,7 +880,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPOs.filter(po => po.saleId === user.uid).slice(0, 5).map(po => (
+                  {filteredPOs.filter(po => po.saleId === user.uid).slice(0, 8).map(po => (
                     <tr key={po.id}>
                       <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                       <td>{po.customerName}</td>
@@ -330,8 +889,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <td>
                         <span className={`badge ${
                           po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
-                          po.status === 'producing' ? 'badge-info' : 'badge-warning'
-                        }`}>{po.status.replace('_', ' ').toUpperCase()}</span>
+                          ['producing', 'production_done'].includes(po.status) ? 'badge-info' : 'badge-warning'
+                        }`}>{PO_STATES.find(s => s.value === po.status)?.label || po.status.toUpperCase()}</span>
                       </td>
                     </tr>
                   ))}
@@ -370,9 +929,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('Nhiệm Vụ Thiết Kế Chờ Xử Lý')}</span>
-              <button className="btn btn-sm btn-primary" onClick={() => onNavigate('design')}>{t('Vào trang thiết kế')}</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('design')}>{t('Đơn Đang Thiết Kế')}</button>
+                <button className="btn btn-sm btn-primary" onClick={() => onNavigate('design')}>{t('Vào trang thiết kế')}</button>
+              </div>
             </div>
             <div className="table-container">
               <table>
@@ -461,9 +1023,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div className="card">
-              <div className="card-header">
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="card-title">{t('Đơn Mua Hàng Gần Đây')}</span>
-                <button className="btn btn-sm btn-primary" onClick={() => onNavigate('purchase')}>{t('Mua Vật Tư')}</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Theo dõi hàng PO')}</button>
+                  <button className="btn btn-sm btn-primary" onClick={() => onNavigate('purchase')}>{t('Mua Vật Tư')}</button>
+                </div>
               </div>
               <div className="table-container">
                 <table>
@@ -524,9 +1089,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('Tiến Độ Lệnh Sản Xuất Hiện Tại')}</span>
-              <button className="btn btn-sm btn-primary" onClick={() => onNavigate('production')}>{t('Vào Xưởng')}</button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Theo dõi hàng PO')}</button>
+                <button className="btn btn-sm btn-primary" onClick={() => onNavigate('production')}>{t('Vào Xưởng')}</button>
+              </div>
             </div>
             <div className="table-container">
               <table>

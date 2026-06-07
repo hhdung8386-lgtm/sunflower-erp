@@ -1401,43 +1401,9 @@ tr:hover td {
   transition: grid-template-columns var(--transition-normal);
 }
 
-.app-container.sidebar-collapsed {
-  grid-template-columns: 0px 1fr;
-}
-
-.app-container.sidebar-collapsed .app-sidebar {
-  transform: translateX(-100%);
-  width: 0px;
-  border-right: none;
-  overflow: hidden;
-}
-
+/* Collapsible sidebar layout styles removed as sidebar is always visible on desktop */
 .desktop-menu-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background-color: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-main);
-  border-radius: var(--border-radius-sm);
-  font-size: 16px;
-  cursor: pointer;
-  transition: var(--transition-fast);
-  margin-right: 8px;
-}
-
-.desktop-menu-btn:hover {
-  background-color: var(--color-primary-light);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-@media (max-width: 768px) {
-  .desktop-menu-btn {
-    display: none;
-  }
+  display: none !important;
 }
 
 /* ==========================================
@@ -2011,3 +1977,147 @@ tr:hover td {
   font-size: 11px;
   color: var(--color-text-muted);
 }
+
+/* ==========================================
+   FULL-SCREEN MODAL LAYOUT
+   ========================================== */
+.modal-overlay-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  z-index: 1100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-content-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ==========================================
+   PO EXCEL-LIKE INLINE GRID
+   ========================================== */
+.po-inline-grid-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  background-color: var(--bg-card);
+}
+
+.po-inline-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background-color: var(--bg-card);
+}
+
+.po-inline-grid th {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  padding: 12px 8px;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.po-inline-grid td {
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.po-inline-grid tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.po-grid-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  background-color: transparent;
+  font-size: 13px;
+  color: var(--color-text-main);
+  transition: all 0.15s ease;
+}
+
+.po-grid-input:focus {
+  border-color: var(--color-primary);
+  background-color: var(--bg-card);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.po-grid-input-readonly {
+  background-color: var(--bg-muted);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   SIDEBAR BADGES & NOTIFICATIONS
+   ========================================== */
+.sidebar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: white;
+  background-color: #ef4444;
+  border-radius: 9999px;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+  margin-left: auto;
+}
+
+.sidebar-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  margin-left: auto;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+

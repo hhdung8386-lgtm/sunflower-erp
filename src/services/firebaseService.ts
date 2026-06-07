@@ -379,9 +379,26 @@ const DEFAULT_INVOICES: any[] = [
   }
 ];
 
+const DEFAULT_CHANNELS: any[] = [
+  { id: 'all', name: 'Kênh Chung', desc: 'Thảo luận chung toàn công ty', roles: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' },
+  { id: 'accountant', name: 'Kênh Kế Toán', desc: 'Kênh làm việc nội bộ Kế toán', roles: ['admin', 'accountant'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' },
+  { id: 'production', name: 'Kênh Sản Xuất', desc: 'Kênh điều hành & báo cáo xưởng sản xuất', roles: ['admin', 'producer'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' },
+  { id: 'design', name: 'Kênh Thiết Kế', desc: 'Trao đổi chuyên môn thiết kế & mẫu', roles: ['admin', 'designer'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' },
+  { id: 'sale', name: 'Kênh Sale', desc: 'Báo cáo & chia sẻ chiến dịch khách hàng', roles: ['admin', 'sale'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' },
+  { id: 'purchase', name: 'Kênh Mua Hàng', desc: 'Trao đổi đặt hàng nguyên vật tư', roles: ['admin', 'purchaser'], members: [], createdBy: 'u-admin', createdAt: '2026-05-01T00:00:00Z' }
+];
+
 const initLocalStorage = () => {
   if (!localStorage.getItem('erp_users')) {
     localStorage.setItem('erp_users', JSON.stringify(DEFAULT_USERS));
+  }
+
+  if (!localStorage.getItem('erp_channels')) {
+    localStorage.setItem('erp_channels', JSON.stringify(DEFAULT_CHANNELS));
+  }
+
+  if (!localStorage.getItem('erp_reminders')) {
+    localStorage.setItem('erp_reminders', JSON.stringify([]));
   }
 
   let customers = localStorage.getItem('erp_customers') ? JSON.parse(localStorage.getItem('erp_customers')!) : [];
@@ -458,6 +475,7 @@ const seedFirestoreIfNeeded = async () => {
     await checkAndSeed('production_commands', DEFAULT_PRODUCTION_COMMANDS);
     await checkAndSeed('deliveries', DEFAULT_DELIVERIES);
     await checkAndSeed('invoices', DEFAULT_INVOICES);
+    await checkAndSeed('channels', DEFAULT_CHANNELS);
 
     console.log("Firestore successfully seeded with default data.");
   } catch (error) {

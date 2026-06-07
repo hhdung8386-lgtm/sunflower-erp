@@ -62,10 +62,8 @@ function App() {
     return allowed.includes(pageId);
   };
   
-  // Collapsible sidebar state
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('erp_sidebar_collapsed') === 'true';
-  });
+  // Dynamic channels state
+  const [channels, setChannels] = useState<any[]>([]);
   
   // Real-time synchronization states
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -118,6 +116,7 @@ function App() {
     const unsubInvoices = dbService.subscribeCollection('invoices', setInvoices);
     const unsubInventory = dbService.subscribeCollection('inventory', setInventory);
     const unsubMessages = dbService.subscribeCollection('messages', setMessages);
+    const unsubChannels = dbService.subscribeCollection('channels', setChannels);
 
     return () => {
       unsubUsers();
@@ -129,6 +128,7 @@ function App() {
       unsubInvoices();
       unsubInventory();
       unsubMessages();
+      unsubChannels();
     };
   }, [user]);
 
@@ -169,17 +169,14 @@ function App() {
   const getUnreadChannelMessagesTotal = () => {
     if (!user) return 0;
     
-    // Available channels for this role
-    const channels = [
-      { id: 'all', roles: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'] },
-      { id: 'accountant', roles: ['admin', 'accountant'] },
-      { id: 'production', roles: ['admin', 'producer'] },
-      { id: 'design', roles: ['admin', 'designer'] },
-      { id: 'sale', roles: ['admin', 'sale'] },
-      { id: 'purchase', roles: ['admin', 'purchaser'] },
-    ];
-    
-    const userChannels = channels.filter(ch => ch.roles.includes(user.role));
+    // Filter channels based on current user role or explicit membership
+    const userChannels = channels.filter(ch => {
+      const hasRoleAccess = ch.roles ? ch.roles.includes(user.role) : false;
+      const hasMemberAccess = ch.members ? ch.members.includes(user.uid) : false;
+      const isCreator = ch.createdBy === user.uid;
+      const isAdmin = user.role === 'admin';
+      return hasRoleAccess || hasMemberAccess || isCreator || isAdmin;
+    });
     
     let total = 0;
     for (const ch of userChannels) {
@@ -194,6 +191,69 @@ function App() {
       }
     }
     return total;
+  };
+
+  const getDashboardAlertCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin') return 0;
+    return productionCommands.filter(cmd => cmd.status === 'transfer_pending' && !cmd.deleted).length;
+  };
+
+  const getCrmAlertCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'sale') return 0;
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return customers.filter(c => {
+      if (!c.lastOrderAt) return false;
+      return new Date(c.lastOrderAt).getTime() < thirtyDaysAgo;
+    }).length;
+  };
+
+  const getSalesAlertCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'sale') return 0;
+    return pos.filter(p => (p.status === 'receive_po' || p.status === 'layout_pending') && !p.deleted).length;
+  };
+
+  const getDesignAlertCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'designer') return 0;
+    return pos.filter(p => p.status === 'receive_po' && !p.deleted).length;
+  };
+
+  const getLowStockMaterialsCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'purchaser') return 0;
+    return inventory.filter(item => item.qtyInStock <= item.minQtyAlert).length;
+  };
+
+  const getProductionAlertCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'producer') return 0;
+    return productionCommands.filter(cmd => 
+      !cmd.deleted && 
+      (cmd.status === 'producing' || cmd.status === 'transfer_pending') &&
+      (user.role === 'admin' || cmd.operatorId === user.uid)
+    ).length;
+  };
+
+  const getUpcomingDeliveriesCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin') return 0;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfWeek = today + 7 * 24 * 60 * 60 * 1000;
+    return deliveries.filter(d => {
+      if (d.status === 'completed') return false;
+      const dDate = new Date(d.deliveryDate).getTime();
+      return dDate >= today && dDate <= endOfWeek;
+    }).length;
+  };
+
+  const getUnpaidInvoicesCount = () => {
+    if (!user) return 0;
+    if (user.role !== 'admin' && user.role !== 'accountant') return 0;
+    return invoices.filter(i => i.status === 'unpaid').length;
   };
 
   const refreshData = () => {
@@ -266,6 +326,7 @@ function App() {
               setActivePage('production');
             }}
             users={users}
+            channels={channels}
           />
         );
       case 'recycle_bin':
@@ -439,7 +500,7 @@ function App() {
   const unreadChannelCount = getUnreadChannelMessagesTotal();
 
   return (
-    <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className="app-container">
       {/* Mobile backdrop overlay */}
       <div 
         className={`sidebar-overlay-mobile ${isSidebarOpen ? 'show' : ''}`} 
@@ -457,10 +518,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'dashboard' ? 'active' : ''}`}
               onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <LayoutDashboard size={16} />
-              <span>{t('Tổng Quan Dashboards')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <LayoutDashboard size={16} />
+                <span>{t('Tổng Quan Dashboards')}</span>
+              </div>
+              {getDashboardAlertCount() > 0 && <span className="sidebar-badge">{getDashboardAlertCount()}</span>}
             </button>
           )}
 
@@ -474,7 +538,7 @@ function App() {
                 <MessageSquare size={16} />
                 <span>{t('Kênh Thảo Luận')}</span>
               </div>
-              {unreadChannelCount > 0 && <span className="chat-channel-badge">{unreadChannelCount}</span>}
+              {unreadChannelCount > 0 && <span className="sidebar-badge">{unreadChannelCount}</span>}
             </button>
           )}
           
@@ -482,10 +546,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
               onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <Users size={16} />
-              <span>{t('Khách Hàng (CRM)')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Users size={16} />
+                <span>{t('Khách Hàng (CRM)')}</span>
+              </div>
+              {getCrmAlertCount() > 0 && <span className="sidebar-badge">{getCrmAlertCount()}</span>}
             </button>
           )}
 
@@ -493,10 +560,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'sales' ? 'active' : ''}`}
               onClick={() => { setActivePage('sales'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <FileText size={16} />
-              <span>{t('Tiếp Nhận Đơn (Sale PO)')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileText size={16} />
+                <span>{t('Tiếp Nhận Đơn (Sale PO)')}</span>
+              </div>
+              {getSalesAlertCount() > 0 && <span className="sidebar-badge">{getSalesAlertCount()}</span>}
             </button>
           )}
 
@@ -504,10 +574,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'design' ? 'active' : ''}`}
               onClick={() => { setActivePage('design'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <Palette size={16} />
-              <span>{t('Thiết Kế & Layout')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Palette size={16} />
+                <span>{t('Thiết Kế & Layout')}</span>
+              </div>
+              {getDesignAlertCount() > 0 && <span className="sidebar-badge">{getDesignAlertCount()}</span>}
             </button>
           )}
 
@@ -515,10 +588,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'purchase' ? 'active' : ''}`}
               onClick={() => { setActivePage('purchase'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <ShoppingBag size={16} />
-              <span>{t('Mua Hàng & NCC')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ShoppingBag size={16} />
+                <span>{t('Mua Hàng & NCC')}</span>
+              </div>
+              {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
             </button>
           )}
 
@@ -526,10 +602,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'inventory' ? 'active' : ''}`}
               onClick={() => { setActivePage('inventory'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <Archive size={16} />
-              <span>{t('Kho Nguyên Vật Tư')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Archive size={16} />
+                <span>{t('Kho Nguyên Vật Tư')}</span>
+              </div>
+              {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
             </button>
           )}
 
@@ -537,10 +616,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'production' ? 'active' : ''}`}
               onClick={() => { setActivePage('production'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <Settings size={16} />
-              <span>{t('Lệnh Sản Xuất (LSX)')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Settings size={16} />
+                <span>{t('Lệnh Sản Xuất (LSX)')}</span>
+              </div>
+              {getProductionAlertCount() > 0 && <span className="sidebar-badge">{getProductionAlertCount()}</span>}
             </button>
           )}
 
@@ -548,10 +630,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'delivery' ? 'active' : ''}`}
               onClick={() => { setActivePage('delivery'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <Truck size={16} />
-              <span>{t('Kế Hoạch Giao Hàng')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Truck size={16} />
+                <span>{t('Kế Hoạch Giao Hàng')}</span>
+              </div>
+              {getUpcomingDeliveriesCount() > 0 && <span className="sidebar-badge">{getUpcomingDeliveriesCount()}</span>}
             </button>
           )}
 
@@ -559,10 +644,13 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'accounting' ? 'active' : ''}`}
               onClick={() => { setActivePage('accounting'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <DollarSign size={16} />
-              <span>{t('Kế Toán & Lãi Gộp')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <DollarSign size={16} />
+                <span>{t('Kế Toán & Lãi Gộp')}</span>
+              </div>
+              {getUnpaidInvoicesCount() > 0 && <span className="sidebar-badge">{getUnpaidInvoicesCount()}</span>}
             </button>
           )}
 
@@ -603,19 +691,6 @@ function App() {
       {/* APP HEADER */}
       <header className="app-header">
         <div className="header-title-container">
-          {/* Desktop sidebar toggle button */}
-          <button 
-            className="desktop-menu-btn" 
-            onClick={() => {
-              const nextVal = !isSidebarCollapsed;
-              setIsSidebarCollapsed(nextVal);
-              localStorage.setItem('erp_sidebar_collapsed', String(nextVal));
-            }}
-            title={isSidebarCollapsed ? t('Hiện menu') : t('Ẩn menu')}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Menu size={20} />
-          </button>
           
           {/* Hamburger menu toggle button for mobile */}
           <button 

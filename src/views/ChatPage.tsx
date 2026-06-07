@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { Plus } from 'lucide-react';
 
 interface ChatPageProps {
   currentUser: UserProfile;
@@ -10,6 +11,7 @@ interface ChatPageProps {
   onNavigateToPO: (poId: string) => void;
   onNavigateToLSX: (lsxId: string) => void;
   users: UserProfile[];
+  channels: any[];
 }
 
 export const ChatPage: React.FC<ChatPageProps> = ({
@@ -19,13 +21,75 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   productionCommands,
   onNavigateToPO,
   onNavigateToLSX,
-  users
+  users,
+  channels
 }) => {
   const { t } = useLanguage();
   const [activeChannelId, setActiveChannelId] = useState<string>('all');
   const [messageText, setMessageText] = useState('');
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Modals state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelDesc, setNewChannelDesc] = useState('');
+  const [newChannelMembers, setNewChannelMembers] = useState<string[]>([]);
+  
+  const [editChannelName, setEditChannelName] = useState('');
+  const [editChannelDesc, setEditChannelDesc] = useState('');
+  const [editChannelMembers, setEditChannelMembers] = useState<string[]>([]);
+
+  const handleCreateChannelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newChannelName.trim()) return;
+
+    const newChannel = {
+      name: newChannelName.trim(),
+      desc: newChannelDesc.trim(),
+      members: [...newChannelMembers, currentUser.uid], // Creator is always a member
+      roles: [],
+      createdBy: currentUser.uid,
+      createdAt: new Date().toISOString()
+    };
+
+    const created = await dbService.addDocument('channels', newChannel);
+    if (created) {
+      setActiveChannelId(created.id);
+    }
+    setShowCreateModal(false);
+  };
+
+  const handleEditChannelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editChannelName.trim() || !activeChannelId) return;
+
+    await dbService.updateDocument('channels', activeChannelId, {
+      name: editChannelName.trim(),
+      desc: editChannelDesc.trim(),
+      members: editChannelMembers
+    });
+
+    setShowEditModal(false);
+  };
+
+  const handleToggleMember = (userId: string, isEdit: boolean) => {
+    if (userId === currentUser.uid && isEdit) {
+      // Creator/Admin cannot remove themselves from membership
+      return;
+    }
+    if (isEdit) {
+      setEditChannelMembers(prev => 
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+      );
+    } else {
+      setNewChannelMembers(prev => 
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+      );
+    }
+  };
 
   const handleRecallMessage = async (msgId: string) => {
     if (window.confirm(t('Bạn có chắc chắn muốn thu hồi tin nhắn này?'))) {
@@ -88,18 +152,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     setShowSuggestions(false);
   };
 
-  // Define channels
-  const channels = [
-    { id: 'all', name: t('Kênh Chung'), desc: t('Thảo luận chung toàn công ty'), roles: ['admin', 'sale', 'designer', 'purchaser', 'producer', 'accountant'] },
-    { id: 'accountant', name: t('Kênh Kế Toán'), desc: t('Kênh làm việc nội bộ Kế toán'), roles: ['admin', 'accountant'] },
-    { id: 'production', name: t('Kênh Sản Xuất'), desc: t('Kênh điều hành & báo cáo xưởng sản xuất'), roles: ['admin', 'producer'] },
-    { id: 'design', name: t('Kênh Thiết Kế'), desc: t('Trao đổi chuyên môn thiết kế & mẫu'), roles: ['admin', 'designer'] },
-    { id: 'sale', name: t('Kênh Sale'), desc: t('Báo cáo & chia sẻ chiến dịch khách hàng'), roles: ['admin', 'sale'] },
-    { id: 'purchase', name: t('Kênh Mua Hàng'), desc: t('Trao đổi đặt hàng nguyên vật tư'), roles: ['admin', 'purchaser'] },
-  ];
-
-  // Filter channels based on current user role
-  const availableChannels = channels.filter(ch => ch.roles.includes(currentUser.role));
+  // Filter channels based on current user role or explicit membership
+  const availableChannels = (channels || []).filter(ch => {
+    const hasRoleAccess = ch.roles ? ch.roles.includes(currentUser.role) : false;
+    const hasMemberAccess = ch.members ? ch.members.includes(currentUser.uid) : false;
+    const isCreator = ch.createdBy === currentUser.uid;
+    const isAdmin = currentUser.role === 'admin';
+    return hasRoleAccess || hasMemberAccess || isCreator || isAdmin;
+  });
 
   // Mark active channel as read
   useEffect(() => {
@@ -221,9 +281,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       <div className="chat-page-container">
         {/* Sidebar Kênh */}
         <div className="chat-channels-list">
-          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: '8px', textTransform: 'uppercase' }}>
-            {t('Kênh của bạn')}
-          </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', margin: 0 }}>
+              {t('Kênh thảo luận')}
+            </span>
+            <button 
+              type="button" 
+              className="btn btn-sm btn-outline btn-symbol" 
+              style={{ width: '24px', height: '24px', minWidth: '24px', borderRadius: '4px' }}
+              onClick={() => {
+                setNewChannelName('');
+                setNewChannelDesc('');
+                setNewChannelMembers([]);
+                setShowCreateModal(true);
+              }}
+              title={t('Tạo kênh mới')}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
           {availableChannels.map(ch => {
             const count = getUnreadCount(ch.id);
             return (
@@ -241,11 +317,26 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
         {/* Khung Chat */}
         <div className="chat-box-panel">
-          <div className="chat-box-header">
+          <div className="chat-box-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <span style={{ fontWeight: 700, color: 'var(--color-primary)', fontSize: '15px' }}># {activeChannel?.name}</span>
               <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: 0 }}>{activeChannel?.desc}</p>
             </div>
+            {(currentUser.role === 'admin' || activeChannel?.createdBy === currentUser.uid) && activeChannel?.id !== 'all' && (
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline"
+                style={{ fontSize: '12px', padding: '4px 10px' }}
+                onClick={() => {
+                  setEditChannelName(activeChannel.name);
+                  setEditChannelDesc(activeChannel.desc || '');
+                  setEditChannelMembers(activeChannel.members || []);
+                  setShowEditModal(true);
+                }}
+              >
+                {t('Sửa kênh')}
+              </button>
+            )}
           </div>
 
           <div className="chat-messages-area">
@@ -391,6 +482,112 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           </div>
         </div>
       </div>
+
+      {/* CREATE CHANNEL MODAL */}
+      {showCreateModal && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '500px', width: '90%' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO KÊNH THẢO LUẬN MỚI')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowCreateModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleCreateChannelSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group">
+                  <label>{t('Tên Kênh *')}</label>
+                  <input 
+                    type="text" 
+                    value={newChannelName} 
+                    onChange={e => setNewChannelName(e.target.value)} 
+                    placeholder={t('Ví dụ: Thảo luận PO-Aqua...')}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>{t('Mô Tả Kênh')}</label>
+                  <input 
+                    type="text" 
+                    value={newChannelDesc} 
+                    onChange={e => setNewChannelDesc(e.target.value)} 
+                    placeholder={t('Mô tả mục đích kênh chat...')}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600 }}>{t('Thành Viên Tham Gia')}</label>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'white' }}>
+                    {users.filter(u => u.uid !== currentUser.uid && u.active).map(u => (
+                      <label key={u.uid} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={newChannelMembers.includes(u.uid)} 
+                          onChange={() => handleToggleMember(u.uid, false)}
+                        />
+                        <span style={{ fontSize: '13px' }}>{u.displayName} ({t(u.role.toUpperCase())})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowCreateModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Tạo Kênh')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CHANNEL MODAL */}
+      {showEditModal && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '500px', width: '90%' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN KÊNH')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditChannelSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="form-group">
+                  <label>{t('Tên Kênh *')}</label>
+                  <input 
+                    type="text" 
+                    value={editChannelName} 
+                    onChange={e => setEditChannelName(e.target.value)} 
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>{t('Mô Tả Kênh')}</label>
+                  <input 
+                    type="text" 
+                    value={editChannelDesc} 
+                    onChange={e => setEditChannelDesc(e.target.value)} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontWeight: 600 }}>{t('Thành Viên Kênh')}</label>
+                  <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'white' }}>
+                    {users.filter(u => u.uid !== currentUser.uid && u.active).map(u => (
+                      <label key={u.uid} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={editChannelMembers.includes(u.uid)} 
+                          onChange={() => handleToggleMember(u.uid, true)}
+                        />
+                        <span style={{ fontSize: '13px' }}>{u.displayName} ({t(u.role.toUpperCase())})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

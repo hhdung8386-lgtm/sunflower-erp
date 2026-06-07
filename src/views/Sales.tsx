@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
+import POFormFullScreen from '../components/POFormFullScreen';
 import { 
   Plus, 
   Trash2, 
@@ -72,149 +73,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     fetchSuppliers();
   }, []);
 
-  // Multi-item PO states
-  const [poItems, setPoItems] = useState<any[]>([]);
-
-  // Item popup form states
-  const [showItemModal, setShowItemModal] = useState(false);
-  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [itemProductCode, setItemProductCode] = useState('MANUAL');
-  const [itemProductName, setItemProductName] = useState('');
-  const [itemSize, setItemSize] = useState('100x100mm');
-  const [itemMaterial, setItemMaterial] = useState('Decal Giấy Fasson AW0339F');
-  const [itemQuantity, setItemQuantity] = useState(1000);
-  const [itemPrice, setItemPrice] = useState(1000);
-  const [itemSupplierId, setItemSupplierId] = useState('');
-  const [itemPurchasePrice, setItemPurchasePrice] = useState(0);
-
-  // File upload Base64 states
-  const [pdfFile, setPdfFile] = useState('');
-  const [excelFile, setExcelFile] = useState('');
-  const [aiFile, setAiFile] = useState('');
-  const [corelFile, setCorelFile] = useState('');
-  const [contractFile, setContractFile] = useState('');
-  const [quoteFile, setQuoteFile] = useState('');
-
-  // Edit File upload Base64 states
-  const [editPdfFile, setEditPdfFile] = useState('');
-  const [editExcelFile, setEditExcelFile] = useState('');
-  const [editAiFile, setEditAiFile] = useState('');
-  const [editCorelFile, setEditCorelFile] = useState('');
-  const [editContractFile, setEditContractFile] = useState('');
-  const [editQuoteFile, setEditQuoteFile] = useState('');
-
-  const [customerPoCode, setCustomerPoCode] = useState('');
-  const [editCustomerPoCode, setEditCustomerPoCode] = useState('');
-  const [showRepoModal, setShowRepoModal] = useState(false);
-  const [isEditRepoMode, setIsEditRepoMode] = useState(false);
+  // Modal lightbox preview image
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  const handleLinkFileChange = (e: React.ChangeEvent<HTMLInputElement>, setBase64: (base64: string) => void) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setBase64(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Form fields (Create PO)
-  const [customerId, setCustomerId] = useState('');
-  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
-  const [notes, setNotes] = useState('');
-  
-  // Product item fields
-  const [productName, setProductName] = useState('');
-  const [size, setSize] = useState('');
-  const [material, setMaterial] = useState('Decal giấy');
-  const [quantity, setQuantity] = useState(1000);
-  const [price, setPrice] = useState(1000);
-  const [base64Image, setBase64Image] = useState<string>('');
-  
-  // External drive links
-  const [pdfLink, setPdfLink] = useState('');
-  const [excelLink, setExcelLink] = useState('');
-  const [aiLink, setAiLink] = useState('');
-  const [corelLink, setCorelLink] = useState('');
-  const [contractLink, setContractLink] = useState('');
-  const [quoteLink, setQuoteLink] = useState('');
-
-  // Edit PO Form States
-  const [editExpectedDeliveryDate, setEditExpectedDeliveryDate] = useState('');
-  const [editNotes, setEditNotes] = useState('');
-  const [editProductName, setEditProductName] = useState('');
-  const [editSize, setEditSize] = useState('');
-  const [editMaterial, setEditMaterial] = useState('Decal giấy');
-  const [editQuantity, setEditQuantity] = useState(1000);
-  const [editPrice, setEditPrice] = useState(1000);
-  const [editBase64Image, setEditBase64Image] = useState('');
-  const [editPdfLink, setEditPdfLink] = useState('');
-  const [editExcelLink, setEditExcelLink] = useState('');
-  const [editAiLink, setEditAiLink] = useState('');
-  const [editCorelLink, setEditCorelLink] = useState('');
-  const [editContractLink, setEditContractLink] = useState('');
-  const [editQuoteLink, setEditQuoteLink] = useState('');
-
   const handleOpenEditModal = (po: any) => {
-    setEditExpectedDeliveryDate(new Date(po.expectedDeliveryDate).toISOString().split('T')[0]);
-    setEditNotes(po.notes || '');
-    setPoItems(po.items || []);
-    setEditPdfFile(po.links?.pdfLink || '');
-    setEditExcelFile(po.links?.excelLink || '');
-    setEditAiFile(po.links?.aiLink || '');
-    setEditCorelFile(po.links?.corelLink || '');
-    setEditContractFile(po.links?.contractLink || '');
-    setEditQuoteFile(po.links?.quoteLink || '');
-    setEditCustomerPoCode(po.customerPoCode || '');
     setSelectedPO(po);
     setShowEditModal(true);
-  };
-
-  const handleEditPO = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPO || poItems.length === 0) return;
-
-    const subtotal = poItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.price)), 0);
-    const customer = customers.find(c => c.id === selectedPO.customerId);
-    const discountRate = customer ? customer.discountRate : 0;
-    const discountAmount = Math.round(subtotal * (discountRate / 100));
-    const netAmount = subtotal - discountAmount;
-
-    const updatedLogs = [
-      ...selectedPO.historyLogs,
-      {
-        status: selectedPO.status,
-        updatedBy: currentUser.displayName,
-        updatedAt: new Date().toISOString(),
-        note: `${t('Chỉnh sửa thông số đơn hàng PO')} (Tổng trị giá: ${subtotal.toLocaleString()} đ)`
-      }
-    ];
-
-    await dbService.updateDocument('pos', selectedPO.id, {
-      expectedDeliveryDate: new Date(editExpectedDeliveryDate).toISOString(),
-      notes: editNotes,
-      customerPoCode: editCustomerPoCode,
-      items: poItems,
-      totalAmount: subtotal,
-      discountAmount,
-      netAmount,
-      links: {
-        pdfLink: editPdfFile,
-        excelLink: editExcelFile,
-        aiLink: editAiFile,
-        corelLink: editCorelFile,
-        contractLink: editContractFile,
-        quoteLink: editQuoteFile
-      },
-      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      updatedAt: new Date().toISOString(),
-      historyLogs: updatedLogs
-    });
-
-    setShowEditModal(false);
-    setSelectedPO(null);
-    onRefresh();
   };
 
   const handleDeletePO = async (poId: string) => {
@@ -233,281 +97,99 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     }
   };
 
-  const handleEditImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleSavePO = async (poData: any) => {
+    if (poData.id) {
+      // Editing existing PO
+      const subtotal = poData.totalAmount;
+      const discountAmount = poData.discountAmount;
+      const netAmount = poData.netAmount;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 600;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        setEditBase64Image(compressedBase64);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Logic to process file uploads on client and convert to Base64 String
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Create canvas to resize & compress image
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 600;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        // Compress to JPEG with 70% quality
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        setBase64Image(compressedBase64);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleOpenAddModal = () => {
-    setCustomerId(customers[0]?.id || '');
-    setExpectedDeliveryDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-    setNotes('');
-    setPoItems([]);
-    setPdfFile('');
-    setExcelFile('');
-    setAiFile('');
-    setCorelFile('');
-    setContractFile('');
-    setQuoteFile('');
-    setCustomerPoCode('');
-    setShowAddModal(true);
-  };
-
-  const addPredefinedItem = (prod: any) => {
-    if (poItems.some(i => i.productCode === prod.productCode)) return;
-
-    setPoItems([...poItems, {
-      itemId: `item-${Math.random().toString(36).substr(2, 9)}`,
-      productCode: prod.productCode,
-      productName: prod.productName,
-      size: prod.productType === 'muc_in' ? prod.specifications.size : `${prod.specifications.width}x${prod.specifications.height}mm`,
-      material: prod.productType === 'tem_trang_cuon' ? 'Decal Giấy Fasson AW0339F' : (prod.productType === 'muc_in' ? 'Mực in' : 'Decal nhựa PVC'),
-      quantity: 1000,
-      price: prod.currentPrice,
-      supplierId: '',
-      supplierName: '',
-      purchasePrice: 0,
-      workType: prod.productType === 'muc_in' ? 'mua_nvl' : 'gia_cong',
-      previewImage: prod.layoutUrl || '',
-      specifications: prod.specifications || {}
-    }]);
-  };
-
-  const openAddItemModal = () => {
-    setItemProductCode('MANUAL');
-    setItemProductName('');
-    setItemSize('100x100mm');
-    setItemMaterial('Decal Giấy Fasson AW0339F');
-    setItemQuantity(1000);
-    setItemPrice(1000);
-    setItemSupplierId('');
-    setItemPurchasePrice(0);
-    setEditingItemIndex(null);
-    setShowItemModal(true);
-  };
-
-  const openEditItemModal = (index: number) => {
-    const item = poItems[index];
-    setItemProductCode(item.productCode || 'MANUAL');
-    setItemProductName(item.productName || '');
-    setItemSize(item.size || '100x100mm');
-    setItemMaterial(item.material || 'Decal Giấy Fasson AW0339F');
-    setItemQuantity(Number(item.quantity) || 1000);
-    setItemPrice(Number(item.price) || 1000);
-    setItemSupplierId(item.supplierId || '');
-    setItemPurchasePrice(Number(item.purchasePrice) || 0);
-    setEditingItemIndex(index);
-    setShowItemModal(true);
-  };
-
-  const handleSaveItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!itemProductName) {
-      alert(t('Vui lòng nhập tên sản phẩm!'));
-      return;
-    }
-
-    const sup = suppliers.find(s => s.id === itemSupplierId);
-    const supplierName = sup ? sup.supplierName : '';
-    let workType = 'gia_cong';
-    if (itemProductCode.includes('5.07.006') || itemProductCode === 'MUC_IN') {
-      workType = 'mua_nvl';
-    }
-
-    const newItem = {
-      itemId: editingItemIndex !== null ? poItems[editingItemIndex].itemId : `item-${Math.random().toString(36).substr(2, 9)}`,
-      productCode: itemProductCode,
-      productName: itemProductName,
-      size: itemSize,
-      material: itemMaterial,
-      quantity: Number(itemQuantity),
-      price: Number(itemPrice),
-      supplierId: itemSupplierId,
-      supplierName: supplierName,
-      purchasePrice: Number(itemPurchasePrice),
-      workType: workType,
-      previewImage: editingItemIndex !== null ? poItems[editingItemIndex].previewImage : '',
-      specifications: editingItemIndex !== null ? poItems[editingItemIndex].specifications : {}
-    };
-
-    if (editingItemIndex !== null) {
-      const updated = [...poItems];
-      updated[editingItemIndex] = newItem;
-      setPoItems(updated);
-    } else {
-      setPoItems([...poItems, newItem]);
-    }
-
-    setShowItemModal(false);
-  };
-
-  const removePoItem = (index: number) => {
-    setPoItems(poItems.filter((_, i) => i !== index));
-  };
-
-  const updatePoItemField = (index: number, field: string, value: any) => {
-    const updated = [...poItems];
-    updated[index] = { ...updated[index], [field]: value };
-    if (field === 'supplierId') {
-      const sup = suppliers.find(s => s.id === value);
-      updated[index].supplierName = sup ? sup.supplierName : '';
-    }
-    setPoItems(updated);
-  };
-
-  const handleCreatePO = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customerId || poItems.length === 0) {
-      alert('Vui lòng chọn khách hàng và thêm ít nhất 1 sản phẩm vào đơn hàng!');
-      return;
-    }
-
-    const customer = customers.find(c => c.id === customerId);
-    if (!customer) return;
-
-    // Calculations
-    const subtotal = poItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.price)), 0);
-    const discountAmount = Math.round(subtotal * (customer.discountRate / 100));
-    const netAmount = subtotal - discountAmount;
-
-    // Auto sequential YYYYMM code
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `PO-${yyyy}${mm}-`;
-    
-    const monthPOs = pos.filter(p => p.poCode && p.poCode.startsWith(prefix));
-    let maxSeq = 0;
-    monthPOs.forEach(p => {
-      const parts = p.poCode.split('-');
-      if (parts.length === 3) {
-        const seq = parseInt(parts[2], 10);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
-        }
-      }
-    });
-    const nextSeq = String(maxSeq + 1).padStart(4, '0');
-    const poCode = `${prefix}${nextSeq}`;
-
-    const newPO = {
-      poCode,
-      customerPoCode: customerPoCode || poCode, // If custom code empty, fallback to generated code
-      customerId,
-      customerName: customer.companyName,
-      saleId: currentUser.uid,
-      orderDate: new Date().toISOString(),
-      expectedDeliveryDate: new Date(expectedDeliveryDate).toISOString(),
-      status: 'receive_po',
-      items: poItems,
-      totalAmount: subtotal,
-      discountAmount,
-      netAmount,
-      links: {
-        pdfLink: pdfFile,
-        excelLink: excelFile,
-        aiLink: aiFile,
-        corelLink: corelFile,
-        contractLink: contractFile,
-        quoteLink: quoteFile
-      },
-      notes,
-      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      createdAt: new Date().toISOString(),
-      updatedBy: '',
-      updatedAt: '',
-      historyLogs: [
+      const updatedLogs = [
+        ...selectedPO.historyLogs,
         {
-          status: 'receive_po',
+          status: selectedPO.status,
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
-          note: 'Khởi tạo đơn hàng mới trên ERP'
+          note: `${t('Chỉnh sửa thông số đơn hàng PO')} (Tổng trị giá: ${subtotal.toLocaleString()} đ)`
         }
-      ]
-    };
+      ];
 
-    await dbService.addDocument('pos', newPO);
-    await dbService.updateDocument('customers', customerId, {
-      lastOrderAt: new Date().toISOString()
-    });
+      await dbService.updateDocument('pos', poData.id, {
+        expectedDeliveryDate: poData.expectedDeliveryDate,
+        notes: poData.notes,
+        customerPoCode: poData.customerPoCode,
+        items: poData.items,
+        assignments: poData.assignments || [],
+        totalAmount: subtotal,
+        discountAmount,
+        netAmount,
+        links: poData.links,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString(),
+        historyLogs: updatedLogs
+      });
 
-    setShowAddModal(false);
+      setShowEditModal(false);
+      setSelectedPO(null);
+    } else {
+      // Creating new PO
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const prefix = `PO-${yyyy}${mm}-`;
+      
+      const monthPOs = pos.filter(p => p.poCode && p.poCode.startsWith(prefix));
+      let maxSeq = 0;
+      monthPOs.forEach(p => {
+        const parts = p.poCode.split('-');
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
+        }
+      });
+      const nextSeq = String(maxSeq + 1).padStart(4, '0');
+      const poCode = `${prefix}${nextSeq}`;
+
+      const newPO = {
+        poCode,
+        customerPoCode: poData.customerPoCode || poCode,
+        customerId: poData.customerId,
+        customerName: poData.customerName,
+        saleId: currentUser.uid,
+        orderDate: new Date().toISOString(),
+        expectedDeliveryDate: poData.expectedDeliveryDate,
+        status: 'receive_po',
+        items: poData.items,
+        assignments: poData.assignments || [],
+        totalAmount: poData.totalAmount,
+        discountAmount: poData.discountAmount,
+        netAmount: poData.netAmount,
+        links: poData.links,
+        notes: poData.notes,
+        createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        createdAt: new Date().toISOString(),
+        updatedBy: '',
+        updatedAt: '',
+        historyLogs: [
+          {
+            status: 'receive_po',
+            updatedBy: currentUser.displayName,
+            updatedAt: new Date().toISOString(),
+            note: 'Khởi tạo đơn hàng mới trên ERP'
+          }
+        ]
+      };
+
+      await dbService.addDocument('pos', newPO);
+      await dbService.updateDocument('customers', poData.customerId, {
+        lastOrderAt: new Date().toISOString()
+      });
+
+      setShowAddModal(false);
+    }
+
     onRefresh();
   };
 
@@ -618,7 +300,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
-          <button className="btn btn-primary btn-symbol" onClick={handleOpenAddModal} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
+          <button className="btn btn-primary btn-symbol" onClick={() => setShowAddModal(true)} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
             <Plus size={18} />
           </button>
         )}
@@ -956,476 +638,26 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         </div>
       )}
 
-      {/* CREATE PO MODAL */}
-      {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '950px', width: '90%' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleCreatePO}>
-              <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="form-group">
-                    <label>{t('Chọn Khách Hàng *')}</label>
-                    <select value={customerId} onChange={(e) => {
-                      setCustomerId(e.target.value);
-                      setPoItems([]); // Reset items when customer changes
-                    }} required>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.companyName} ({t('Chiết khấu')}: {c.discountRate}%)</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Mã PO Khách Hàng (Tùy chọn)')}</label>
-                    <input 
-                      type="text" 
-                      value={customerPoCode} 
-                      onChange={(e) => setCustomerPoCode(e.target.value)} 
-                      placeholder={t('Ví dụ: VFT26-553...')} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
-                    <input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} required />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Ghi Chú Đơn Hàng')}</label>
-                    <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('Chi tiết giao hàng, yêu cầu riêng...')} rows={2} />
-                  </div>
-
-                  <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px' }}>
-                    <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Tải Bản Cứng Đơn Hàng / Báo Giá')}</h4>
-                    {customerId && (
-                      <button 
-                        type="button" 
-                        className="btn btn-sm btn-outline" 
-                        style={{ marginBottom: '12px', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                        onClick={() => {
-                          setIsEditRepoMode(false);
-                          setShowRepoModal(true);
-                        }}
-                      >
-                        <Folder size={14} />
-                        <span>{t('Nhúp từ kho tệp khách hàng')}</span>
-                      </button>
-                    )}
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File PDF Đơn Hàng')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setPdfFile)} style={{ fontSize: '11px' }} />
-                      {pdfFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('Bản Báo Giá Excel')}</label>
-                      <input type="file" accept=".xls,.xlsx" onChange={e => handleLinkFileChange(e, setExcelFile)} style={{ fontSize: '11px' }} />
-                      {excelFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Thiết kế AI')}</label>
-                      <input type="file" accept="*/*" onChange={e => handleLinkFileChange(e, setAiFile)} style={{ fontSize: '11px' }} />
-                      {aiFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Thiết kế Corel (.cdr)')}</label>
-                      <input type="file" accept="*/*" onChange={e => handleLinkFileChange(e, setCorelFile)} style={{ fontSize: '11px' }} />
-                      {corelFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Hợp Đồng')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setContractFile)} style={{ fontSize: '11px' }} />
-                      {contractFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group">
-                      <label style={{ fontSize: '11.5px' }}>{t('Bản Báo Giá')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setQuoteFile)} style={{ fontSize: '11px' }} />
-                      {quoteFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Catalog products lists */}
-                  <div style={{ border: '1px dashed var(--color-border)', padding: '12px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                    <h4 style={{ color: 'var(--color-primary)', marginBottom: '8px' }}>
-                      {t('1. Danh Mục Thiết Lập Sẵn Của Khách Hàng')}
-                    </h4>
-                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
-                      {customers.find(c => c.id === customerId)?.products?.map((prod: any) => (
-                        <button 
-                          key={prod.id} 
-                          type="button" 
-                          className="btn btn-sm btn-outline"
-                          onClick={() => addPredefinedItem(prod)}
-                          style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 10px' }}
-                        >
-                          + {prod.productCode} ({prod.productName})
-                        </button>
-                      ))}
-                      {(!customers.find(c => c.id === customerId)?.products || customers.find(c => c.id === customerId)?.products.length === 0) && (
-                        <span style={{ fontSize: '12px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>
-                          {t('Khách hàng này chưa có danh mục mã hàng thiết lập sẵn. Vui lòng thêm dòng thủ công.')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Selected items list */}
-                  <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h4 style={{ color: 'var(--color-primary)' }}>{t('2. Danh Sách Mã Hàng Chọn Đặt (PO Items)')}</h4>
-                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>
-                        <Plus size={16} />
-                      </button>
-                    </div>
-
-                    <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>{t('Mã Hàng')}</th>
-                            <th>{t('Tên Hàng')}</th>
-                            <th>{t('Quy Cách & Chất Liệu')}</th>
-                            <th>{t('SL')}</th>
-                            <th>{t('ĐG Bán')}</th>
-                            <th>{t('Nhà Cung Cấp')}</th>
-                            <th>{t('Giá Mua')}</th>
-                            <th style={{ width: '90px' }}>{t('Thao tác')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {poItems.map((item, index) => (
-                            <tr key={item.itemId || index}>
-                              <td style={{ fontWeight: 600 }}>{item.productCode}</td>
-                              <td>{item.productName}</td>
-                              <td>{item.size} ({item.material})</td>
-                              <td>{item.quantity?.toLocaleString()}</td>
-                              <td>{item.price?.toLocaleString()} đ</td>
-                              <td>{item.supplierName || t('Chưa chọn')}</td>
-                              <td>{item.purchasePrice?.toLocaleString()} đ</td>
-                              <td>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                          {poItems.length === 0 && (
-                            <tr>
-                              <td colSpan={8} style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                {t('Chưa chọn sản phẩm nào. Nhấp vào danh mục hoặc thêm dòng thủ công.')}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ marginTop: '12px', fontWeight: 600, fontSize: '13px', color: 'var(--color-primary)', textAlign: 'right' }}>
-                      {t('Tổng giá trị PO (chưa VAT):')} {poItems.reduce((acc, item) => acc + (item.quantity * item.price), 0).toLocaleString()} đ
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Đơn Hàng PO')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* EDIT PO MODAL */}
-      {showEditModal && selectedPO && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '950px', width: '90%' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN PO')}: {selectedPO.poCode}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleEditPO}>
-              <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="form-group">
-                    <label>{t('Khách Hàng')}</label>
-                    <input type="text" value={selectedPO.customerName} disabled style={{ backgroundColor: '#f1f5f9' }} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Mã PO Khách Hàng')}</label>
-                    <input 
-                      type="text" 
-                      value={editCustomerPoCode} 
-                      onChange={(e) => setEditCustomerPoCode(e.target.value)} 
-                      placeholder={t('Ví dụ: VFT26-553...')} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Ngày Giao Hàng Dự Kiến *')}</label>
-                    <input type="date" value={editExpectedDeliveryDate} onChange={(e) => setEditExpectedDeliveryDate(e.target.value)} required />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Ghi Chú Đơn Hàng')}</label>
-                    <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder={t('Chi tiết giao hàng, yêu cầu riêng...')} rows={2} />
-                  </div>
-
-                  <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px' }}>
-                    <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Tải Bản Cứng Đơn Hàng / Báo Giá')}</h4>
-                    {selectedPO.customerId && (
-                      <button 
-                        type="button" 
-                        className="btn btn-sm btn-outline" 
-                        style={{ marginBottom: '12px', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                        onClick={() => {
-                          setIsEditRepoMode(true);
-                          setShowRepoModal(true);
-                        }}
-                      >
-                        <Folder size={14} />
-                        <span>{t('Nhúp từ kho tệp khách hàng')}</span>
-                      </button>
-                    )}
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File PDF Đơn Hàng')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setEditPdfFile)} style={{ fontSize: '11px' }} />
-                      {editPdfFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('Bản Báo Giá Excel')}</label>
-                      <input type="file" accept=".xls,.xlsx" onChange={e => handleLinkFileChange(e, setEditExcelFile)} style={{ fontSize: '11px' }} />
-                      {editExcelFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Thiết kế AI')}</label>
-                      <input type="file" accept="*/*" onChange={e => handleLinkFileChange(e, setEditAiFile)} style={{ fontSize: '11px' }} />
-                      {editAiFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Thiết kế Corel (.cdr)')}</label>
-                      <input type="file" accept="*/*" onChange={e => handleLinkFileChange(e, setEditCorelFile)} style={{ fontSize: '11px' }} />
-                      {editCorelFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '11.5px' }}>{t('File Hợp Đồng')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setEditContractFile)} style={{ fontSize: '11px' }} />
-                      {editContractFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                    <div className="form-group">
-                      <label style={{ fontSize: '11.5px' }}>{t('Bản Báo Giá')}</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setEditQuoteFile)} style={{ fontSize: '11px' }} />
-                      {editQuoteFile && <span style={{ fontSize: '10px', color: 'var(--color-success)' }}>{t('Đã chọn file')}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Catalog products lists */}
-                  <div style={{ border: '1px dashed var(--color-border)', padding: '12px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                    <h4 style={{ color: 'var(--color-primary)', marginBottom: '8px' }}>
-                      {t('1. Danh Mục Thiết Lập Sẵn Của Khách Hàng')}
-                    </h4>
-                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
-                      {customers.find(c => c.id === selectedPO.customerId)?.products?.map((prod: any) => (
-                        <button 
-                          key={prod.id} 
-                          type="button" 
-                          className="btn btn-sm btn-outline"
-                          onClick={() => addPredefinedItem(prod)}
-                          style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 10px' }}
-                        >
-                          + {prod.productCode} ({prod.productName})
-                        </button>
-                      ))}
-                      {(!customers.find(c => c.id === selectedPO.customerId)?.products || customers.find(c => c.id === selectedPO.customerId)?.products.length === 0) && (
-                        <span style={{ fontSize: '12px', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>
-                          {t('Khách hàng này chưa có danh mục mã hàng thiết lập sẵn. Vui lòng thêm dòng thủ công.')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Selected items list */}
-                  <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h4 style={{ color: 'var(--color-primary)' }}>{t('2. Danh Sách Mã Hàng Chọn Đặt (PO Items)')}</h4>
-                      <button type="button" className="btn btn-sm btn-outline btn-symbol" onClick={openAddItemModal} title={t('Thêm Dòng Thủ Công')}>
-                        <Plus size={16} />
-                      </button>
-                    </div>
-
-                    <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>{t('Mã Hàng')}</th>
-                            <th>{t('Tên Hàng')}</th>
-                            <th>{t('Quy Cách & Chất Liệu')}</th>
-                            <th>{t('SL')}</th>
-                            <th>{t('ĐG Bán')}</th>
-                            <th>{t('Nhà Cung Cấp')}</th>
-                            <th>{t('Giá Mua')}</th>
-                            <th style={{ width: '90px' }}>{t('Thao tác')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {poItems.map((item, index) => (
-                            <tr key={item.itemId || index}>
-                              <td style={{ fontWeight: 600 }}>{item.productCode}</td>
-                              <td>{item.productName}</td>
-                              <td>{item.size} ({item.material})</td>
-                              <td>{item.quantity?.toLocaleString()}</td>
-                              <td>{item.price?.toLocaleString()} đ</td>
-                              <td>{item.supplierName || t('Chưa chọn')}</td>
-                              <td>{item.purchasePrice?.toLocaleString()} đ</td>
-                              <td>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditItemModal(index)} title={t('Sửa')}>
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removePoItem(index)} title={t('Xóa')}>
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                          {poItems.length === 0 && (
-                            <tr>
-                              <td colSpan={8} style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                {t('Chưa chọn sản phẩm nào. Nhấp vào danh mục hoặc thêm dòng thủ công.')}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ marginTop: '12px', fontWeight: 600, fontSize: '13px', color: 'var(--color-primary)', textAlign: 'right' }}>
-                      {t('Tổng giá trị PO (chưa VAT):')} {poItems.reduce((acc, item) => acc + (item.quantity * item.price), 0).toLocaleString()} đ
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* FULLSCREEN PO FORM (CREATE & EDIT) */}
+      {(showAddModal || showEditModal) && (
+        <POFormFullScreen
+          isOpen={showAddModal || showEditModal}
+          onClose={() => {
+            setShowAddModal(false);
+            setShowEditModal(false);
+            setSelectedPO(null);
+          }}
+          po={showEditModal ? selectedPO : null}
+          onSave={handleSavePO}
+          customers={customers}
+          suppliers={suppliers}
+          users={users}
+          currentUser={currentUser}
+          t={t}
+        />
       )}
 
-      {/* PO ITEM EDITOR MODAL */}
-      {showItemModal && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: '500px', width: '90%' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>
-                {editingItemIndex !== null ? t('CHỈNH SỬA MẶT HÀNG PO') : t('THÊM MỚI MẶT HÀNG PO')}
-              </span>
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowItemModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleSaveItem}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div className="form-group">
-                  <label>{t('Mã Hàng')}</label>
-                  <input 
-                    type="text" 
-                    value={itemProductCode} 
-                    onChange={e => setItemProductCode(e.target.value)} 
-                    placeholder="MANUAL, 5.07.006..."
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t('Tên Hàng *')}</label>
-                  <input 
-                    type="text" 
-                    value={itemProductName} 
-                    onChange={e => setItemProductName(e.target.value)} 
-                    placeholder={t('Nhập tên sản phẩm nhãn hiệu...')}
-                    required
-                  />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Quy Cách / Kích Thước')}</label>
-                    <input 
-                      type="text" 
-                      value={itemSize} 
-                      onChange={e => setItemSize(e.target.value)} 
-                      placeholder="100x100mm, 40mm x 300m..."
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Chất Liệu')}</label>
-                    <input 
-                      type="text" 
-                      value={itemMaterial} 
-                      onChange={e => setItemMaterial(e.target.value)} 
-                      placeholder="Decal giấy, Decal nhựa..."
-                    />
-                  </div>
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Số Lượng *')}</label>
-                    <input 
-                      type="number" 
-                      value={itemQuantity} 
-                      onChange={e => setItemQuantity(Number(e.target.value))} 
-                      min="1"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Đơn Giá Bán (đ) *')}</label>
-                    <input 
-                      type="number" 
-                      value={itemPrice} 
-                      onChange={e => setItemPrice(Number(e.target.value))} 
-                      min="0"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Nhà Cung Cấp')}</label>
-                    <select 
-                      value={itemSupplierId} 
-                      onChange={e => setItemSupplierId(e.target.value)}
-                    >
-                      <option value="">{t('Chọn NCC...')}</option>
-                      {suppliers.map(s => (
-                        <option key={s.id} value={s.id}>{s.supplierName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Giá Mua / Giá Vốn (đ)')}</label>
-                    <input 
-                      type="number" 
-                      value={itemPurchasePrice} 
-                      onChange={e => setItemPurchasePrice(Number(e.target.value))} 
-                      min="0"
-                      placeholder={t('Giá vốn')}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowItemModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Mặt Hàng')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      
-      {selectedPO && (
+      {selectedPO && !showEditModal && (
         <FloatingChat 
           currentUser={currentUser}
           type="po"
@@ -1434,115 +666,6 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           messages={messages}
           users={users}
         />
-      )}
-
-      {/* Customer Repo Pick Modal */}
-      {showRepoModal && (isEditRepoMode ? selectedPO : true) && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: '600px', width: '90%' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <Folder size={18} />
-                <span>
-                  {t('KHO LƯU TRỮ TỆP KHÁCH HÀNG')}: {
-                    isEditRepoMode 
-                      ? selectedPO.customerName 
-                      : customers.find(c => c.id === customerId)?.companyName || ''
-                  }
-                </span>
-              </span>
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowRepoModal(false)}>{t('Đóng')}</button>
-            </div>
-            <div className="modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              {(() => {
-                const targetCust = isEditRepoMode 
-                  ? customers.find(c => c.id === selectedPO.customerId)
-                  : customers.find(c => c.id === customerId);
-                
-                if (!targetCust || !targetCust.files || targetCust.files.length === 0) {
-                  return (
-                    <p className="text-center text-muted" style={{ padding: '20px' }}>
-                      {t('Kho lưu trữ của khách hàng này hiện tại chưa có tệp tin nào.')}
-                    </p>
-                  );
-                }
-
-                return (
-                  <div>
-                    <p style={{ fontSize: '12.5px', marginBottom: '12px', color: 'var(--color-text-muted)' }}>
-                      {t('Chọn một tệp từ kho lưu trữ để đính kèm vào phần tương ứng:')}
-                    </p>
-                    
-                    {Object.entries(
-                      targetCust.files.reduce((acc: any, file: any) => {
-                        const folderName = file.folder || t('Chưa phân mục');
-                        if (!acc[folderName]) acc[folderName] = [];
-                        acc[folderName].push(file);
-                        return acc;
-                      }, {})
-                    ).map(([folderName, folderFiles]: any) => (
-                      <div key={folderName} style={{ marginBottom: '16px' }}>
-                        <h5 style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '4px', marginBottom: '8px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Folder size={14} />
-                          <span>{folderName}</span>
-                        </h5>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {folderFiles.map((file: any, fIdx: number) => (
-                            <div key={fIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', backgroundColor: 'var(--color-bg-light)', border: '1px solid var(--color-border-light)', borderRadius: '4px' }}>
-                              <span style={{ fontWeight: 500, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px', display: 'inline-flex', alignItems: 'center', gap: '6px' }} title={file.name}>
-                                <FileText size={14} />
-                                <span>{file.name}</span>
-                              </span>
-                              <div>
-                                <select 
-                                  onChange={(e) => {
-                                    const target = e.target.value;
-                                    if (!target) return;
-                                    
-                                    if (isEditRepoMode) {
-                                      if (target === 'pdf') setEditPdfFile(file.base64);
-                                      if (target === 'excel') setEditExcelFile(file.base64);
-                                      if (target === 'ai') setEditAiFile(file.base64);
-                                      if (target === 'corel') setEditCorelFile(file.base64);
-                                      if (target === 'contract') setEditContractFile(file.base64);
-                                      if (target === 'quote') setEditQuoteFile(file.base64);
-                                    } else {
-                                      if (target === 'pdf') setPdfFile(file.base64);
-                                      if (target === 'excel') setExcelFile(file.base64);
-                                      if (target === 'ai') setAiFile(file.base64);
-                                      if (target === 'corel') setCorelFile(file.base64);
-                                      if (target === 'contract') setContractFile(file.base64);
-                                      if (target === 'quote') setQuoteFile(file.base64);
-                                    }
-                                    
-                                    alert(t(`Đã đính kèm tệp "${file.name}" vào trường ${target.toUpperCase()}`));
-                                    e.target.value = ''; // reset
-                                  }}
-                                  style={{ padding: '2px 6px', fontSize: '11.5px', width: '150px' }}
-                                >
-                                  <option value="">-- {t('Đính kèm vào')} --</option>
-                                  <option value="pdf">{t('PDF Đơn Hàng')}</option>
-                                  <option value="excel">{t('Bản Báo Giá Excel')}</option>
-                                  <option value="ai">{t('File Thiết kế AI')}</option>
-                                  <option value="corel">{t('File Thiết kế Corel')}</option>
-                                  <option value="contract">{t('File Hợp Đồng')}</option>
-                                  <option value="quote">{t('Bản Báo Giá PDF')}</option>
-                                </select>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setShowRepoModal(false)}>{t('Hoàn thành')}</button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Image Preview Zoom Modal */}
