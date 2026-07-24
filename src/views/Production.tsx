@@ -14,6 +14,11 @@ interface ProductionProps {
   users: any[];
 }
 
+const getProductionQuantity = (command: any): number => {
+  const quantity = Number(command?.qtyToProduce ?? command?.quantity ?? 0);
+  return Number.isFinite(quantity) ? quantity : 0;
+};
+
 export const Production: React.FC<ProductionProps> = ({ pos, productionCommands, currentUser, onRefresh, initialSelectedLsxId, messages, users }) => {
   const { t } = useLanguage();
   const [showAddLsxModal, setShowAddLsxModal] = useState(false);
@@ -163,7 +168,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     setEditMachineId(lsx.machineId);
     setEditShift(lsx.shift);
     setEditOperatorName(lsx.operatorName || '');
-    setEditQtyToProduce(lsx.qtyToProduce);
+    setEditQtyToProduce(getProductionQuantity(lsx));
     setEditNotes(lsx.notes || '');
     setEditProductNameToBeCut(lsx.productNameToBeCut || lsx.productName || '');
     setEditPaperCore(lsx.paperCore || '76mm');
@@ -259,7 +264,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       cmd.shift || '',
       cmd.paperCore || '76mm',
       `${cmd.paperMaterialCode || ''} (${cmd.paperQuantity || 0} cuộn)`,
-      cmd.qtyToProduce || 0,
+      getProductionQuantity(cmd),
       cmd.scrapQty || 0,
       cmd.status === 'completed' ? t('Đã hoàn thành') : cmd.status === 'transfer_pending' ? t('Bàn giao chờ duyệt') : t('Đang in'),
       cmd.operatorName || '',
@@ -336,8 +341,9 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
     // AUTO WAREHOUSE DEDUCTION FOR MATERIALS USED
     const invList = await dbService.getCollection('inventory');
-    const decalQtyNeeded = Math.round(selectedLsx.qtyToProduce * 0.015); // e.g. 150sqm for 10k items
-    const inkQtyNeeded = Math.round(selectedLsx.qtyToProduce * 0.0002 * 10) / 10; // e.g. 2kg
+    const completedQuantity = getProductionQuantity(selectedLsx);
+    const decalQtyNeeded = Math.round(completedQuantity * 0.015); // e.g. 150sqm for 10k items
+    const inkQtyNeeded = Math.round(completedQuantity * 0.0002 * 10) / 10; // e.g. 2kg
 
     // Deduct Decal
     const decalItem = invList.find((item: any) => item.category === 'paper');
@@ -539,7 +545,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
                         <div><strong>{t('Tên sản phẩm cần bế:')}</strong> {cmd.productNameToBeCut}</div>
                         <div><strong>{t('Đơn PO liên kết:')}</strong> {cmd.poCode}</div>
-                        <div><strong>{t('Số lượng tem yêu cầu:')}</strong> {cmd.qtyToProduce?.toLocaleString()} {t('tem')}</div>
+                        <div><strong>{t('Số lượng tem yêu cầu:')}</strong> {getProductionQuantity(cmd).toLocaleString()} {t('tem')}</div>
                         <div><strong>{t('Máy vận hành:')}</strong> {cmd.machineId} ({cmd.shift})</div>
                         <div><strong>{t('Loại lõi giấy:')}</strong> {cmd.paperCore || '76mm'}</div>
                         <div><strong>{t('Giấy nguyên liệu:')}</strong> {cmd.paperMaterialCode}</div>
@@ -675,7 +681,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                       <td>{cmd.machineId}</td>
                       <td>{cmd.paperCore || '76mm'}</td>
                       <td style={{ fontSize: '11px' }}>{cmd.paperMaterialCode} ({cmd.paperQuantity} cuộn)</td>
-                      <td>{cmd.qtyToProduce.toLocaleString()}</td>
+                      <td>{getProductionQuantity(cmd).toLocaleString()}</td>
                       <td>{cmd.scrapQty ? `${cmd.scrapQty.toLocaleString()} tem` : '0'}</td>
                       <td>
                         <span className={`badge ${
@@ -1012,7 +1018,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   <div><span style={{ fontWeight: 600 }}>{t('Máy Phân Công')}:</span> {selectedLsx.machineId}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Ca Kíp Máy')}:</span> {selectedLsx.shift}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Người Vận Hành')}:</span> {selectedLsx.operatorName}</div>
-                  <div><span style={{ fontWeight: 600 }}>{t('Số Lượng Cần In')}:</span> {selectedLsx.qtyToProduce?.toLocaleString()} {t('tem')}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Số Lượng Cần In')}:</span> {getProductionQuantity(selectedLsx).toLocaleString()} {t('tem')}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Loại lõi giấy')}:</span> {selectedLsx.paperCore || '76mm'}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Mã nguyên liệu giấy')}:</span> {selectedLsx.paperMaterialCode}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Số lượng giấy cấp')}:</span> {selectedLsx.paperQuantity}</div>
