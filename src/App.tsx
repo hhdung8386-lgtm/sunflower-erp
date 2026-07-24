@@ -13,7 +13,6 @@ import { UserManagement } from './views/UserManagement';
 import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
-import logo from './assets/logo.png';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -30,6 +29,8 @@ import {
   LogOut,
   Menu
 } from 'lucide-react';
+
+const logo = '/sunflower-logo-horizontal-transparent.png';
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -401,7 +402,11 @@ function App() {
         <div className="login-form-panel">
           <div className="login-card-glass">
             <div className="login-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-              <img src={logo} alt="Logo" style={{ height: '48px', width: '48px', marginBottom: '12px', objectFit: 'contain' }} />
+              <img
+                src={logo}
+                alt="Sunflower"
+                style={{ width: '260px', maxWidth: '100%', height: 'auto', marginBottom: '18px', objectFit: 'contain' }}
+              />
               <h2 className="login-card-title">{t('Chào mừng trở lại')}</h2>
               <p className="login-card-subtitle">{t('Đăng nhập để tiếp tục làm việc')}</p>
             </div>
@@ -509,9 +514,12 @@ function App() {
 
       {/* APP SIDEBAR NAVIGATION (Strictly Text Links, No Icons) */}
       <aside className={`app-sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <img src={logo} alt="Logo" style={{ height: '32px', width: '32px', objectFit: 'contain' }} />
-          <span className="sidebar-logo-text">SUNFLOWER</span>
+        <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img
+            src={logo}
+            alt="Sunflower"
+            style={{ width: '190px', maxWidth: '100%', maxHeight: '44px', height: 'auto', objectFit: 'contain' }}
+          />
         </div>
         <nav className="sidebar-menu">
           {isPageAllowed('dashboard') && (
