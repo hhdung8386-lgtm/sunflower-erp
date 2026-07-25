@@ -147,12 +147,110 @@ const DEFAULT_USERS: UserProfile[] = [
   { uid: 'u-accountant', email: 'accountant@sunflower.com', displayName: 'Kế Toán Trần Thu', role: 'accountant', active: true, createdAt: '2026-05-01', allowedPages: ['dashboard', 'chat', 'accounting'] }
 ];
 
+const DEFAULT_PRODUCT_CLASSIFICATIONS = [
+  { id: 'tem_trang_cuon', name: 'Tem Trắng Dạng Cuộn' },
+  { id: 'tem_mau_cuon', name: 'Tem Màu Dạng Cuộn' },
+  { id: 'tem_mau_to', name: 'Tem Màu Dạng Tờ' },
+  { id: 'muc_in', name: 'Mực In Ribbon' }
+];
+
+const DEFAULT_WIND_DIRECTIONS = [
+  { id: 'dau_truoc', name: 'Ra đầu trước' },
+  { id: 'dau_sau', name: 'Ra đầu sau' },
+  { id: 'quay_trai', name: 'Chữ quay trái' },
+  { id: 'quay_phai', name: 'Chữ quay phải' },
+  { id: 'head_first', name: 'Head First' },
+  { id: 'tail_first', name: 'Tail First' },
+  { id: 'left_first', name: 'Left First' },
+  { id: 'right_first', name: 'Right First' }
+];
+
 const DEFAULT_CUSTOMERS: any[] = [
-  { id: 'cust-001', companyName: 'Công ty TNHH AQUA Việt Nam', contactPerson: 'Ông Yoshikawa', phone: '02203-888999', discountRate: 5, debtLimit: 100000000, lastOrderAt: '2026-06-04T07:35:27.000Z', address: 'KCN Đại An, Hải Dương', email: 'aqua@vietnam.com', paymentTerms: '30_days', note: 'Khách hàng lớn, cần chăm sóc kỹ', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale' },
-  { id: 'cust-002', companyName: 'Brother Industries Hải Dương', contactPerson: 'Bà Nguyễn Thị Hoa', phone: '02203-777666', discountRate: 8, debtLimit: 150000000, lastOrderAt: '2026-05-15T00:00:00Z', address: 'KCN Phúc Điền, Cẩm Giàng, Hải Dương', email: 'hoa.nt@brother.com.vn', paymentTerms: '45_days', note: 'Thanh toán đúng hạn', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale' },
-  { id: 'cust-003', companyName: 'Trancy Logistics Hải Dương', contactPerson: 'Ông Vũ Văn An', phone: '0987-123456', discountRate: 0, debtLimit: 50000000, lastOrderAt: '2026-04-10T00:00:00Z', address: 'KCN Lai Cách, Hải Dương', email: 'an.vv@trancy.com', paymentTerms: 'cod', note: 'Giao nhận tại kho', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale' },
-  { id: 'cust-004', companyName: 'Samsung Electronics Bắc Ninh', contactPerson: 'Mr. Park Ji-sung', phone: '0222-399999', discountRate: 10, debtLimit: 300000000, lastOrderAt: '2026-06-02T00:00:00Z', address: 'KCN Yên Phong, Bắc Ninh', email: 'park@samsung.com', paymentTerms: '60_days', note: 'Đơn hàng số lượng rất lớn', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale' },
-  { id: 'cust-vft', companyName: 'Công ty CP Công nghệ Tạo hình Cơ khí Việt Nam', contactPerson: 'Phòng Mua Hàng', phone: '0210-3653333', discountRate: 0, debtLimit: 200000000, lastOrderAt: '2026-05-14T00:00:00Z', address: 'Lô B9, KCN Thụy Vân, Việt Trì, Phú Thọ', email: 'mechanical@vft.com.vn', paymentTerms: '30_days', note: 'MST: 2500558741', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale' }
+  { id: 'cust-001', companyName: 'Công ty TNHH AQUA Việt Nam', contactPerson: 'Ông Yoshikawa', phone: '02203-888999', discountRate: 5, debtLimit: 100000000, lastOrderAt: '2026-06-04T07:35:27.000Z', address: 'KCN Đại An, Hải Dương', email: 'aqua@vietnam.com', paymentTerms: '30 ngày', note: 'Khách hàng lớn, cần chăm sóc kỹ', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale', products: [] },
+  { id: 'cust-002', companyName: 'Brother Industries Hải Dương', contactPerson: 'Bà Nguyễn Thị Hoa', phone: '02203-777666', discountRate: 8, debtLimit: 150000000, lastOrderAt: '2026-05-15T00:00:00Z', address: 'KCN Phúc Điền, Cẩm Giàng, Hải Dương', email: 'hoa.nt@brother.com.vn', paymentTerms: '45 ngày', note: 'Thanh toán đúng hạn', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale', products: [] },
+  { id: 'cust-003', companyName: 'Trancy Logistics Hải Dương', contactPerson: 'Ông Vũ Văn An', phone: '0987-123456', discountRate: 0, debtLimit: 50000000, lastOrderAt: '2026-04-10T00:00:00Z', address: 'KCN Lai Cách, Hải Dương', email: 'an.vv@trancy.com', paymentTerms: 'Thanh toán khi nhận hàng', note: 'Giao nhận tại kho', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale', products: [] },
+  { id: 'cust-004', companyName: 'Samsung Electronics Bắc Ninh', contactPerson: 'Mr. Park Ji-sung', phone: '0222-399999', discountRate: 10, debtLimit: 300000000, lastOrderAt: '2026-06-02T00:00:00Z', address: 'KCN Yên Phong, Bắc Ninh', email: 'park@samsung.com', paymentTerms: '60 ngày', note: 'Đơn hàng số lượng rất lớn', createdBy: 'Giám Đốc Lê Minh', createdAt: '2026-05-01T00:00:00Z', assignedSaleId: 'u-sale', products: [] },
+  { 
+    id: 'cust-vft', 
+    companyName: 'Công ty CP Công nghệ Tạo hình Cơ khí Việt Nam', 
+    contactPerson: 'Phòng Mua Hàng', 
+    phone: '0210-3653333', 
+    discountRate: 0, 
+    debtLimit: 200000000, 
+    lastOrderAt: '2026-05-14T00:00:00Z', 
+    address: 'Lô B9, KCN Thụy Vân, Việt Trì, Phú Thọ', 
+    email: 'mechanical@vft.com.vn', 
+    paymentTerms: '30 ngày', 
+    note: 'MST: 2500558741', 
+    createdBy: 'Giám Đốc Lê Minh', 
+    createdAt: '2026-05-01T00:00:00Z', 
+    assignedSaleId: 'u-sale',
+    products: [
+      {
+        id: 'prod-vft-1',
+        productCode: '5.07.006',
+        productName: 'Mực in mã vạch: in tem US 150',
+        productType: 'muc_in',
+        currentPrice: 59000,
+        material: 'Mực Wax Resin',
+        layoutUrl: '',
+        specifications: {
+          ribbonType: 'WAX RESIN',
+          direction: 'Out side',
+          size: 'R110 x D300mm',
+          color: 'Đen'
+        },
+        priceHistory: [
+          { date: '2026-05-14', price: 59000, updatedBy: 'Giám Đốc Lê Minh' }
+        ]
+      },
+      {
+        id: 'prod-vft-2',
+        productCode: '5.07.016',
+        productName: 'Tem dán dạng cuộn',
+        productType: 'tem_trang_cuon',
+        currentPrice: 522,
+        material: 'Decal Giấy Fasson AW0339F',
+        layoutUrl: '',
+        specifications: {
+          width: 80,
+          height: 55,
+          gap: 3,
+          qtyPerRoll: 1000,
+          core: '76mm',
+          dieCut: 'Bo góc R2',
+          perforated: 'Không',
+          windDirection: 'Ra đầu trước'
+        },
+        priceHistory: [
+          { date: '2026-05-14', price: 1500, note: 'Số lượng 1K pcs', updatedBy: 'Giám Đốc Lê Minh' },
+          { date: '2026-06-15', price: 522, note: 'Số lượng 10K pcs', updatedBy: 'Giám Đốc Lê Minh' }
+        ]
+      },
+      {
+        id: 'prod-vft-3',
+        productCode: '5.07.021',
+        productName: 'Tem dán dạng cuộn R80xD110mm',
+        productType: 'tem_trang_cuon',
+        currentPrice: 93000,
+        material: 'Decal nhựa PVC',
+        layoutUrl: '',
+        specifications: {
+          width: 80,
+          height: 110,
+          gap: 3,
+          qtyPerRoll: 1000,
+          core: '76mm',
+          dieCut: 'Bo góc R2',
+          perforated: 'Không',
+          windDirection: 'Ra đầu trước'
+        },
+        priceHistory: [
+          { date: '2026-05-14', price: 93000, updatedBy: 'Giám Đốc Lê Minh' }
+        ]
+      }
+    ]
+  }
 ];
 
 const MOCK_BASE64_IMAGE = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"><rect width="200" height="150" fill="%23eff6ff" stroke="%231e3a8a" stroke-width="2"/><text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="%231e3a8a" font-weight="bold">MẪU THIẾT KẾ</svg>';
@@ -524,6 +622,13 @@ const initLocalStorage = () => {
   if (!localStorage.getItem('erp_production_commands')) localStorage.setItem('erp_production_commands', JSON.stringify(DEFAULT_PRODUCTION_COMMANDS));
   if (!localStorage.getItem('erp_deliveries')) localStorage.setItem('erp_deliveries', JSON.stringify(DEFAULT_DELIVERIES));
   if (!localStorage.getItem('erp_invoices')) localStorage.setItem('erp_invoices', JSON.stringify(DEFAULT_INVOICES));
+  
+  if (!localStorage.getItem('erp_product_classifications')) {
+    localStorage.setItem('erp_product_classifications', JSON.stringify(DEFAULT_PRODUCT_CLASSIFICATIONS));
+  }
+  if (!localStorage.getItem('erp_wind_directions')) {
+    localStorage.setItem('erp_wind_directions', JSON.stringify(DEFAULT_WIND_DIRECTIONS));
+  }
 };
 
 initLocalStorage();
@@ -562,6 +667,8 @@ const seedFirestoreIfNeeded = async () => {
     await checkAndSeed('deliveries', DEFAULT_DELIVERIES);
     await checkAndSeed('invoices', DEFAULT_INVOICES);
     await checkAndSeed('channels', DEFAULT_CHANNELS);
+    await checkAndSeed('product_classifications', DEFAULT_PRODUCT_CLASSIFICATIONS);
+    await checkAndSeed('wind_directions', DEFAULT_WIND_DIRECTIONS);
 
     console.log("Firestore successfully seeded with default data.");
   } catch (error) {

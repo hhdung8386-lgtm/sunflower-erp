@@ -9,6 +9,7 @@ import {
   Pencil, 
   X, 
   Check, 
+  Copy,
   Folder, 
   FileText, 
   FileSpreadsheet
@@ -20,6 +21,8 @@ interface SalesProps {
   currentUser: UserProfile;
   onRefresh: () => void;
   initialSelectedPoId?: string;
+  initialRepeatPoId?: string;
+  onRepeatOrderOpened?: () => void;
   messages: any[];
   users: UserProfile[];
 }
@@ -43,7 +46,7 @@ export const PO_STATES = [
   { value: 'debt_collected', label: 'Đã thu công nợ' }
 ];
 
-export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, messages, users }) => {
+export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, initialRepeatPoId, onRepeatOrderOpened, messages, users }) => {
   const { t } = useLanguage();
   const isFull = currentUser.role === 'admin' || currentUser.role === 'accountant';
   const isSaleOnly = currentUser.role === 'sale' || currentUser.role === 'designer';
@@ -51,6 +54,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [repeatSourcePO, setRepeatSourcePO] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Auto-select PO when initialSelectedPoId changes
@@ -62,6 +66,17 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       }
     }
   }, [initialSelectedPoId, pos]);
+
+  useEffect(() => {
+    if (!initialRepeatPoId) return;
+    const sourcePO = pos.find(po => po.id === initialRepeatPoId);
+    if (!sourcePO) return;
+    setSelectedPO(null);
+    setRepeatSourcePO(sourcePO);
+    setShowEditModal(false);
+    setShowAddModal(true);
+    onRepeatOrderOpened?.();
+  }, [initialRepeatPoId, onRepeatOrderOpened, pos]);
 
   // Load suppliers locally
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -75,10 +90,240 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
   // Modal lightbox preview image
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
+  const [expandedItemIds, setExpandedItemIds] = useState<string[]>([]);
+  const [newChecklistText, setNewChecklistText] = useState('');
+
+  const handleUpdateItemDiscount = async (itemIdx: number, newDiscount: number) => {
+    if (!selectedPO) return;
+    
+    const updatedItems = selectedPO.items.map((item: any, idx: number) => {
+      if (idx === itemIdx) {
+        return { ...item, discountRate: newDiscount };
+      }
+      return item;
+    });
+
+    let totalBeforeVat = 0;
+    let totalAfterVat = 0;
+    let discountAmount = 0;
+
+    updatedItems.forEach((item: any) => {
+      const qty = Number(item.quantity) || 0;
+      const prc = Number(item.price) || 0;
+      const disc = Number(item.discountRate) || 0;
+      const vat = Number(item.vatRate) || 0;
+
+      const sub = qty * prc * (1 - disc / 100);
+      const withVat = sub * (1 + vat / 100);
+
+      totalBeforeVat += sub;
+      totalAfterVat += withVat;
+      discountAmount += Math.round(qty * prc * (disc / 100));
+    });
+
+    const updatedPO = {
+      ...selectedPO,
+      items: updatedItems,
+      totalAmount: Math.round(totalBeforeVat),
+      discountAmount: Math.round(discountAmount),
+      netAmount: Math.round(totalAfterVat),
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      items: updatedItems,
+      totalAmount: updatedPO.totalAmount,
+      discountAmount: updatedPO.discountAmount,
+      netAmount: updatedPO.netAmount,
+      updatedBy: updatedPO.updatedBy,
+      updatedAt: updatedPO.updatedAt
+    });
+
+    setSelectedPO(updatedPO);
+    onRefresh();
+  };
+
+  const handleUpdateItemNotes = async (itemIdx: number, fieldName: 'saleNotes' | 'designNotes', value: string) => {
+    if (!selectedPO) return;
+    
+    const updatedItems = selectedPO.items.map((item: any, idx: number) => {
+      if (idx === itemIdx) {
+        return { ...item, [fieldName]: value };
+      }
+      return item;
+    });
+
+    const updatedPO = {
+      ...selectedPO,
+      items: updatedItems,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      items: updatedItems,
+      updatedBy: updatedPO.updatedBy,
+      updatedAt: updatedPO.updatedAt
+    });
+
+    setSelectedPO(updatedPO);
+  };
+
+  const handleUploadItemFiles = async (itemIdx: number, fieldName: 'saleLayouts' | 'designLayouts', files: FileList | null) => {
+    if (!selectedPO || !files) return;
+
+    const base64Promises = Array.from(files).map((file) => {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    try {
+      const base64Files = await Promise.all(base64Promises);
+      
+      const updatedItems = selectedPO.items.map((item: any, idx: number) => {
+        if (idx === itemIdx) {
+          const currentFiles = item[fieldName] || [];
+          return { ...item, [fieldName]: [...currentFiles, ...base64Files] };
+        }
+        return item;
+      });
+
+      const updatedPO = {
+        ...selectedPO,
+        items: updatedItems,
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        updatedAt: new Date().toISOString()
+      };
+
+      await dbService.updateDocument('pos', selectedPO.id, {
+        items: updatedItems,
+        updatedBy: updatedPO.updatedBy,
+        updatedAt: updatedPO.updatedAt
+      });
+
+      setSelectedPO(updatedPO);
+    } catch (err) {
+      console.error(err);
+      alert(t('Lỗi khi tải file lên.'));
+    }
+  };
+
+  const handleRemoveItemFile = async (itemIdx: number, fieldName: 'saleLayouts' | 'designLayouts', fileIdx: number) => {
+    if (!selectedPO) return;
+
+    const updatedItems = selectedPO.items.map((item: any, idx: number) => {
+      if (idx === itemIdx) {
+        const currentFiles = item[fieldName] || [];
+        return { ...item, [fieldName]: currentFiles.filter((_: any, i: number) => i !== fileIdx) };
+      }
+      return item;
+    });
+
+    const updatedPO = {
+      ...selectedPO,
+      items: updatedItems,
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      updatedAt: new Date().toISOString()
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      items: updatedItems,
+      updatedBy: updatedPO.updatedBy,
+      updatedAt: updatedPO.updatedAt
+    });
+
+    setSelectedPO(updatedPO);
+  };
+
+  const handleAddChecklistItem = async () => {
+    if (!selectedPO || !newChecklistText.trim()) return;
+    
+    const newItem = {
+      id: `task-${Math.random().toString(36).substr(2, 9)}`,
+      content: newChecklistText.trim(),
+      completed: false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
+    };
+
+    const updatedChecklist = [...(selectedPO.internalChecklist || []), newItem];
+
+    const updatedPO = {
+      ...selectedPO,
+      internalChecklist: updatedChecklist
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      internalChecklist: updatedChecklist
+    });
+
+    setSelectedPO(updatedPO);
+    setNewChecklistText('');
+    onRefresh();
+  };
+
+  const handleToggleChecklistItem = async (taskId: string) => {
+    if (!selectedPO) return;
+
+    const updatedChecklist = (selectedPO.internalChecklist || []).map((item: any) => {
+      if (item.id === taskId) {
+        return {
+          ...item,
+          completed: !item.completed,
+          updatedAt: new Date().toISOString(),
+          updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
+        };
+      }
+      return item;
+    });
+
+    const updatedPO = {
+      ...selectedPO,
+      internalChecklist: updatedChecklist
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      internalChecklist: updatedChecklist
+    });
+
+    setSelectedPO(updatedPO);
+    onRefresh();
+  };
+
+  const handleRemoveChecklistItem = async (taskId: string) => {
+    if (!selectedPO) return;
+
+    const updatedChecklist = (selectedPO.internalChecklist || []).filter((item: any) => item.id !== taskId);
+
+    const updatedPO = {
+      ...selectedPO,
+      internalChecklist: updatedChecklist
+    };
+
+    await dbService.updateDocument('pos', selectedPO.id, {
+      internalChecklist: updatedChecklist
+    });
+
+    setSelectedPO(updatedPO);
+    onRefresh();
+  };
 
   const handleOpenEditModal = (po: any) => {
     setSelectedPO(po);
     setShowEditModal(true);
+  };
+
+  const handleOpenRepeatOrder = (po: any) => {
+    setRepeatSourcePO(po);
+    setSelectedPO(null);
+    setShowEditModal(false);
+    setShowAddModal(true);
   };
 
   const handleDeletePO = async (poId: string) => {
@@ -152,6 +397,37 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       const nextSeq = String(maxSeq + 1).padStart(4, '0');
       const poCode = `${prefix}${nextSeq}`;
 
+      let reusableDesign: any | null = null;
+      let reusableVersion: any | null = null;
+      if (poData.repeatSourcePoId && poData.designReuseRequested) {
+        const designList = await dbService.getCollection('designs');
+        reusableDesign = designList.find((design: any) => (
+          design.poId === poData.repeatSourcePoId && design.status === 'approved'
+        )) || null;
+        reusableVersion = reusableDesign?.versions?.find((version: any) => (
+          version.versionNumber === reusableDesign.currentVersion
+        )) || reusableDesign?.versions?.[reusableDesign.versions.length - 1] || (reusableDesign?.fileUrl ? {
+          versionNumber: reusableDesign.currentVersion || 1,
+          previewImage: reusableDesign.fileUrl,
+          aiLink: reusableDesign.aiLink || '',
+          corelLink: reusableDesign.corelLink || '',
+          comment: reusableDesign.notes || '',
+          createdAt: reusableDesign.updatedAt || reusableDesign.createdAt || ''
+        } : null);
+      }
+
+      const initialStatus = reusableVersion ? 'layout_pending' : 'receive_po';
+      const newItems = poData.items.map((item: any, index: number) => index === 0 && reusableVersion
+        ? {
+            ...item,
+            previewImage: reusableVersion.previewImage || item.previewImage || '',
+            previewImages: reusableVersion.previewImage
+              ? Array.from(new Set([reusableVersion.previewImage, ...(item.previewImages || [])]))
+              : (item.previewImages || []),
+            designReuseStatus: 'pending_verification'
+          }
+        : item);
+
       const newPO = {
         poCode,
         customerPoCode: poData.customerPoCode || poCode,
@@ -160,34 +436,69 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         saleId: currentUser.uid,
         orderDate: new Date().toISOString(),
         expectedDeliveryDate: poData.expectedDeliveryDate,
-        status: 'receive_po',
-        items: poData.items,
+        status: initialStatus,
+        items: newItems,
         assignments: poData.assignments || [],
         totalAmount: poData.totalAmount,
         discountAmount: poData.discountAmount,
         netAmount: poData.netAmount,
         links: poData.links,
         notes: poData.notes,
+        orderType: poData.orderType || 'new',
+        repeatSourcePoId: poData.repeatSourcePoId || '',
+        repeatSourcePoCode: poData.repeatSourcePoCode || '',
+        designReuseRequested: Boolean(poData.designReuseRequested),
+        designReuseStatus: reusableVersion ? 'pending_verification' : (poData.designReuseRequested ? 'source_not_approved' : ''),
         createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
         createdAt: new Date().toISOString(),
         updatedBy: '',
         updatedAt: '',
         historyLogs: [
           {
-            status: 'receive_po',
+            status: initialStatus,
             updatedBy: currentUser.displayName,
             updatedAt: new Date().toISOString(),
-            note: 'Khởi tạo đơn hàng mới trên ERP'
+            note: reusableVersion
+              ? `Tạo đơn đặt lại từ ${poData.repeatSourcePoCode}. Đã kế thừa mẫu thiết kế v${reusableVersion.versionNumber} đã duyệt và chuyển sang bước kiểm tra/xác nhận.`
+              : poData.repeatSourcePoCode
+                ? `Tạo đơn đặt lại từ ${poData.repeatSourcePoCode}. Đã kế thừa thông số; chưa tìm thấy mẫu thiết kế đã duyệt để tự động sử dụng.`
+                : 'Khởi tạo đơn hàng mới trên ERP'
           }
         ]
       };
 
-      await dbService.addDocument('pos', newPO);
+      const createdPO = await dbService.addDocument('pos', newPO);
+      if (reusableDesign && reusableVersion) {
+        const reusedVersion = {
+          ...reusableVersion,
+          versionNumber: 1,
+          comment: `Tái sử dụng từ ${poData.repeatSourcePoCode} - mẫu v${reusableVersion.versionNumber}. ${reusableVersion.comment || ''}`.trim(),
+          feedbackFromClient: '',
+          feedbackAt: '',
+          createdAt: new Date().toISOString(),
+          createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+          reusedFromDesignId: reusableDesign.id,
+          reusedFromPoId: poData.repeatSourcePoId,
+          reusedFromVersion: reusableVersion.versionNumber
+        };
+        await dbService.addDocument('designs', {
+          id: createdPO.id,
+          poId: createdPO.id,
+          designerId: currentUser.role === 'designer' ? currentUser.uid : 'u-designer',
+          status: 'client_pending',
+          currentVersion: 1,
+          versions: [reusedVersion],
+          reusedFromDesignId: reusableDesign.id,
+          reusedFromPoId: poData.repeatSourcePoId,
+          createdAt: new Date().toISOString()
+        });
+      }
       await dbService.updateDocument('customers', poData.customerId, {
         lastOrderAt: new Date().toISOString()
       });
 
       setShowAddModal(false);
+      setRepeatSourcePO(null);
     }
 
     onRefresh();
@@ -300,7 +611,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
-          <button className="btn btn-primary btn-symbol" onClick={() => setShowAddModal(true)} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
+          <button className="btn btn-primary btn-symbol" onClick={() => { setRepeatSourcePO(null); setShowAddModal(true); }} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
             <Plus size={18} />
           </button>
         )}
@@ -391,6 +702,10 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               <div style={{ display: 'flex', gap: '8px' }}>
                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                   <>
+                    <button className="btn btn-sm btn-outline repeat-order-button" onClick={() => handleOpenRepeatOrder(selectedPO)} title="Tạo PO mới từ đơn này">
+                      <Copy size={14} />
+                      <span>Đặt lại từ PO này</span>
+                    </button>
                     <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditModal(selectedPO)} title={t('Sửa')}>
                       <Pencil size={14} />
                     </button>
@@ -452,6 +767,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     <table>
                       <thead>
                         <tr>
+                          <th>{t('Chi tiết')}</th>
                           <th>{t('Mã Hàng')}</th>
                           <th>{t('Tên Hàng')}</th>
                           <th>{t('Quy Cách')}</th>
@@ -461,6 +777,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           {(isFull || isSaleOnly) && (
                             <>
                               <th>{t('Đơn Giá Bán')}</th>
+                              <th>{t('CK (%)')}</th>
                               <th>{t('Thành Tiền Bán')}</th>
                             </>
                           )}
@@ -476,57 +793,237 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           
                           {/* Profit columns */}
                           {isFull && (
-                            <th>{t('Lợi Nhuận Gộp')}</th>
+                            <>
+                              <th>{t('Tiền Chênh (đ)')}</th>
+                              <th>{t('Lợi Nhuận Gộp')}</th>
+                            </>
                           )}
                         </tr>
                       </thead>
                       <tbody>
                         {selectedPO.items?.map((item: any, idx: number) => {
-                          const sellingTotal = item.quantity * item.price;
+                          const sellingTotal = item.quantity * item.price * (1 - (item.discountRate || 0) / 100);
                           const buyingTotal = item.quantity * (item.purchasePrice || 0);
                           const profit = sellingTotal - buyingTotal;
+                          const itemId = item.itemId || `${idx}`;
                           
                           return (
-                            <tr key={item.itemId || idx}>
-                              <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
-                              <td>{item.productName}</td>
-                              <td style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                {item.size} ({item.material})
-                              </td>
-                              <td>{item.quantity?.toLocaleString()}</td>
-                              
-                              {/* Sale cells */}
-                              {(isFull || isSaleOnly) && (
-                                <>
-                                  <td>{item.price?.toLocaleString()} đ</td>
-                                  <td>{sellingTotal?.toLocaleString()} đ</td>
-                                </>
-                              )}
-                              
-                              {/* Purchase cells */}
-                              {(isFull || isPurchaseOnly) && (
-                                <>
-                                  <td>
-                                    {item.supplierName ? (
-                                      <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                        {item.supplierName}
-                                      </span>
-                                    ) : (
-                                      <span style={{ fontStyle: 'italic', color: 'var(--color-warning)' }}>{t('Chưa phân bổ')}</span>
-                                    )}
-                                  </td>
-                                  <td>{(item.purchasePrice || 0)?.toLocaleString()} đ</td>
-                                  <td>{buyingTotal?.toLocaleString()} đ</td>
-                                </>
-                              )}
-                              
-                              {/* Profit cells */}
-                              {isFull && (
-                                <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 'bold' }}>
-                                  {profit?.toLocaleString()} đ
+                            <React.Fragment key={itemId}>
+                              <tr>
+                                <td>
+                                  <button 
+                                    type="button"
+                                    className="btn btn-sm btn-outline"
+                                    style={{ padding: '2px 6px', fontSize: '11px' }}
+                                    onClick={() => {
+                                      if (expandedItemIds.includes(itemId)) {
+                                        setExpandedItemIds(expandedItemIds.filter(id => id !== itemId));
+                                      } else {
+                                        setExpandedItemIds([...expandedItemIds, itemId]);
+                                      }
+                                    }}
+                                  >
+                                    {expandedItemIds.includes(itemId) ? t('Ẩn') : t('Xem')}
+                                  </button>
                                 </td>
+                                <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
+                                <td>{item.productName}</td>
+                                <td style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                                  {item.size} ({item.material})
+                                </td>
+                                <td>{item.quantity?.toLocaleString()}</td>
+                                
+                                {/* Sale cells */}
+                                {(isFull || isSaleOnly) && (
+                                  <>
+                                    <td>{item.price?.toLocaleString()} đ</td>
+                                    <td>
+                                      {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
+                                        <input 
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          value={item.discountRate ?? 0}
+                                          onChange={(e) => handleUpdateItemDiscount(idx, Number(e.target.value))}
+                                          style={{ width: '55px', padding: '2px 4px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                                        />
+                                      ) : (
+                                        <span>{item.discountRate || 0}%</span>
+                                      )}
+                                    </td>
+                                    <td>{sellingTotal?.toLocaleString()} đ</td>
+                                  </>
+                                )}
+                                
+                                {/* Purchase cells */}
+                                {(isFull || isPurchaseOnly) && (
+                                  <>
+                                    <td>
+                                      {item.supplierName ? (
+                                        <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                          {item.supplierName}
+                                        </span>
+                                      ) : (
+                                        <span style={{ fontStyle: 'italic', color: 'var(--color-warning)' }}>{t('Chưa phân bổ')}</span>
+                                      )}
+                                    </td>
+                                    <td>{(item.purchasePrice || 0)?.toLocaleString()} đ</td>
+                                    <td>{buyingTotal?.toLocaleString()} đ</td>
+                                  </>
+                                )}
+                                
+                                {/* Profit cells */}
+                                {isFull && (
+                                  <>
+                                    <td style={{ fontWeight: '500' }}>
+                                      {((item.price * (1 - (item.discountRate || 0) / 100)) - (item.purchasePrice || 0))?.toLocaleString()} đ
+                                    </td>
+                                    <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 'bold' }}>
+                                      {profit?.toLocaleString()} đ
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                              {expandedItemIds.includes(itemId) && (
+                                <tr style={{ backgroundColor: '#f8fafc' }}>
+                                  <td colSpan={isFull ? 12 : 8} style={{ padding: '16px', borderBottom: '1px solid var(--color-border-light)' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                                      {/* SALE PANEL */}
+                                      <div style={{ borderRight: '1px solid var(--color-border-light)', paddingRight: '20px' }}>
+                                        <h4 style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '14px', fontWeight: 'bold' }}>
+                                          <span>📝</span> {t('Yêu Cầu & Tài Liệu Của Sale')}
+                                        </h4>
+                                        <div className="form-group" style={{ marginBottom: '12px' }}>
+                                          <label style={{ fontWeight: 600, display: 'block', marginBottom: '6px', fontSize: '12.5px' }}>{t('Yêu cầu thiết kế / Ghi chú:')}</label>
+                                          {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
+                                            <textarea 
+                                              className="form-control"
+                                              style={{ width: '100%', minHeight: '60px', padding: '6px', fontSize: '13px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                                              value={item.saleNotes || ''}
+                                              onChange={(e) => handleUpdateItemNotes(idx, 'saleNotes', e.target.value)}
+                                              placeholder={t('Nhập ghi chú yêu cầu thiết kế...')}
+                                            />
+                                          ) : (
+                                            <div style={{ padding: '8px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px', minHeight: '40px', fontSize: '13px' }}>
+                                              {item.saleNotes || t('Không có ghi chú')}
+                                            </div>
+                                          )}
+                                        </div>
+                                        
+                                        <div className="form-group" style={{ marginBottom: '12px' }}>
+                                          <label style={{ fontWeight: 600, display: 'block', marginBottom: '6px', fontSize: '12.5px' }}>{t('Layout Sale Tải Lên (Hình ảnh/File):')}</label>
+                                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                                            <input 
+                                              type="file" 
+                                              multiple
+                                              accept="image/*"
+                                              onChange={(e) => handleUploadItemFiles(idx, 'saleLayouts', e.target.files)}
+                                              style={{ fontSize: '12px', marginBottom: '8px' }}
+                                            />
+                                          )}
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {(item.saleLayouts || []).map((fileUrl: string, fidx: number) => (
+                                              <div key={fidx} style={{ position: 'relative', display: 'inline-block' }}>
+                                                <img 
+                                                  src={fileUrl} 
+                                                  alt="Sale Layout" 
+                                                  style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'zoom-in' }}
+                                                  onClick={() => setPreviewImage(fileUrl)}
+                                                />
+                                                {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                                                  <button 
+                                                    type="button" 
+                                                    onClick={() => handleRemoveItemFile(idx, 'saleLayouts', fidx)}
+                                                    style={{ position: 'absolute', top: '-4px', right: '-4px', background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                  >
+                                                    ×
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ))}
+                                            {(!item.saleLayouts || item.saleLayouts.length === 0) && (
+                                              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('Chưa tải lên file/hình ảnh')}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        
+                                        {item.previewImage && (
+                                          <div style={{ marginTop: '12px' }}>
+                                            <label style={{ fontWeight: 600, display: 'block', marginBottom: '4px', fontSize: '12.5px' }}>{t('Hình ảnh Layout Thiết kế cũ:')}</label>
+                                            <img 
+                                              src={item.previewImage} 
+                                              alt="Old Layout" 
+                                              style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'zoom-in' }}
+                                              onClick={() => setPreviewImage(item.previewImage)}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* DESIGNER PANEL */}
+                                      <div>
+                                        <h4 style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '14px', fontWeight: 'bold' }}>
+                                          <span>🎨</span> {t('Phản Hồi & File Thiết Kế Hoàn Thiện')}
+                                        </h4>
+                                        <div className="form-group" style={{ marginBottom: '12px' }}>
+                                          <label style={{ fontWeight: 600, display: 'block', marginBottom: '6px', fontSize: '12.5px' }}>{t('Trả yêu cầu TK / Ghi chú Thiết kế:')}</label>
+                                          {(currentUser.role === 'admin' || currentUser.role === 'designer') ? (
+                                            <textarea 
+                                              className="form-control"
+                                              style={{ width: '100%', minHeight: '60px', padding: '6px', fontSize: '13px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                                              value={item.designNotes || ''}
+                                              onChange={(e) => handleUpdateItemNotes(idx, 'designNotes', e.target.value)}
+                                              placeholder={t('Nhập phản hồi từ bộ phận thiết kế...')}
+                                            />
+                                          ) : (
+                                            <div style={{ padding: '8px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px', minHeight: '40px', fontSize: '13px' }}>
+                                              {item.designNotes || t('Chưa có phản hồi thiết kế')}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="form-group" style={{ marginBottom: '12px' }}>
+                                          <label style={{ fontWeight: 600, display: 'block', marginBottom: '6px', fontSize: '12.5px' }}>{t('File Thiết Kế Up (Hoàn thiện):')}</label>
+                                          {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
+                                            <input 
+                                              type="file" 
+                                              multiple
+                                              accept="image/*"
+                                              onChange={(e) => handleUploadItemFiles(idx, 'designLayouts', e.target.files)}
+                                              style={{ fontSize: '12px', marginBottom: '8px' }}
+                                            />
+                                          )}
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {(item.designLayouts || []).map((fileUrl: string, fidx: number) => (
+                                              <div key={fidx} style={{ position: 'relative', display: 'inline-block' }}>
+                                                <img 
+                                                  src={fileUrl} 
+                                                  alt="Design Layout" 
+                                                  style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #cbd5e1', cursor: 'zoom-in' }}
+                                                  onClick={() => setPreviewImage(fileUrl)}
+                                                />
+                                                {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
+                                                  <button 
+                                                    type="button" 
+                                                    onClick={() => handleRemoveItemFile(idx, 'designLayouts', fidx)}
+                                                    style={{ position: 'absolute', top: '-4px', right: '-4px', background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                  >
+                                                    ×
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ))}
+                                            {(!item.designLayouts || item.designLayouts.length === 0) && (
+                                              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>{t('Chưa có file thiết kế hoàn chỉnh')}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
                               )}
-                            </tr>
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -613,6 +1110,79 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                 </div>
 
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
+                  <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>✅ {t('MỤC PHẢN HỒI & TIẾN ĐỘ NỘI BỘ')}</h3>
+                  
+                  {/* Add checklist item */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                    <input 
+                      type="text" 
+                      className="form-control"
+                      style={{ flex: 1, padding: '4px 8px', fontSize: '13px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                      value={newChecklistText}
+                      onChange={(e) => setNewChecklistText(e.target.value)}
+                      placeholder={t('Thêm phản hồi/tiến độ...')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddChecklistItem();
+                      }}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-primary" 
+                      onClick={handleAddChecklistItem}
+                    >
+                      {t('Thêm')}
+                    </button>
+                  </div>
+
+                  {/* Checklist List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+                    {(selectedPO.internalChecklist || []).map((task: any) => (
+                      <div 
+                        key={task.id} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between', 
+                          padding: '8px 10px', 
+                          border: '1px solid var(--color-border-light)', 
+                          borderRadius: '4px',
+                          backgroundColor: task.completed ? '#f0fdf4' : '#fff'
+                        }}
+                      >
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: 'normal', fontSize: '13px', flex: 1 }}>
+                          <input 
+                            type="checkbox" 
+                            checked={task.completed} 
+                            onChange={() => handleToggleChecklistItem(task.id)}
+                          />
+                          <span style={{ textDecoration: task.completed ? 'line-through' : 'none', color: task.completed ? '#16a34a' : 'inherit' }}>
+                            {task.content}
+                          </span>
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
+                            {task.updatedBy?.split(' (')[0]}
+                          </span>
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveChecklistItem(task.id)}
+                            style={{ background: 'transparent', border: 'none', color: 'red', cursor: 'pointer', fontSize: '12px' }}
+                            title={t('Xóa')}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {(!selectedPO.internalChecklist || selectedPO.internalChecklist.length === 0) && (
+                      <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                        {t('Chưa có phản hồi/tiến độ công việc nào.')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
                   <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('LỊCH SỬ TRẠNG THÁI')}</h3>
                   <div className="timeline" style={{ maxHeight: '200px', overflowY: 'auto' }}>
                     {selectedPO.historyLogs.map((log: any, idx: number) => (
@@ -645,9 +1215,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           onClose={() => {
             setShowAddModal(false);
             setShowEditModal(false);
+            setRepeatSourcePO(null);
             setSelectedPO(null);
           }}
           po={showEditModal ? selectedPO : null}
+          templatePo={showAddModal ? repeatSourcePO : null}
           onSave={handleSavePO}
           customers={customers}
           suppliers={suppliers}

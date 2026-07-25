@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { PO_STATES } from './Sales';
 import { useLanguage } from '../context/LanguageContext';
-import { Plus, Trash2, Pencil } from 'lucide-react';
+import { ApprovedDesignLibrary } from '../components/ApprovedDesignLibrary';
+import { Library, ListChecks, Plus, Trash2, Pencil } from 'lucide-react';
+import '../components/CustomerHistory.css';
 
 interface DesignProps {
   pos: any[];
@@ -14,6 +16,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
   const { t } = useLanguage();
   const [designs, setDesigns] = useState<any[]>([]);
   const [selectedDesign, setSelectedDesign] = useState<any | null>(null);
+  const [designTab, setDesignTab] = useState<'requests' | 'library'>('requests');
   
   // New version form state
   const [showAddVersionModal, setShowAddVersionModal] = useState(false);
@@ -389,7 +392,36 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
         </div>
       </div>
 
-      <div className="card">
+      <div className="history-tabs" role="tablist" aria-label="Quản lý thiết kế">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={designTab === 'requests'}
+          className={`history-tab ${designTab === 'requests' ? 'is-active' : ''}`}
+          onClick={() => {
+            setDesignTab('requests');
+            setSelectedDesign(null);
+          }}
+        >
+          <ListChecks size={16} /> Yêu cầu thiết kế
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={designTab === 'library'}
+          className={`history-tab ${designTab === 'library' ? 'is-active' : ''}`}
+          onClick={() => {
+            setDesignTab('library');
+            setSelectedDesign(null);
+          }}
+        >
+          <Library size={16} /> Kho mẫu đã duyệt
+        </button>
+      </div>
+
+      {designTab === 'library' && <ApprovedDesignLibrary designs={designs} pos={pos} />}
+
+      {designTab === 'requests' && <div className="card">
         <span className="card-title">{t('Danh Sách Yêu Cầu Thiết Kế Từ Đơn Hàng')}</span>
         <div className="table-container">
           <table>
@@ -425,10 +457,10 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* DETAILED DESIGN WORKSPACE */}
-      {selectedDesign && (
+      {designTab === 'requests' && selectedDesign && (
         <div className="details-grid" style={{ gridTemplateColumns: '350px 1fr' }}>
           {/* Version logs */}
           <div className="card">
@@ -596,7 +628,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       )}
 
       {/* UPLOAD VERSION MODAL */}
-      {showAddVersionModal && (
+      {designTab === 'requests' && showAddVersionModal && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
@@ -638,7 +670,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       )}
 
       {/* EDIT VERSION MODAL */}
-      {showEditVersionModal && (
+      {designTab === 'requests' && showEditVersionModal && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">

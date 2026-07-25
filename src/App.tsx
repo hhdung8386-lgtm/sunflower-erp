@@ -80,6 +80,13 @@ function App() {
   // Navigation state links
   const [selectedPoId, setSelectedPoId] = useState<string>('');
   const [selectedLsxId, setSelectedLsxId] = useState<string>('');
+  const [repeatSourcePoId, setRepeatSourcePoId] = useState<string>('');
+
+  const handleRepeatOrderRequest = (poId: string) => {
+    setSelectedPoId('');
+    setRepeatSourcePoId(poId);
+    setActivePage('sales');
+  };
 
   // Login form states
   const [username, setUsername] = useState(() => {
@@ -268,7 +275,7 @@ function App() {
     switch (activePage) {
       case 'crm':
         if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} />;
+        return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} />;
       case 'sales':
         if (!isPageAllowed('sales')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
@@ -278,6 +285,8 @@ function App() {
             currentUser={user} 
             onRefresh={refreshData} 
             initialSelectedPoId={selectedPoId}
+            initialRepeatPoId={repeatSourcePoId}
+            onRepeatOrderOpened={() => setRepeatSourcePoId('')}
             messages={messages}
             users={users}
           />

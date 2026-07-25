@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Search, Trash2, X, Eye, Download, Folder, FileText, 
   ChevronDown, ChevronUp, Upload, HelpCircle, Save, Calendar, 
-  Briefcase, CheckSquare, Layers
+  Briefcase, CheckSquare, History, Layers
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
+import './CustomerHistory.css';
 
 interface POFormFullScreenProps {
   isOpen: boolean;
   onClose: () => void;
   po: any | null; // null if creating new PO
+  templatePo?: any | null; // source PO when creating a repeat order
   onSave: (poData: any) => Promise<void>;
   customers: any[];
   suppliers: any[];
@@ -22,6 +24,7 @@ export default function POFormFullScreen({
   isOpen,
   onClose,
   po,
+  templatePo,
   onSave,
   customers,
   suppliers,
@@ -93,6 +96,55 @@ export default function POFormFullScreen({
 
       // Load assignments
       setAssignments(po.assignments || []);
+    } else if (templatePo) {
+      const sourceCustomer = customers.find(customer => customer.id === templatePo.customerId);
+      const catalogProducts = sourceCustomer?.products || [];
+      const defaultDeliveryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      setCustomerId(templatePo.customerId || '');
+      setCustomerPoCode('');
+      setExpectedDeliveryDate(defaultDeliveryDate);
+      setNotes(`Đơn đặt lại từ ${templatePo.poCode || 'PO cũ'}. ${templatePo.notes || ''}`.trim());
+
+      // Reuse approved design sources only. Old quotes, contracts and order
+      // documents are intentionally not copied into the new commercial order.
+      setPdfFile('');
+      setExcelFile('');
+      setAiFile(templatePo.links?.aiLink || '');
+      setCorelFile(templatePo.links?.corelLink || '');
+      setContractFile('');
+      setQuoteFile('');
+
+      const repeatItems = (templatePo.items || []).map((item: any) => {
+        const catalogProduct = catalogProducts.find((product: any) => (
+          product.productCode && product.productCode === item.productCode
+        ));
+        const previewImages = item.previewImages || (item.previewImage ? [item.previewImage] : []);
+
+        return {
+          ...item,
+          itemId: `item-${Math.random().toString(36).substr(2, 9)}`,
+          price: Number(catalogProduct?.currentPrice || 0),
+          purchasePrice: 0,
+          discountRate: Number(sourceCustomer?.discountRate ?? item.discountRate ?? 0),
+          vatRate: item.vatRate !== undefined ? item.vatRate : 8,
+          deliveryDate: defaultDeliveryDate,
+          previewImages,
+          unit: item.unit || 'cái',
+          material: item.material || 'Decal Giấy Fasson AW0339F',
+          size: item.size || '',
+          sourcePoId: templatePo.id,
+          sourcePoCode: templatePo.poCode,
+          sourceItemId: item.itemId,
+          designReuseRequested: previewImages.length > 0 || !!item.designLayouts?.length || !!templatePo.links?.aiLink || !!templatePo.links?.corelLink,
+          pricingNeedsReview: true,
+          purchaseNeedsReview: true
+        };
+      });
+      setPoItems(repeatItems);
+
+      // Old personnel assignments and deadlines must not leak into a new PO.
+      setAssignments([]);
     } else {
       // Defaults for creation
       setCustomerId(customers[0]?.id || '');
@@ -108,7 +160,7 @@ export default function POFormFullScreen({
       setPoItems([]);
       setAssignments([]);
     }
-  }, [po, isOpen, customers]);
+  }, [po, templatePo, isOpen, customers]);
 
   // Load repeat order products history for selected customer
   useEffect(() => {
@@ -269,6 +321,21 @@ export default function POFormFullScreen({
     setPoItems(poItems.filter((_, i) => i !== index));
   };
 
+  const getProductSize = (prod: any) => {
+    if (!prod) return '';
+    if (prod.size) return prod.size;
+    if (!prod.specifications) return '';
+    
+    const specs = prod.specifications;
+    if (prod.productType === 'muc_in') {
+      return specs.size || '';
+    }
+    if (specs.width && specs.height) {
+      return `R${specs.width} X D${specs.height} MM`;
+    }
+    return specs.size || '';
+  };
+
   const handleUpdateRowField = (index: number, field: string, value: any) => {
     const updated = [...poItems];
     updated[index] = { ...updated[index], [field]: value };
@@ -278,12 +345,37 @@ export default function POFormFullScreen({
       updated[index].supplierName = sup ? sup.supplierName : '';
     }
     
-    // Auto-update work type based on product code
-    if (field === 'productCode') {
-      if (value.includes('5.07.006') || value === 'MUC_IN') {
-        updated[index].workType = 'mua_nvl';
-      } else {
-        updated[index].workType = 'gia_cong';
+    // Auto-populate all other fields when code or name matches CRM catalog product
+    if (field === 'productCode' || field === 'productName') {
+      const currentCustomer = customers.find(c => c.id === customerId);
+      const catalogProducts = currentCustomer?.products || [];
+      const matchedProd = catalogProducts.find((p: any) => 
+        field === 'productCode' 
+          ? p.productCode === value 
+          : p.productName === value
+      );
+      if (matchedProd) {
+        updated[index] = {
+          ...updated[index],
+          productCode: matchedProd.productCode || matchedProd.code || 'MANUAL',
+          productName: matchedProd.productName || matchedProd.name || '',
+          size: getProductSize(matchedProd),
+          material: matchedProd.material || matchedProd.specifications?.material || (matchedProd.productType === 'tem_trang_cuon' ? 'Decal Giấy Fasson AW0339F' : 'Decal nhựa PVC'),
+          unit: matchedProd.unit || 'cái',
+          price: matchedProd.currentPrice || matchedProd.price || 0,
+          supplierId: matchedProd.supplierId || '',
+          supplierName: matchedProd.supplierName || '',
+          purchasePrice: matchedProd.purchasePrice || 0,
+          workType: matchedProd.workType || (matchedProd.productType === 'muc_in' ? 'mua_nvl' : 'gia_cong'),
+          previewImages: matchedProd.previewImages || (matchedProd.layoutUrl ? [matchedProd.layoutUrl] : (matchedProd.previewImage ? [matchedProd.previewImage] : [])),
+          specifications: matchedProd.specifications || {}
+        };
+      } else if (field === 'productCode') {
+        if (value.includes('5.07.006') || value === 'MUC_IN') {
+          updated[index].workType = 'mua_nvl';
+        } else {
+          updated[index].workType = 'gia_cong';
+        }
       }
     }
     
@@ -299,8 +391,8 @@ export default function POFormFullScreen({
       ...updated[searchRowIndex],
       productCode: product.productCode || product.code || 'MANUAL',
       productName: product.productName || product.name || '',
-      size: product.size || (product.specifications ? `${product.specifications.width}x${product.specifications.height}mm` : ''),
-      material: product.material || (product.productType === 'tem_trang_cuon' ? 'Decal Giấy Fasson AW0339F' : 'Decal nhựa PVC'),
+      size: getProductSize(product),
+      material: product.material || product.specifications?.material || (product.productType === 'tem_trang_cuon' ? 'Decal Giấy Fasson AW0339F' : 'Decal nhựa PVC'),
       unit: product.unit || 'cái',
       price: product.currentPrice || product.price || 0,
       supplierId: product.supplierId || '',
@@ -386,6 +478,10 @@ export default function POFormFullScreen({
         alert(t(`Dòng ${i + 1}: Số lượng phải lớn hơn 0!`));
         return;
       }
+      if (templatePo && (!poItems[i].price || Number(poItems[i].price) <= 0)) {
+        alert(`Dòng ${i + 1}: Vui lòng kiểm tra và nhập đơn giá hiện hành trước khi lưu đơn đặt lại.`);
+        return;
+      }
     }
 
     // Calculate totals
@@ -433,7 +529,13 @@ export default function POFormFullScreen({
         corelLink: corelFile,
         contractLink: contractFile,
         quoteLink: quoteFile
-      }
+      },
+      orderType: templatePo ? 'repeat' : (po?.orderType || 'new'),
+      repeatSourcePoId: templatePo?.id || po?.repeatSourcePoId || '',
+      repeatSourcePoCode: templatePo?.poCode || po?.repeatSourcePoCode || '',
+      designReuseRequested: templatePo
+        ? poItems.some(item => item.designReuseRequested)
+        : Boolean(po?.designReuseRequested)
     };
 
     onSave(poData);
@@ -517,10 +619,18 @@ export default function POFormFullScreen({
             </div>
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, letterSpacing: '0.5px' }}>
-                {po ? `${t('CHỈNH SỬA ĐƠN HÀNG PO')}: ${po.poCode}` : t('TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)')}
+                {po
+                  ? `${t('CHỈNH SỬA ĐƠN HÀNG PO')}: ${po.poCode}`
+                  : templatePo
+                    ? `TẠO ĐƠN ĐẶT LẠI TỪ ${templatePo.poCode}`
+                    : t('TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)')}
               </h2>
               <p style={{ fontSize: '12px', opacity: 0.8, margin: '2px 0 0 0' }}>
-                {po ? `${t('Mã PO nội bộ:')} ${po.poCode}` : t('Khởi tạo tệp thông tin đơn hàng mới và phân công sản xuất')}
+                {po
+                  ? `${t('Mã PO nội bộ:')} ${po.poCode}`
+                  : templatePo
+                    ? 'Kế thừa thông số và mẫu đã duyệt; giá, ngày giao và phân công cần kiểm tra lại.'
+                    : t('Khởi tạo tệp thông tin đơn hàng mới và phân công sản xuất')}
               </p>
             </div>
           </div>
@@ -583,7 +693,7 @@ export default function POFormFullScreen({
                   setCustomerId(e.target.value);
                   setPoItems([]); // Reset items on customer change
                 }}
-                disabled={!!po} // Cannot change customer when editing
+                disabled={!!po || !!templatePo} // Repeat orders must stay with the original customer
                 required
                 style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}
               >
@@ -704,6 +814,15 @@ export default function POFormFullScreen({
             flexDirection: 'column',
             gap: '20px'
           }}>
+            {templatePo && (
+              <div className="repeat-order-banner">
+                <History size={18} />
+                <div>
+                  <strong>Đang tạo đơn đặt lại từ {templatePo.poCode}</strong>
+                  <span>Hệ thống đã lấy lại mã hàng, quy cách và mẫu thiết kế. Đơn giá hiện hành, số lượng, ngày giao và người phụ trách phải được xác nhận lại trước khi lưu.</span>
+                </div>
+              </div>
+            )}
             {/* INLINE EDITING EXCEL-LIKE GRID */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -755,7 +874,7 @@ export default function POFormFullScreen({
                           <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-muted)' }}>
                             {index + 1}
                           </td>
-                          <td>
+                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <input 
                                 type="text"
@@ -763,7 +882,13 @@ export default function POFormFullScreen({
                                 value={item.productCode}
                                 onChange={(e) => handleUpdateRowField(index, 'productCode', e.target.value)}
                                 placeholder="Mã..."
+                                list={`product-codes-list-${index}`}
                               />
+                              <datalist id={`product-codes-list-${index}`}>
+                                {catalogProducts.map((p: any) => (
+                                  <option key={p.id} value={p.productCode}>{p.productName}</option>
+                                ))}
+                              </datalist>
                               <button 
                                 type="button" 
                                 className="btn btn-outline" 

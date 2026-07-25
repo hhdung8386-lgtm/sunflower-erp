@@ -54,6 +54,23 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
               originalData: item
             });
           }
+
+          // Scan for soft-deleted products inside active customers
+          if (col.name === 'customers' && item.deleted !== true && item.products && Array.isArray(item.products)) {
+            item.products.forEach((prod: any) => {
+              if (prod.deleted === true) {
+                allDeleted.push({
+                  id: `${item.id}::${prod.id}`,
+                  collection: 'customer_products',
+                  typeLabel: 'Mã sản phẩm khách hàng',
+                  name: `[${item.companyName || item.name || item.id}] ${prod.productCode} - ${prod.productName}`,
+                  deletedAt: prod.deletedAt || item.updatedAt || item.createdAt || 'N/A',
+                  details: JSON.stringify({ customerId: item.id, product: prod }),
+                  originalData: { customerId: item.id, product: prod }
+                });
+              }
+            });
+          }
         });
       });
       // Sort by deletedAt descending
@@ -80,6 +97,24 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
       return;
     }
     try {
+      if (item.collection === 'customer_products') {
+        const { customerId, product } = item.originalData;
+        const customer = await dbService.getDocument('customers', customerId);
+        if (customer) {
+          const updatedProducts = (customer.products || []).map((p: any) => {
+            if (p.id === product.id) {
+              const { deleted, deletedAt, ...rest } = p;
+              return rest;
+            }
+            return p;
+          });
+          await dbService.updateDocument('customers', customerId, { products: updatedProducts });
+          alert('Đã khôi phục sản phẩm thành công!');
+          onRefresh();
+          return;
+        }
+      }
+
       await dbService.updateDocument(item.collection, item.id, { deleted: false });
       alert('Đã khôi phục thành công!');
       onRefresh();
@@ -94,6 +129,18 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
       return;
     }
     try {
+      if (item.collection === 'customer_products') {
+        const { customerId, product } = item.originalData;
+        const customer = await dbService.getDocument('customers', customerId);
+        if (customer) {
+          const updatedProducts = (customer.products || []).filter((p: any) => p.id !== product.id);
+          await dbService.updateDocument('customers', customerId, { products: updatedProducts });
+          alert('Đã xóa vĩnh viễn sản phẩm thành công!');
+          onRefresh();
+          return;
+        }
+      }
+
       await dbService.deleteDocument(item.collection, item.id);
       alert('Đã xóa vĩnh viễn thành công!');
       onRefresh();
@@ -142,6 +189,7 @@ export const RecycleBin: React.FC<RecycleBinProps> = ({ currentUser, onRefresh }
               <option value="all">-- {t('Tất cả')} --</option>
               <option value="pos">{t('Đơn đặt hàng PO')}</option>
               <option value="customers">{t('Khách hàng')}</option>
+              <option value="customer_products">{t('Mã sản phẩm khách hàng')}</option>
               <option value="suppliers">{t('Nhà cung cấp')}</option>
               <option value="purchase_orders">{t('Đơn mua hàng NCC')}</option>
               <option value="production_commands">{t('Lệnh sản xuất LSX')}</option>

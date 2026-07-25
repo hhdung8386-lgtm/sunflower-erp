@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
+import '../components/CustomerHistory.css';
 import { 
   Plus, 
   Trash2, 
@@ -17,7 +18,9 @@ import {
   Phone,
   Mail,
   User,
-  Eye
+  Eye,
+  AlertCircle,
+  Copy
 } from 'lucide-react';
 
 interface CrmProps {
@@ -26,9 +29,55 @@ interface CrmProps {
   users: any[];
   currentUser: any;
   onRefresh: () => void;
+  onRepeatOrder?: (poId: string) => void;
 }
 
-export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, onRefresh }) => {
+const loadSpecsToFields = (productType: string, specifications: any = {}) => {
+  const specs = specifications || {};
+  if (specs.fields && Array.isArray(specs.fields)) {
+    return specs.fields;
+  }
+  
+  const fields = [];
+  if (productType === 'muc_in') {
+    fields.push({ id: 'ribbonType', label: 'Loại mực', value: specs.ribbonType || 'WAX PREMIUM', type: 'select', options: ['WAX PREMIUM', 'WAX RESIN', 'RESIN'] });
+    fields.push({ id: 'direction', label: 'Chiều quấn', value: specs.direction || 'Out side', type: 'select', options: ['Out side', 'In side'] });
+    fields.push({ id: 'size', label: 'Khổ mực', value: specs.size || '110mm x 300m', type: 'text' });
+    fields.push({ id: 'color', label: 'Màu mực', value: specs.color || 'Đen', type: 'text' });
+  } else if (productType === 'tem_trang_cuon' || productType === 'tem_mau_cuon') {
+    fields.push({ id: 'width', label: 'Rộng tem (mm)', value: specs.width || 80, type: 'number' });
+    fields.push({ id: 'height', label: 'Cao tem (mm)', value: specs.height || 55, type: 'number' });
+    fields.push({ id: 'gap', label: 'Bước răng/Gap', value: specs.gap || 3, type: 'number' });
+    fields.push({ id: 'qtyPerRoll', label: 'Số tem/cuộn', value: specs.qtyPerRoll || 1000, type: 'number' });
+    fields.push({ id: 'core', label: 'Cỡ lõi cuộn', value: specs.core || specs.windingCore || '76mm', type: 'select', options: ['76mm', '42mm', '29mm', '40mm', '25mm'] });
+    fields.push({ id: 'dieCut', label: 'Kiểu bế góc', value: specs.dieCut || 'Bo góc R2', type: 'select', options: ['Bo góc R2', 'Bo góc R3', 'Bo góc R5', 'Vuông góc'] });
+    fields.push({ id: 'perforated', label: 'Răng cưa xé', value: specs.perforated || 'Không răng cưa', type: 'select', options: ['Không răng cưa', 'Có răng cưa xé'] });
+    fields.push({ id: 'windDirection', label: 'Hướng tem ra', value: specs.windDirection || 'Ra đầu trước', type: 'select', options: ['Ra đầu trước', 'Ra đầu sau', 'Chữ quay trái', 'Chữ quay phải', 'Head First', 'Tail First', 'Left First', 'Right First'] });
+    fields.push({ id: 'windDirectionFiles', label: 'Tải Lên Ảnh/File Hướng Tem Ra', value: specs.windDirectionFiles || [], type: 'file' });
+    
+    if (productType === 'tem_mau_cuon') {
+      fields.push({ id: 'colors', label: 'Số màu in / Diễn giải màu', value: specs.colors || '4 màu', type: 'text' });
+      fields.push({ id: 'processing', label: 'Quy cách gia công', value: specs.processing || [], type: 'checkboxes', options: ['Cán bóng', 'Cán mờ', 'Phủ UV', 'Ép kim', 'Bế demi', 'Bế đứt'] });
+    }
+  } else if (productType === 'tem_mau_to') {
+    fields.push({ id: 'width', label: 'Chiều Rộng (mm)', value: specs.width || 80, type: 'number' });
+    fields.push({ id: 'height', label: 'Chiều Cao/Dài (mm)', value: specs.height || 55, type: 'number' });
+    fields.push({ id: 'corner', label: 'Góc tem tờ', value: specs.corner || 'Bo góc R2', type: 'select', options: ['Bo góc R2', 'Bo góc R3', 'Bo góc R5', 'Vuông góc'] });
+    fields.push({ id: 'lamination', label: 'Cán màng bảo vệ', value: specs.lamination || 'Không cán', type: 'select', options: ['Không cán', 'Cán bóng', 'Cán mờ'] });
+    fields.push({ id: 'finished', label: 'Thành phẩm sau in', value: specs.finished || 'Bế demi', type: 'select', options: ['Bế demi', 'Bế đứt', 'Xén thành phẩm', 'Giao nguyên tờ'] });
+    fields.push({ id: 'sheetType', label: 'Quy cách khổ tờ', value: specs.sheetType || 'A4', type: 'select', options: ['A4', 'A3', '310 x 450', '330 x 480'] });
+  }
+  
+  if (specs.custom && Array.isArray(specs.custom)) {
+    specs.custom.forEach((c: any, index: number) => {
+      fields.push({ id: `custom_${index}_${Date.now()}`, label: c.key, value: c.value, type: 'text' });
+    });
+  }
+  
+  return fields;
+};
+
+export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, onRefresh, onRepeatOrder }) => {
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'needs_care'>('all');
@@ -71,6 +120,149 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [repoUploadFile, setRepoUploadFile] = useState('');
   const [repoUploadFileName, setRepoUploadFileName] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Dynamic categories and admin approvals states
+  const [productClassifications, setProductClassifications] = useState<any[]>([]);
+  const [windDirections, setWindDirections] = useState<any[]>([]);
+  const [editRequests, setEditRequests] = useState<any[]>([]);
+  
+  const [priceHistoryProduct, setPriceHistoryProduct] = useState<any | null>(null);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [selectedEditRequest, setSelectedEditRequest] = useState<any | null>(null);
+  const [windDirectionFiles, setWindDirectionFiles] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsubClass = dbService.subscribeCollection('product_classifications', setProductClassifications);
+    const unsubWind = dbService.subscribeCollection('wind_directions', setWindDirections);
+    const unsubReqs = dbService.subscribeCollection('edit_requests', setEditRequests);
+    return () => {
+      unsubClass();
+      unsubWind();
+      unsubReqs();
+    };
+  }, []);
+
+  const handleWindDirectionFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const base64Promises = Array.from(files).map((file) => {
+      return new Promise<any>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, url: reader.result as string });
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      });
+    });
+    try {
+      const base64Files = await Promise.all(base64Promises);
+      setWindDirectionFiles(prev => [...prev, ...base64Files]);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateFieldValue = (fieldId: string, value: any) => {
+    setSpecFields(prev => prev.map(f => f.id === fieldId ? { ...f, value } : f));
+  };
+
+  const handleDeleteField = (fieldId: string) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn xóa thông số này?'))) {
+      setSpecFields(prev => prev.filter(f => f.id !== fieldId));
+    }
+  };
+
+  const handleStartEditLabel = (fieldId: string, currentLabel: string) => {
+    setEditingLabelId(fieldId);
+    setTempLabelText(currentLabel);
+  };
+
+  const handleSaveLabel = (fieldId: string) => {
+    if (tempLabelText.trim()) {
+      setSpecFields(prev => prev.map(f => f.id === fieldId ? { ...f, label: tempLabelText.trim() } : f));
+    }
+    setEditingLabelId(null);
+  };
+
+  const handleAddField = () => {
+    const newFieldId = `custom_${Date.now()}`;
+    const newField = {
+      id: newFieldId,
+      label: t('Thông số mới'),
+      value: '',
+      type: 'text'
+    };
+    setSpecFields(prev => [...prev, newField]);
+    setEditingLabelId(newFieldId);
+    setTempLabelText(t('Thông số mới'));
+  };
+
+  const handleAddSelectField = () => {
+    const newFieldId = `custom_${Date.now()}`;
+    const newField = {
+      id: newFieldId,
+      label: t('Thông số mới'),
+      value: t('Lựa chọn 1'),
+      type: 'select',
+      options: [t('Lựa chọn 1'), t('Lựa chọn 2')]
+    };
+    setSpecFields(prev => [...prev, newField]);
+    setEditingLabelId(newFieldId);
+    setTempLabelText(t('Thông số mới'));
+  };
+
+  const handleEditDropdownOptions = (fieldId: string) => {
+    const field = specFields.find(f => f.id === fieldId);
+    if (!field) return;
+    const currentOpts = field.options || [];
+    const newOptsStr = prompt(
+      t('Nhập danh sách lựa chọn (phân cách bằng dấu phẩy):'),
+      currentOpts.join(', ')
+    );
+    if (newOptsStr !== null) {
+      const newOpts = newOptsStr
+        .split(',')
+        .map(opt => opt.trim())
+        .filter(opt => opt.length > 0);
+      
+      if (newOpts.length === 0) {
+        alert(t('Danh sách lựa chọn không được trống.'));
+        return;
+      }
+      
+      setSpecFields(prev => prev.map(f => {
+        if (f.id === fieldId) {
+          const newValue = newOpts.includes(f.value) ? f.value : newOpts[0];
+          return { ...f, options: newOpts, value: newValue };
+        }
+        return f;
+      }));
+    }
+  };
+
+  const handleWindDirectionFilesChangeForField = async (fieldId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const base64Promises = Array.from(files).map((file) => {
+      return new Promise<any>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, data: reader.result as string, url: reader.result as string });
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      });
+    });
+    try {
+      const base64Files = await Promise.all(base64Promises);
+      setSpecFields(prev => prev.map(f => {
+        if (f.id === fieldId) {
+          const currentFiles = Array.isArray(f.value) ? f.value : [];
+          return { ...f, value: [...currentFiles, ...base64Files] };
+        }
+        return f;
+      }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
   
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -135,6 +327,12 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [specSheetLamination, setSpecSheetLamination] = useState('Cán bóng');
   const [specSheetFinished, setSpecSheetFinished] = useState('Xén thành phẩm');
   const [specSheetType, setSpecSheetType] = useState('A4');
+  const [productMaterial, setProductMaterial] = useState('');
+  const [specCustomRows, setSpecCustomRows] = useState<{ key: string; value: string }[]>([]);
+  const [specFields, setSpecFields] = useState<any[]>([]);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [tempLabelText, setTempLabelText] = useState('');
+  const [requoteNote, setRequoteNote] = useState('');
 
   // Re-quote price dialog state
   const [showRequoteModal, setShowRequoteModal] = useState(false);
@@ -255,18 +453,325 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Delete customer
   const handleDeleteCustomer = async (id: string) => {
-    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
-    if (password === 'admin123' || password === '123456') {
-      await dbService.updateDocument('customers', id, {
-        deleted: true,
-        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-        updatedAt: new Date().toISOString()
+    if (currentUser.role === 'admin') {
+      const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
+      if (password === 'admin123' || password === '123456') {
+        await dbService.updateDocument('customers', id, {
+          deleted: true,
+          deleteRequested: false,
+          updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+          updatedAt: new Date().toISOString()
+        });
+        setSelectedCustomer(null);
+        onRefresh();
+        alert(t('Đã chuyển khách hàng vào Kho Rác.'));
+      } else if (password !== null) {
+        alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
+      }
+    } else {
+      if (window.confirm(t('Bạn có muốn gửi yêu cầu xóa khách hàng này tới Admin phê duyệt?'))) {
+        await dbService.updateDocument('customers', id, {
+          deleteRequested: true,
+          deleteRequestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
+        });
+        alert(t('Đã gửi yêu cầu xóa khách hàng tới Admin.'));
+        onRefresh();
+      }
+    }
+  };
+
+  const handleOpenEditProduct = (prod: any) => {
+    setSelectedProduct(prod);
+    setProductCode(prod.productCode);
+    setProductName(prod.productName);
+    setProductType(prod.productType);
+    setCurrentPrice(prod.currentPrice);
+    setProductMaterial(prod.material || '');
+    setSpecCustomRows(prod.specifications?.custom || []);
+    setProductLayoutBase64(prod.layoutUrl || '');
+    setWindDirectionFiles(prod.specifications?.windDirectionFiles || []);
+    setSpecFields(loadSpecsToFields(prod.productType, prod.specifications));
+    setShowEditProductModal(true);
+  };
+
+  const handleEditProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !selectedProduct) return;
+
+    const specs: any = { fields: specFields };
+    // Flatten fields for backwards compatibility
+    specFields.forEach(f => {
+      let val = f.value;
+      if (f.type === 'number') {
+        val = Number(val);
+      }
+      specs[f.id] = val;
+      
+      // Keep support for both core/windingCore for color rolls
+      if (f.id === 'core') {
+        specs.windingCore = val;
+      }
+      if (f.id === 'windingCore') {
+        specs.core = val;
+      }
+      
+      // Map other special fields for legacy compatibility
+      if (f.id === 'colors') {
+        specs.colors = val;
+      }
+      if (f.id === 'processing') {
+        specs.processing = val;
+      }
+      if (f.id === 'ribbonType') {
+        specs.ribbonType = val;
+      }
+      if (f.id === 'direction') {
+        specs.direction = val;
+      }
+      if (f.id === 'size') {
+        specs.size = val;
+      }
+      if (f.id === 'color') {
+        specs.color = val;
+      }
+      if (f.id === 'corner') {
+        specs.corner = val;
+      }
+      if (f.id === 'lamination') {
+        specs.lamination = val;
+      }
+      if (f.id === 'finished') {
+        specs.finished = val;
+      }
+      if (f.id === 'sheetType') {
+        specs.sheetType = val;
+      }
+      if (f.id === 'dieCut') {
+        specs.dieCut = val;
+      }
+      if (f.id === 'perforated') {
+        specs.perforated = val;
+      }
+      if (f.id === 'windDirection') {
+        specs.windDirection = val;
+      }
+      if (f.id === 'windDirectionFiles') {
+        specs.windDirectionFiles = val;
+      }
+    });
+
+    specs.custom = specFields.filter(f => f.id.startsWith('custom_')).map(f => ({ key: f.label, value: f.value }));
+
+    const priceChanged = Number(currentPrice) !== selectedProduct.currentPrice;
+    const newPriceHistory = [...(selectedProduct.priceHistory || [])];
+    if (priceChanged) {
+      newPriceHistory.push({
+        date: new Date().toISOString().split('T')[0],
+        price: Number(currentPrice),
+        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
       });
-      setSelectedCustomer(null);
+    }
+
+    const updatedProduct = {
+      ...selectedProduct,
+      productCode,
+      productName,
+      productType,
+      currentPrice: Number(currentPrice),
+      material: productMaterial,
+      layoutUrl: productLayoutBase64,
+      specifications: specs,
+      priceHistory: newPriceHistory,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (currentUser.role === 'admin') {
+      const updatedProducts = (selectedCustomer.products || []).map((p: any) => 
+        p.id === selectedProduct.id ? updatedProduct : p
+      );
+
+      await dbService.updateDocument('customers', selectedCustomer.id, {
+        products: updatedProducts
+      });
+
+      setSelectedCustomer((prev: any) => ({
+        ...prev,
+        products: updatedProducts
+      }));
+      alert(t('Cập nhật sản phẩm thành công.'));
+    } else {
+      await dbService.addDocument('edit_requests', {
+        type: 'product_details',
+        targetId: selectedCustomer.id,
+        productId: selectedProduct.id,
+        fieldName: `${t('Sửa Sản phẩm')}: ${selectedProduct.productCode} - ${selectedProduct.productName}`,
+        originalData: selectedProduct,
+        updatedData: updatedProduct,
+        requestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        requestedAt: new Date().toISOString(),
+        status: 'pending'
+      });
+      alert(t('Yêu cầu chỉnh sửa sản phẩm đã được gửi tới Admin duyệt.'));
+    }
+
+    setShowEditProductModal(false);
+    setSelectedProduct(null);
+    onRefresh();
+  };
+
+  const triggerAddClassification = async () => {
+    const name = prompt(t('Nhập tên phân loại sản phẩm mới:'));
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    const id = `class-${Math.random().toString(36).substr(2, 9)}`;
+    const newClass = { id, name: cleanName };
+    await dbService.addDocument('product_classifications', newClass);
+    alert(t('Đã thêm phân loại sản phẩm mới.'));
+  };
+
+  const triggerAddWindDirection = async () => {
+    const name = prompt(t('Nhập tên hướng tem ra mới:'));
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    const id = `wind-${Math.random().toString(36).substr(2, 9)}`;
+    const newWind = { id, name: cleanName };
+    await dbService.addDocument('wind_directions', newWind);
+    alert(t('Đã thêm hướng tem ra mới.'));
+  };
+
+  const handleEditClassification = async (id: string, newName: string) => {
+    const origClass = productClassifications.find(c => c.id === id);
+    if (!origClass) return;
+    if (currentUser.role === 'admin') {
+      await dbService.updateDocument('product_classifications', id, { name: newName });
+      alert(t('Đã cập nhật phân loại sản phẩm.'));
+    } else {
+      await dbService.addDocument('edit_requests', {
+        type: 'product_classification',
+        targetId: id,
+        fieldName: `${t('Sửa Phân loại sản phẩm')}: ${origClass.name}`,
+        originalData: { name: origClass.name },
+        updatedData: { name: newName },
+        requestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        requestedAt: new Date().toISOString(),
+        status: 'pending'
+      });
+      alert(t('Yêu cầu sửa phân loại sản phẩm đã gửi tới Admin duyệt.'));
+    }
+    onRefresh();
+  };
+
+  const handleEditWindDirection = async (id: string, newName: string) => {
+    const origWind = windDirections.find(w => w.id === id);
+    if (!origWind) return;
+    if (currentUser.role === 'admin') {
+      await dbService.updateDocument('wind_directions', id, { name: newName });
+      alert(t('Đã cập nhật hướng tem ra.'));
+    } else {
+      await dbService.addDocument('edit_requests', {
+        type: 'wind_direction',
+        targetId: id,
+        fieldName: `${t('Sửa Hướng tem ra')}: ${origWind.name}`,
+        originalData: { name: origWind.name },
+        updatedData: { name: newName },
+        requestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        requestedAt: new Date().toISOString(),
+        status: 'pending'
+      });
+      alert(t('Yêu cầu sửa hướng tem ra đã gửi tới Admin duyệt.'));
+    }
+    onRefresh();
+  };
+
+  const triggerEditClassification = async (id: string) => {
+    const origClass = productClassifications.find(c => c.id === id);
+    if (!origClass) return;
+    const name = prompt(t('Sửa tên phân loại sản phẩm:'), origClass.name);
+    if (!name || !name.trim()) return;
+    await handleEditClassification(id, name.trim());
+  };
+
+  const triggerEditWindDirection = async (id: string) => {
+    const origWind = windDirections.find(w => w.id === id);
+    if (!origWind) return;
+    const name = prompt(t('Sửa tên hướng tem ra:'), origWind.name);
+    if (!name || !name.trim()) return;
+    await handleEditWindDirection(id, name.trim());
+  };
+
+  const handleApproveRequest = async (req: any) => {
+    try {
+      if (req.type === 'customer_profile') {
+        await dbService.updateDocument('customers', req.targetId, {
+          ...req.updatedData,
+          updatedBy: req.requestedBy,
+          updatedAt: new Date().toISOString()
+        });
+        alert(t('Đã duyệt chỉnh sửa hồ sơ khách hàng.'));
+      } else if (req.type === 'product_details') {
+        const cust = customers.find(c => c.id === req.targetId);
+        if (cust) {
+          const updatedProducts = (cust.products || []).map((p: any) => 
+            p.id === req.productId ? req.updatedData : p
+          );
+          await dbService.updateDocument('customers', req.targetId, {
+            products: updatedProducts
+          });
+          alert(t('Đã duyệt chỉnh sửa thông tin sản phẩm.'));
+        } else {
+          alert(t('Không tìm thấy thông tin khách hàng tương ứng.'));
+        }
+      } else if (req.type === 'product_classification') {
+        await dbService.updateDocument('product_classifications', req.targetId, {
+          name: req.updatedData.name
+        });
+        alert(t('Đã duyệt chỉnh sửa phân loại sản phẩm.'));
+      } else if (req.type === 'wind_direction') {
+        await dbService.updateDocument('wind_directions', req.targetId, {
+          name: req.updatedData.name
+        });
+        alert(t('Đã duyệt chỉnh sửa hướng tem ra.'));
+      }
+      
+      await dbService.deleteDocument('edit_requests', req.id);
+      setShowCompareModal(false);
+      setSelectedEditRequest(null);
       onRefresh();
-      alert(t('Đã chuyển khách hàng vào Kho Rác.'));
-    } else if (password !== null) {
-      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
+    } catch (error) {
+      console.error(error);
+      alert(t('Có lỗi xảy ra khi phê duyệt.'));
+    }
+  };
+
+  const handleRejectRequest = async (req: any) => {
+    if (window.confirm(t('Bạn có chắc chắn muốn từ chối yêu cầu này?'))) {
+      await dbService.deleteDocument('edit_requests', req.id);
+      setShowCompareModal(false);
+      setSelectedEditRequest(null);
+      alert(t('Đã từ chối và xóa yêu cầu.'));
+      onRefresh();
+    }
+  };
+
+  const handleApproveDeleteCustomer = async (cust: any) => {
+    if (window.confirm(t('Bạn có chắc muốn phê duyệt xóa khách hàng này?'))) {
+      await dbService.updateDocument('customers', cust.id, {
+        deleted: true,
+        deleteRequested: false
+      });
+      alert(t('Đã xóa khách hàng.'));
+      onRefresh();
+    }
+  };
+
+  const handleRejectDeleteCustomer = async (cust: any) => {
+    if (window.confirm(t('Từ chối yêu cầu xóa khách hàng này?'))) {
+      await dbService.updateDocument('customers', cust.id, {
+        deleteRequested: false,
+        deleteRequestedBy: ''
+      });
+      alert(t('Đã từ chối yêu cầu xóa.'));
+      onRefresh();
     }
   };
 
@@ -535,8 +1040,23 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setProductName('');
     setProductType('tem_trang_cuon');
     setCurrentPrice(0);
+    setProductMaterial('');
+    setSpecCustomRows([]);
     setProductLayoutBase64('');
+    setSpecFields(loadSpecsToFields('tem_trang_cuon'));
     setShowAddProductModal(true);
+  };
+
+  const handleAddProductTypeChange = (type: any) => {
+    setProductType(type);
+    setSpecFields(loadSpecsToFields(type));
+  };
+
+  const handleEditProductTypeChange = (type: any) => {
+    if (window.confirm(t('Thay đổi loại sản phẩm sẽ reset các thông số kỹ thuật về mặc định. Bạn có muốn tiếp tục?'))) {
+      setProductType(type);
+      setSpecFields(loadSpecsToFields(type));
+    }
   };
 
   const handleProductLayoutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -553,41 +1073,69 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     e.preventDefault();
     if (!selectedCustomer || !productCode || !productName || !currentPrice) return;
 
-    let specs: any = {};
-    if (productType === 'muc_in') {
-      specs = {
-        ribbonType: specRibbonType,
-        direction: specRibbonDirection,
-        size: specRibbonSize,
-        color: specRibbonColor
-      };
-    } else if (productType === 'tem_trang_cuon') {
-      specs = {
-        width: Number(specWidth),
-        height: Number(specHeight),
-        gap: Number(specGap),
-        pitch: Number(specPitch),
-        qtyPerRoll: Number(specQtyPerRoll),
-        core: specCore,
-        dieCut: specDieCut,
-        perforated: specPerforated,
-        windDirection: specWindDirection
-      };
-    } else if (productType === 'tem_mau_cuon') {
-      specs = {
-        colors: specColorColors,
-        form: specColorForm,
-        windingCore: specColorWindingCore,
-        processing: specColorProcessing
-      };
-    } else if (productType === 'tem_mau_to') {
-      specs = {
-        corner: specSheetCorner,
-        lamination: specSheetLamination,
-        finished: specSheetFinished,
-        sheetType: specSheetType
-      };
-    }
+    const specs: any = { fields: specFields };
+    // Flatten fields for backwards compatibility
+    specFields.forEach(f => {
+      let val = f.value;
+      if (f.type === 'number') {
+        val = Number(val);
+      }
+      specs[f.id] = val;
+      
+      // Keep support for both core/windingCore for color rolls
+      if (f.id === 'core') {
+        specs.windingCore = val;
+      }
+      if (f.id === 'windingCore') {
+        specs.core = val;
+      }
+      
+      // Map other special fields for legacy compatibility
+      if (f.id === 'colors') {
+        specs.colors = val;
+      }
+      if (f.id === 'processing') {
+        specs.processing = val;
+      }
+      if (f.id === 'ribbonType') {
+        specs.ribbonType = val;
+      }
+      if (f.id === 'direction') {
+        specs.direction = val;
+      }
+      if (f.id === 'size') {
+        specs.size = val;
+      }
+      if (f.id === 'color') {
+        specs.color = val;
+      }
+      if (f.id === 'corner') {
+        specs.corner = val;
+      }
+      if (f.id === 'lamination') {
+        specs.lamination = val;
+      }
+      if (f.id === 'finished') {
+        specs.finished = val;
+      }
+      if (f.id === 'sheetType') {
+        specs.sheetType = val;
+      }
+      if (f.id === 'dieCut') {
+        specs.dieCut = val;
+      }
+      if (f.id === 'perforated') {
+        specs.perforated = val;
+      }
+      if (f.id === 'windDirection') {
+        specs.windDirection = val;
+      }
+      if (f.id === 'windDirectionFiles') {
+        specs.windDirectionFiles = val;
+      }
+    });
+
+    specs.custom = specFields.filter(f => f.id.startsWith('custom_')).map(f => ({ key: f.label, value: f.value }));
 
     const newProduct = {
       id: `prod-${Math.random().toString(36).substr(2, 9)}`,
@@ -595,6 +1143,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       productName,
       productType,
       currentPrice: Number(currentPrice),
+      material: productMaterial,
       layoutUrl: productLayoutBase64,
       specifications: specs,
       priceHistory: [
@@ -621,7 +1170,12 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const handleDeleteProduct = async (productId: string) => {
     if (!selectedCustomer) return;
     if (window.confirm(t('Bạn có chắc chắn muốn xóa mã sản phẩm này?'))) {
-      const updatedProducts = (selectedCustomer.products || []).filter((p: any) => p.id !== productId);
+      const updatedProducts = (selectedCustomer.products || []).map((p: any) => {
+        if (p.id === productId) {
+          return { ...p, deleted: true, deletedAt: new Date().toISOString() };
+        }
+        return p;
+      });
       
       await dbService.updateDocument('customers', selectedCustomer.id, {
         products: updatedProducts
@@ -639,6 +1193,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const handleOpenRequote = (prod: any) => {
     setSelectedProduct(prod);
     setRequotePrice(prod.currentPrice);
+    setRequoteNote('');
     setShowRequoteModal(true);
   };
 
@@ -653,7 +1208,12 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           currentPrice: Number(requotePrice),
           priceHistory: [
             ...(p.priceHistory || []),
-            { date: new Date().toISOString().split('T')[0], price: Number(requotePrice) }
+            { 
+              date: new Date().toISOString().split('T')[0], 
+              price: Number(requotePrice), 
+              note: requoteNote,
+              updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
+            }
           ]
         };
       }
@@ -737,7 +1297,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Order history helper for selected customer
   const getCustomerOrders = (custId: string) => {
-    return pos.filter(po => po.customerId === custId);
+    return pos
+      .filter(po => po.customerId === custId && !po.deleted)
+      .sort((a, b) => new Date(b.orderDate || b.createdAt || 0).getTime() - new Date(a.orderDate || a.createdAt || 0).getTime());
   };
 
   // Order frequency (orders per month)
@@ -836,6 +1398,48 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           {t('Khách Hàng Tiềm Năng (Leads)')}
         </button>
       </div>
+
+      {currentUser.role === 'admin' && (editRequests.some(r => r.status === 'pending') || customers.some(c => c.deleteRequested && !c.deleted)) && (
+        <div className="card" style={{ border: '2px solid var(--color-primary-light)', backgroundColor: '#f0fdf4', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+          <div className="card-header" style={{ paddingBottom: '8px', borderBottom: '1px solid var(--color-border-light)' }}>
+            <span className="card-title" style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+              <AlertCircle size={20} />
+              {t('BẢNG ĐIỀU HÀNH PHÊ DUYỆT (ADMIN APPROVALS)')}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {customers.filter(c => c.deleteRequested && !c.deleted).map(cust => (
+              <div key={cust.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', border: '1px solid #fed7d7', borderRadius: '4px', backgroundColor: '#fff5f5' }}>
+                <div>
+                  <span style={{ fontWeight: 'bold', color: 'var(--color-danger)' }}>[${t('YÊU CẦU XÓA KHÁCH HÀNG')}] </span>
+                  <strong>{cust.companyName}</strong> - {t('Yêu cầu bởi:')} {cust.deleteRequestedBy || 'Sale'}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => handleApproveDeleteCustomer(cust)}>{t('Duyệt Xóa')}</button>
+                  <button type="button" className="btn btn-sm btn-outline" onClick={() => handleRejectDeleteCustomer(cust)}>{t('Hủy Yêu Cầu')}</button>
+                </div>
+              </div>
+            ))}
+            
+            {editRequests.filter(r => r.status === 'pending').map(req => (
+              <div key={req.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '4px', backgroundColor: '#ffffff' }}>
+                <div>
+                  <span style={{ fontWeight: 'bold', color: 'var(--color-warning)' }}>[${t('YÊU CẦU CHỈNH SỬA')}] </span>
+                  <strong>{req.fieldName}</strong> - {t('Yêu cầu bởi:')} {req.requestedBy} ({req.requestedAt ? new Date(req.requestedAt).toLocaleString('vi-VN') : ''})
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => {
+                    setSelectedEditRequest(req);
+                    setShowCompareModal(true);
+                  }}>{t('Xem So Sánh (Diff)')}</button>
+                  <button type="button" className="btn btn-sm btn-success" onClick={() => handleApproveRequest(req)}>{t('Duyệt')}</button>
+                  <button type="button" className="btn btn-sm btn-outline" style={{ color: 'red', borderColor: 'red' }} onClick={() => handleRejectRequest(req)}>{t('Từ Chối')}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {crmActiveTab === 'cooperative' ? (
         <>
@@ -1008,14 +1612,20 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Sale phụ trách:')}</span>
                 <span>{users.find(u => u.uid === selectedCustomer.assignedSaleId)?.displayName || t('Chưa phân công')}</span>
 
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Điều khoản nợ:')}</span>
-                <span>{t(selectedCustomer.paymentTerms)} ({t('Hạn mức:')} {selectedCustomer.debtLimit.toLocaleString()} đ)</span>
+                {(selectedCustomer.customFields || [
+                  { id: 'discountRate', name: t('Chiết khấu mặc định (%)'), value: selectedCustomer.discountRate },
+                  { id: 'debtLimit', name: t('Hạn mức công nợ (đ)'), value: selectedCustomer.debtLimit },
+                  { id: 'paymentTerms', name: t('Điều khoản thanh toán'), value: selectedCustomer.paymentTerms },
+                  { id: 'note', name: t('Ghi chú yêu cầu riêng'), value: selectedCustomer.note }
+                ]).map((field: any) => (
+                  <React.Fragment key={field.id}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{field.name}:</span>
+                    <span>{field.id === 'debtLimit' ? `${field.value?.toLocaleString()} đ` : field.id === 'discountRate' ? `${field.value}%` : (field.value || t('Không có'))}</span>
+                  </React.Fragment>
+                ))}
 
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Tần suất đặt hàng:')}</span>
                 <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{calculateFrequency(selectedCustomer.id)}</span>
-
-                <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{t('Ghi chú kinh doanh:')}</span>
-                <span>{selectedCustomer.note || t('Không có ghi chú')}</span>
 
                 <span style={{ gridColumn: '1 / -1', borderBottom: '1px dashed var(--color-border-light)', margin: '8px 0' }}></span>
 
@@ -1040,6 +1650,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     <th>{t('Ngày Đặt')}</th>
                     <th>{t('Trị Giá (Net)')}</th>
                     <th>{t('Tiến Độ')}</th>
+                    <th>{t('Thao Tác')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1053,11 +1664,23 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                           po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' : 'badge-warning'
                         }`}>{po.status.replace('_', ' ').toUpperCase()}</span>
                       </td>
+                      <td>
+                        {(currentUser.role === 'admin' || currentUser.role === 'sale') && onRepeatOrder ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline repeat-order-button"
+                            onClick={() => onRepeatOrder(po.id)}
+                            title="Tạo PO mới từ đơn cũ"
+                          >
+                            <Copy size={13} /> Đặt lại
+                          </button>
+                        ) : '—'}
+                      </td>
                     </tr>
                   ))}
                   {getCustomerOrders(selectedCustomer.id).length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa phát sinh đơn hàng nào.')}</td>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa phát sinh đơn hàng nào.')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -1089,24 +1712,83 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   </tr>
                 </thead>
                 <tbody>
-                  {(selectedCustomer.products || []).map((prod: any) => (
+                  {(selectedCustomer.products || []).filter((p: any) => !p.deleted).map((prod: any) => (
                     <tr key={prod.id}>
                       <td style={{ fontWeight: 600 }}>{prod.productCode}</td>
                       <td>{prod.productName}</td>
                       <td>{t(prod.productType)}</td>
-                      <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{prod.currentPrice.toLocaleString()} đ</td>
+                      <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{prod.currentPrice.toLocaleString()} đ</span>
+                          <button 
+                            type="button" 
+                            className="btn btn-sm btn-outline" 
+                            style={{ padding: '2px 4px', fontSize: '10px', display: 'inline-flex', alignItems: 'center' }}
+                            onClick={() => setPriceHistoryProduct(prod)}
+                          >
+                            {t('Lịch sử')}
+                          </button>
+                        </div>
+                      </td>
                       <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                        {prod.productType === 'muc_in' && (
-                          <span>{prod.specifications.ribbonType} - {prod.specifications.size} - {prod.specifications.color}</span>
+                        {prod.specifications?.fields && Array.isArray(prod.specifications.fields) ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
+                            {prod.specifications.fields.map((f: any) => {
+                              if (f.id === 'windDirectionFiles') return null;
+                              let valStr = '';
+                              if (f.type === 'checkboxes' && Array.isArray(f.value)) {
+                                valStr = f.value.join(', ');
+                              } else {
+                                valStr = String(f.value !== undefined && f.value !== null ? f.value : '');
+                              }
+                              if (!valStr) return null;
+                              return (
+                                <span key={f.id} style={{ display: 'inline-block' }}>
+                                  <span style={{ fontWeight: 600, color: '#475569' }}>{f.label}:</span> {valStr}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <>
+                            {prod.productType === 'muc_in' && (
+                              <span>{prod.specifications.ribbonType} - {prod.specifications.size} - {prod.specifications.color}</span>
+                            )}
+                            {prod.productType === 'tem_trang_cuon' && (
+                              <span>R{prod.specifications.width} X D{prod.specifications.height} MM - Cuộn {prod.specifications.qtyPerRoll} tem - Lõi {prod.specifications.core} - bế {prod.specifications.dieCut}</span>
+                            )}
+                            {prod.productType === 'tem_mau_cuon' && (
+                              <span>{prod.specifications.colors} - {prod.specifications.form} - Lõi {prod.specifications.windingCore} - {prod.specifications.processing?.join(', ')}</span>
+                            )}
+                            {prod.productType === 'tem_mau_to' && (
+                              <span>
+                                {prod.specifications.width && prod.specifications.height ? `R${prod.specifications.width} X D${prod.specifications.height} MM - ` : ''}
+                                {prod.specifications.sheetType} - {prod.specifications.corner} - {prod.specifications.lamination} - {prod.specifications.finished}
+                              </span>
+                            )}
+                            {prod.specifications?.custom && prod.specifications.custom.length > 0 && (
+                              <div style={{ marginTop: '2px', fontStyle: 'italic', color: 'var(--color-primary)' }}>
+                                {prod.specifications.custom.map((c: any, cidx: number) => (
+                                  <div key={cidx}>• {c.key}: {c.value}</div>
+                                ))}
+                              </div>
+                            )}
+                          </>
                         )}
-                        {prod.productType === 'tem_trang_cuon' && (
-                          <span>{prod.specifications.width}x{prod.specifications.height}mm - Cuộn {prod.specifications.qtyPerRoll} tem - Lõi {prod.specifications.core} - bế {prod.specifications.dieCut}</span>
+                        {prod.material && (
+                          <div style={{ fontWeight: 600, color: '#334155', marginTop: '4px' }}>
+                            {t('Chất liệu:')} <span style={{ color: 'var(--color-primary-dark)' }}>{prod.material}</span>
+                          </div>
                         )}
-                        {prod.productType === 'tem_mau_cuon' && (
-                          <span>{prod.specifications.colors} - {prod.specifications.form} - Lõi {prod.specifications.windingCore} - {prod.specifications.processing?.join(', ')}</span>
-                        )}
-                        {prod.productType === 'tem_mau_to' && (
-                          <span>{prod.specifications.sheetType} - {prod.specifications.corner} - {prod.specifications.lamination} - {prod.specifications.finished}</span>
+                        {prod.specifications?.windDirectionFiles?.length > 0 && (
+                          <div style={{ marginTop: '4px', display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>{t('File Hướng tem:')}</span>
+                            {prod.specifications.windDirectionFiles.map((file: any, fidx: number) => (
+                              <a key={fidx} href={file.data} download={file.name} style={{ textDecoration: 'underline', color: 'var(--color-primary)', fontSize: '11px' }}>
+                                {file.name}
+                              </a>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td>
@@ -1120,7 +1802,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         <div className="btn-group">
                           {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                             <>
-                               <button className="btn btn-sm btn-outline" onClick={() => handleOpenRequote(prod)}>{t('Báo Giá Lại')}</button>
+                               <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditProduct(prod)}>{t('Sửa')}</button>
                                <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteProduct(prod.id)} title={t('Xóa')}>
                                  <Trash2 size={14} />
                                </button>
@@ -1130,7 +1812,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       </td>
                     </tr>
                   ))}
-                  {(selectedCustomer.products || []).length === 0 && (
+                  {(selectedCustomer.products || []).filter((p: any) => !p.deleted).length === 0 && (
                     <tr>
                       <td colSpan={7} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa thiết lập mã sản phẩm nào cho khách hàng này.')}</td>
                     </tr>
@@ -1315,17 +1997,20 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <form onSubmit={handleUploadRepoFile} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div className="form-group">
                     <label>{t('Thư mục lưu trữ *')}</label>
-                    <select 
+                    <input 
+                      type="text"
                       value={selectedFolderForUpload}
                       onChange={e => setSelectedFolderForUpload(e.target.value)}
                       required
+                      placeholder={t('Chọn hoặc nhập thư mục mới...')}
+                      list="customer-folders-list"
                       style={{ fontSize: '12.5px' }}
-                    >
-                      <option value="">-- {t('Chọn thư mục')} --</option>
+                    />
+                    <datalist id="customer-folders-list">
                       {Array.from(new Set((selectedCustomer.files || []).map((f: any) => f.folder))).map((folder: any) => (
-                        <option key={folder} value={folder}>{folder}</option>
+                        <option key={folder} value={folder} />
                       ))}
-                    </select>
+                    </datalist>
                   </div>
                   <div className="form-group">
                     <label>{t('Chọn Tệp Tin *')}</label>
@@ -1673,12 +2358,19 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
                   <div className="form-group">
                     <label>{t('Phân Loại Sản Phẩm')} *</label>
-                    <select value={productType} onChange={e => setProductType(e.target.value as any)}>
-                      <option value="tem_trang_cuon">{t('Tem Trắng Dạng Cuộn')}</option>
-                      <option value="tem_mau_cuon">{t('Tem Màu Dạng Cuộn')}</option>
-                      <option value="tem_mau_to">{t('Tem Màu Dạng Tờ')}</option>
-                      <option value="muc_in">{t('Mực In Ribbon')}</option>
-                    </select>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <select value={productType} onChange={e => handleAddProductTypeChange(e.target.value as any)} style={{ flex: 1 }}>
+                        {productClassifications.map(c => (
+                          <option key={c.id} value={c.id}>{t(c.name)}</option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn btn-sm btn-outline" onClick={triggerAddClassification} title={t('Thêm')}>
+                        {t('+')}
+                      </button>
+                      <button type="button" className="btn btn-sm btn-outline" onClick={() => triggerEditClassification(productType)} title={t('Sửa')}>
+                        {t('Sửa')}
+                      </button>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>{t('Đơn Giá Bán Hiện Tại (đ)')} *</label>
@@ -1686,201 +2378,309 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>{t('Tải Ảnh Layout Thiết Kế Mẫu')}</label>
-                  <input type="file" accept="image/*" onChange={handleProductLayoutChange} style={{ fontSize: '12px' }} />
-                  {productLayoutBase64 && (
-                    <img src={productLayoutBase64} alt="Preview" style={{ maxHeight: '80px', marginTop: '8px', borderRadius: '4px' }} />
-                  )}
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Chất Liệu')}</label>
+                    <input 
+                      type="text" 
+                      value={productMaterial} 
+                      onChange={e => setProductMaterial(e.target.value)} 
+                      placeholder={t('VD: Decal Giấy Fasson AW0339F')} 
+                      list="materials-suggest-crm"
+                    />
+                    <datalist id="materials-suggest-crm">
+                      <option value="Decal Giấy Fasson AW0339F" />
+                      <option value="Decal Nhựa PVC Avery Dennison" />
+                      <option value="Màng BOPP bóng 12mic" />
+                      <option value="Giấy Ford" />
+                    </datalist>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tải Ảnh Layout Thiết Kế Mẫu')}</label>
+                    <input type="file" accept="image/*" onChange={handleProductLayoutChange} style={{ fontSize: '12px' }} />
+                    {productLayoutBase64 && (
+                      <img src={productLayoutBase64} alt="Preview" style={{ maxHeight: '80px', marginTop: '8px', borderRadius: '4px', display: 'block' }} />
+                    )}
+                  </div>
                 </div>
 
                 <span style={{ display: 'block', borderBottom: '1px solid var(--color-border-light)', margin: '16px 0' }}></span>
                 <h4 style={{ color: 'var(--color-primary)', marginBottom: '10px' }}>{t('MÔ TẢ THÔNG SỐ KỸ THUẬT')}</h4>
 
-                {/* Conditional specs: Mực In */}
-                {productType === 'muc_in' && (
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div className="form-group">
-                      <label>{t('Loại mực')}</label>
-                      <select value={specRibbonType} onChange={e => setSpecRibbonType(e.target.value)}>
-                        <option value="WAX PREMIUM">WAX PREMIUM</option>
-                        <option value="WAX RESIN">WAX RESIN</option>
-                        <option value="RESIN">RESIN</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>{t('Chiều quấn')}</label>
-                      <select value={specRibbonDirection} onChange={e => setSpecRibbonDirection(e.target.value)}>
-                        <option value="Out side">Out side (Ngoài)</option>
-                        <option value="In side">In side (Trong)</option>
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Kích thước (Rộng x Dài)')}</label>
-                      <input type="text" value={specRibbonSize} onChange={e => setSpecRibbonSize(e.target.value)} placeholder="VD: 110mm x 300m" />
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Màu mực')}</label>
-                      <select value={specRibbonColor} onChange={e => setSpecRibbonColor(e.target.value)}>
-                        <option value="Đen">{t('Màu đen')}</option>
-                        <option value="Đỏ">{t('Màu đỏ')}</option>
-                        <option value="Xanh">{t('Màu xanh')}</option>
-                        <option value="Khác">{t('Màu khác')}</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                {/* Conditional specs: Tem Trắng Dạng Cuộn */}
-                {productType === 'tem_trang_cuon' && (
-                  <div>
-                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                      <div className="form-group">
-                        <label>{t('Rộng tem (mm)')}</label>
-                        <input type="number" value={specWidth} onChange={e => setSpecWidth(Number(e.target.value))} />
-                      </div>
-                      <div className="form-group">
-                        <label>{t('Cao tem (mm)')}</label>
-                        <input type="number" value={specHeight} onChange={e => setSpecHeight(Number(e.target.value))} />
-                      </div>
-                      <div className="form-group">
-                        <label>{t('Bước răng/Gap')}</label>
-                        <input type="number" value={specGap} onChange={e => setSpecGap(Number(e.target.value))} />
-                      </div>
-                    </div>
-                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
-                      <div className="form-group">
-                        <label>{t('Số tem/cuộn')}</label>
-                        <input type="number" value={specQtyPerRoll} onChange={e => setSpecQtyPerRoll(Number(e.target.value))} />
-                      </div>
-                      <div className="form-group">
-                        <label>{t('Cỡ lõi cuộn')}</label>
-                        <select value={specCore} onChange={e => setSpecCore(e.target.value)}>
-                          <option value="76mm">76mm</option>
-                          <option value="42mm">42mm</option>
-                          <option value="29mm">29mm</option>
-                          <option value="40mm">40mm</option>
-                          <option value="25mm">25mm</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>{t('Kiểu bế góc')}</label>
-                        <select value={specDieCut} onChange={e => setSpecDieCut(e.target.value)}>
-                          <option value="Bo góc R2">Bo góc R2</option>
-                          <option value="Bo góc R3">Bo góc R3</option>
-                          <option value="Bo góc R5">Bo góc R5</option>
-                          <option value="Vuông góc">Vuông góc</option>
-                          <option value="Tròn">Bế hình tròn</option>
-                          <option value="Oval">Bế hình Oval</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
-                      <div className="form-group">
-                        <label>{t('Răng cưa xé')}</label>
-                        <select value={specPerforated} onChange={e => setSpecPerforated(e.target.value)}>
-                          <option value="Không">Không răng cưa</option>
-                          <option value="Có">Có đường răng cưa</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>{t('Hướng tem ra')}</label>
-                        <select value={specWindDirection} onChange={e => setSpecWindDirection(e.target.value)}>
-                          <option value="Ra đầu trước">Ra đầu trước</option>
-                          <option value="Ra đầu sau">Ra đầu sau</option>
-                          <option value="Chữ quay trái">Chữ quay trái</option>
-                          <option value="Chữ quay phải">Chữ quay phải</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Conditional specs: Tem Màu Cuộn */}
-                {productType === 'tem_mau_cuon' && (
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div className="form-group">
-                      <label>{t('Số màu in / Diễn giải màu')}</label>
-                      <input type="text" value={specColorColors} onChange={e => setSpecColorColors(e.target.value)} placeholder="VD: In 4 màu CMYK" />
-                    </div>
-                    <div className="form-group">
-                      <label>{t('Hướng tem ra')}</label>
-                      <select value={specWindDirection} onChange={e => setSpecWindDirection(e.target.value)}>
-                        <option value="Head First">Head First</option>
-                        <option value="Tail First">Tail First</option>
-                        <option value="Left First">Left First</option>
-                        <option value="Right First">Right First</option>
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Cỡ lõi cuộn tem màu')}</label>
-                      <select value={specColorWindingCore} onChange={e => setSpecColorWindingCore(e.target.value)}>
-                        <option value="76mm">76mm</option>
-                        <option value="42mm">42mm</option>
-                        <option value="29mm">29mm</option>
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Quy cách gia công')}</label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '12.5px', marginTop: '6px' }}>
-                        {['Cán bóng', 'Cán mờ', 'Phủ UV', 'Ép kim', 'Bế demi', 'Bế đứt'].map(proc => (
-                          <label key={proc} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'normal', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={specColorProcessing.includes(proc)} 
-                              onChange={e => {
-                                if (e.target.checked) setSpecColorProcessing([...specColorProcessing, proc]);
-                                else setSpecColorProcessing(specColorProcessing.filter(p => p !== proc));
-                              }} 
-                            />
-                            <span>{proc}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '10px' }}>
+                  {specFields.map((field) => {
+                    const isEditingLabel = editingLabelId === field.id;
+                    
+                    return (
+                      <div key={field.id} className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label 
+                            style={{ 
+                              fontWeight: 600, 
+                              fontSize: '13px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              width: '100%'
+                            }}
+                            onDoubleClick={() => handleStartEditLabel(field.id, field.label)}
+                            title={t('Nhấp đúp chuột để sửa tên')}
+                          >
+                            {isEditingLabel ? (
+                              <input
+                                type="text"
+                                value={tempLabelText}
+                                onChange={e => setTempLabelText(e.target.value)}
+                                onBlur={() => handleSaveLabel(field.id)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveLabel(field.id);
+                                  else if (e.key === 'Escape') setEditingLabelId(null);
+                                }}
+                                autoFocus
+                                onClick={e => e.stopPropagation()}
+                                style={{ 
+                                  fontSize: '12.5px', 
+                                  padding: '2px 6px', 
+                                  border: '1px solid var(--color-primary)', 
+                                  borderRadius: '4px',
+                                  width: '100%' 
+                                }}
+                              />
+                            ) : (
+                              <>
+                                <span style={{ textDecoration: 'underline dotted var(--color-primary)' }}>{field.label}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginLeft: '6px', fontWeight: 'normal' }}>({t('nhấn đúp để sửa')})</span>
+                              </>
+                            )}
                           </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                          
+                          {/* Delete field button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteField(field.id)}
+                            style={{
+                              border: 'none',
+                              background: 'none',
+                              color: 'var(--color-danger, #ef4444)',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              fontSize: '12px'
+                            }}
+                            title={t('Xóa thông số này')}
+                          >
+                            ❌
+                          </button>
+                        </div>
 
-                {/* Conditional specs: Tem Màu Tờ */}
-                {productType === 'tem_mau_to' && (
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div className="form-group">
-                      <label>{t('Góc tem tờ')}</label>
-                      <select value={specSheetCorner} onChange={e => setSpecSheetCorner(e.target.value)}>
-                        <option value="Bo góc R2">Bo góc R2</option>
-                        <option value="Bo góc R3">Bo góc R3</option>
-                        <option value="Bo góc R5">Bo góc R5</option>
-                        <option value="Vuông góc">Vuông góc</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>{t('Cán màng bảo vệ')}</label>
-                      <select value={specSheetLamination} onChange={e => setSpecSheetLamination(e.target.value)}>
-                        <option value="Không cán">Không cán</option>
-                        <option value="Cán bóng">Cán màng bóng</option>
-                        <option value="Cán mờ">Cán màng mờ</option>
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Thành phẩm sau in')}</label>
-                      <select value={specSheetFinished} onChange={e => setSpecSheetFinished(e.target.value)}>
-                        <option value="Bế demi">Bế demi</option>
-                        <option value="Bế đứt">Bế đứt rời</option>
-                        <option value="Xén thành phẩm">Xén thành phẩm</option>
-                        <option value="Giao nguyên tờ">Giao nguyên tờ</option>
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label>{t('Quy cách khổ tờ')}</label>
-                      <select value={specSheetType} onChange={e => setSpecSheetType(e.target.value)}>
-                        <option value="A4">Tờ A4</option>
-                        <option value="A3">Tờ A3</option>
-                        <option value="310 x 450">Khổ 310 x 450 mm</option>
-                        <option value="330 x 480">Khổ 330 x 480 mm</option>
-                      </select>
-                    </div>
+                        {/* Render input based on field type */}
+                        {field.type === 'number' && (
+                          <input 
+                            type="number" 
+                            value={field.value} 
+                            onChange={e => handleUpdateFieldValue(field.id, Number(e.target.value))} 
+                          />
+                        )}
+
+                        {field.type === 'text' && (
+                          <input 
+                            type="text" 
+                            value={field.value} 
+                            onChange={e => handleUpdateFieldValue(field.id, e.target.value)} 
+                          />
+                        )}
+
+                        {field.type === 'select' && field.id === 'windDirection' && (
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <select 
+                              value={field.value} 
+                              onChange={e => handleUpdateFieldValue(field.id, e.target.value)} 
+                              style={{ flex: 1 }}
+                            >
+                              {windDirections.map(w => (
+                                <option key={w.id} value={w.name}>{w.name}</option>
+                              ))}
+                            </select>
+                            <button 
+                              type="button" 
+                              className="btn btn-sm btn-outline" 
+                              onClick={triggerAddWindDirection} 
+                              title={t('Thêm')}
+                            >
+                              {t('+')}
+                            </button>
+                            <button 
+                              type="button" 
+                              className="btn btn-sm btn-outline" 
+                              onClick={() => {
+                                const matched = windDirections.find(w => w.name === field.value);
+                                if (matched) triggerEditWindDirection(matched.id);
+                              }} 
+                              title={t('Sửa')}
+                            >
+                              {t('Sửa')}
+                            </button>
+                          </div>
+                        )}
+
+                        {field.type === 'select' && field.id !== 'windDirection' && (
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <select 
+                              value={field.value} 
+                              onChange={e => handleUpdateFieldValue(field.id, e.target.value)}
+                              style={{ flex: 1 }}
+                            >
+                              {field.options?.map((opt: string) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                            {field.id.startsWith('custom_') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline"
+                                onClick={() => handleEditDropdownOptions(field.id)}
+                                title={t('Sửa danh sách lựa chọn')}
+                              >
+                                {t('Sửa mục')}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {field.type === 'checkboxes' && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '12.5px', marginTop: '6px' }}>
+                            {field.options?.map((proc: string) => {
+                              const checked = Array.isArray(field.value) ? field.value.includes(proc) : false;
+                              return (
+                                <label key={proc} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'normal', cursor: 'pointer' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={checked} 
+                                    onChange={e => {
+                                      const currentList = Array.isArray(field.value) ? field.value : [];
+                                      if (e.target.checked) {
+                                        handleUpdateFieldValue(field.id, [...currentList, proc]);
+                                      } else {
+                                        handleUpdateFieldValue(field.id, currentList.filter((p: any) => p !== proc));
+                                      }
+                                    }} 
+                                  />
+                                  <span>{proc}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {field.type === 'file' && (
+                          <div style={{ marginTop: '4px' }}>
+                            <input 
+                              type="file" 
+                              multiple 
+                              onChange={e => handleWindDirectionFilesChangeForField(field.id, e)} 
+                              style={{ fontSize: '12px' }} 
+                            />
+                            {Array.isArray(field.value) && field.value.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                                {field.value.map((f: any, idx: number) => (
+                                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', border: '1px solid var(--color-border-light)', borderRadius: '4px', backgroundColor: 'var(--color-bg-light)' }}>
+                                    <span style={{ fontSize: '12px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                    <button 
+                                      type="button" 
+                                      style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer' }} 
+                                      onClick={() => {
+                                        const updatedFiles = field.value.filter((_: any, i: number) => i !== idx);
+                                        handleUpdateFieldValue(field.id, updatedFiles);
+                                      }}
+                                    >
+                                      X
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={handleAddField}
+                  >
+                    + {t('Thêm Nhập Liệu')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={handleAddSelectField}
+                  >
+                    + {t('Thêm Dropdown')}
+                  </button>
+                </div>
+
+                {/* Custom Specifications / Choices Section */}
+                <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h5 style={{ color: 'var(--color-primary)', margin: 0, fontSize: '13.5px', fontWeight: 600 }}>
+                      {t('LỰA CHỌN & THÔNG SỐ BỔ SUNG')}
+                    </h5>
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-outline" 
+                      onClick={() => setSpecCustomRows([...specCustomRows, { key: '', value: '' }])}
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                    >
+                      + {t('Thêm Dòng')}
+                    </button>
                   </div>
-                )}
+                  {specCustomRows.length === 0 ? (
+                    <p style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>
+                      {t('Chưa có thông số bổ sung nào.')}
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {specCustomRows.map((row, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            value={row.key} 
+                            onChange={e => {
+                              const updated = [...specCustomRows];
+                              updated[idx].key = e.target.value;
+                              setSpecCustomRows(updated);
+                            }}
+                            placeholder={t('Tên thông số (VD: Độ bám dính)')}
+                            style={{ flex: 1, padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                            required
+                          />
+                          <input 
+                            type="text" 
+                            value={row.value} 
+                            onChange={e => {
+                              const updated = [...specCustomRows];
+                              updated[idx].value = e.target.value;
+                              setSpecCustomRows(updated);
+                            }}
+                            placeholder={t('Giá trị (VD: Cao)')}
+                            style={{ flex: 1, padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                            required
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => setSpecCustomRows(specCustomRows.filter((_, i) => i !== idx))}
+                            style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', padding: '0 4px', fontSize: '14px', fontWeight: 'bold' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddProductModal(false)}>{t('Hủy')}</button>
@@ -1912,6 +2712,15 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     onChange={e => setRequotePrice(Number(e.target.value))} 
                     required 
                     min="0"
+                  />
+                </div>
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label>{t('Ghi Chú Thay Đổi Giá')}</label>
+                  <input 
+                    type="text" 
+                    value={requoteNote} 
+                    onChange={e => setRequoteNote(e.target.value)} 
+                    placeholder="VD: Số lượng 10K pcs thì giá 522đ"
                   />
                 </div>
               </div>
@@ -2112,6 +2921,448 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           </div>
         </div>
       )}
+      {/* EDIT PRODUCT MODAL */}
+      {showEditProductModal && selectedProduct && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA MÃ SẢN PHẨM KHÁCH HÀNG')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => { setShowEditProductModal(false); setSelectedProduct(null); }}>{t('Đóng')}</button>
+            </div>
+            <form onSubmit={handleEditProductSubmit}>
+              <div className="modal-body" style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>{t('Mã Sản Phẩm')} *</label>
+                    <input type="text" value={productCode} onChange={e => setProductCode(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tên Hàng Hóa')} *</label>
+                    <input type="text" value={productName} onChange={e => setProductName(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Phân Loại Sản Phẩm')} *</label>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <select value={productType} onChange={e => handleEditProductTypeChange(e.target.value as any)} style={{ flex: 1 }}>
+                        {productClassifications.map(c => (
+                          <option key={c.id} value={c.id}>{t(c.name)}</option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn btn-sm btn-outline" onClick={triggerAddClassification} title={t('Thêm')}>
+                        {t('+')}
+                      </button>
+                      <button type="button" className="btn btn-sm btn-outline" onClick={() => triggerEditClassification(productType)} title={t('Sửa')}>
+                        {t('Sửa')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Đơn Giá Bán Hiện Tại (đ)')} *</label>
+                    <input type="number" min="0" value={currentPrice} onChange={e => setCurrentPrice(Number(e.target.value))} required />
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                  <div className="form-group">
+                    <label>{t('Chất Liệu')}</label>
+                    <input 
+                      type="text" 
+                      value={productMaterial} 
+                      onChange={e => setProductMaterial(e.target.value)} 
+                      placeholder={t('VD: Decal Giấy Fasson AW0339F')} 
+                      list="materials-suggest-crm-edit"
+                    />
+                    <datalist id="materials-suggest-crm-edit">
+                      <option value="Decal Giấy Fasson AW0339F" />
+                      <option value="Decal Nhựa PVC Avery Dennison" />
+                      <option value="Màng BOPP bóng 12mic" />
+                      <option value="Giấy Ford" />
+                    </datalist>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Tải Ảnh Layout Thiết Kế Mẫu')}</label>
+                    <input type="file" accept="image/*" onChange={handleProductLayoutChange} style={{ fontSize: '12px' }} />
+                    {productLayoutBase64 && (
+                      <img src={productLayoutBase64} alt="Preview" style={{ maxHeight: '80px', marginTop: '8px', borderRadius: '4px', display: 'block' }} />
+                    )}
+                  </div>
+                </div>
+
+                <span style={{ display: 'block', borderBottom: '1px solid var(--color-border-light)', margin: '16px 0' }}></span>
+                <h4 style={{ color: 'var(--color-primary)', marginBottom: '10px' }}>{t('MÔ TẢ THÔNG SỐ KỸ THUẬT')}</h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '10px' }}>
+                  {specFields.map((field) => {
+                    const isEditingLabel = editingLabelId === field.id;
+                    
+                    return (
+                      <div key={field.id} className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label 
+                            style={{ 
+                              fontWeight: 600, 
+                              fontSize: '13px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              width: '100%'
+                            }}
+                            onDoubleClick={() => handleStartEditLabel(field.id, field.label)}
+                            title={t('Nhấp đúp chuột để sửa tên')}
+                          >
+                            {isEditingLabel ? (
+                              <input
+                                type="text"
+                                value={tempLabelText}
+                                onChange={e => setTempLabelText(e.target.value)}
+                                onBlur={() => handleSaveLabel(field.id)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveLabel(field.id);
+                                  else if (e.key === 'Escape') setEditingLabelId(null);
+                                }}
+                                autoFocus
+                                onClick={e => e.stopPropagation()}
+                                style={{ 
+                                  fontSize: '12.5px', 
+                                  padding: '2px 6px', 
+                                  border: '1px solid var(--color-primary)', 
+                                  borderRadius: '4px',
+                                  width: '100%' 
+                                }}
+                              />
+                            ) : (
+                              <>
+                                <span style={{ textDecoration: 'underline dotted var(--color-primary)' }}>{field.label}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginLeft: '6px', fontWeight: 'normal' }}>({t('nhấn đúp để sửa')})</span>
+                              </>
+                            )}
+                          </label>
+                          
+                          {/* Delete field button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteField(field.id)}
+                            style={{
+                              border: 'none',
+                              background: 'none',
+                              color: 'var(--color-danger, #ef4444)',
+                              cursor: 'pointer',
+                              padding: '2px 4px',
+                              fontSize: '12px'
+                            }}
+                            title={t('Xóa thông số này')}
+                          >
+                            ❌
+                          </button>
+                        </div>
+
+                        {/* Render input based on field type */}
+                        {field.type === 'number' && (
+                          <input 
+                            type="number" 
+                            value={field.value} 
+                            onChange={e => handleUpdateFieldValue(field.id, Number(e.target.value))} 
+                          />
+                        )}
+
+                        {field.type === 'text' && (
+                          <input 
+                            type="text" 
+                            value={field.value} 
+                            onChange={e => handleUpdateFieldValue(field.id, e.target.value)} 
+                          />
+                        )}
+
+                        {field.type === 'select' && field.id === 'windDirection' && (
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <select 
+                              value={field.value} 
+                              onChange={e => handleUpdateFieldValue(field.id, e.target.value)} 
+                              style={{ flex: 1 }}
+                            >
+                              {windDirections.map(w => (
+                                <option key={w.id} value={w.name}>{w.name}</option>
+                              ))}
+                            </select>
+                            <button 
+                              type="button" 
+                              className="btn btn-sm btn-outline" 
+                              onClick={triggerAddWindDirection} 
+                              title={t('Thêm')}
+                            >
+                              {t('+')}
+                            </button>
+                            <button 
+                              type="button" 
+                              className="btn btn-sm btn-outline" 
+                              onClick={() => {
+                                const matched = windDirections.find(w => w.name === field.value);
+                                if (matched) triggerEditWindDirection(matched.id);
+                              }} 
+                              title={t('Sửa')}
+                            >
+                              {t('Sửa')}
+                            </button>
+                          </div>
+                        )}
+
+                        {field.type === 'select' && field.id !== 'windDirection' && (
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <select 
+                              value={field.value} 
+                              onChange={e => handleUpdateFieldValue(field.id, e.target.value)}
+                              style={{ flex: 1 }}
+                            >
+                              {field.options?.map((opt: string) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                            {field.id.startsWith('custom_') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline"
+                                onClick={() => handleEditDropdownOptions(field.id)}
+                                title={t('Sửa danh sách lựa chọn')}
+                              >
+                                {t('Sửa mục')}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {field.type === 'checkboxes' && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '12.5px', marginTop: '6px' }}>
+                            {field.options?.map((proc: string) => {
+                              const checked = Array.isArray(field.value) ? field.value.includes(proc) : false;
+                              return (
+                                <label key={proc} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'normal', cursor: 'pointer' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={checked} 
+                                    onChange={e => {
+                                      const currentList = Array.isArray(field.value) ? field.value : [];
+                                      if (e.target.checked) {
+                                        handleUpdateFieldValue(field.id, [...currentList, proc]);
+                                      } else {
+                                        handleUpdateFieldValue(field.id, currentList.filter((p: any) => p !== proc));
+                                      }
+                                    }} 
+                                  />
+                                  <span>{proc}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {field.type === 'file' && (
+                          <div style={{ marginTop: '4px' }}>
+                            <input 
+                              type="file" 
+                              multiple 
+                              onChange={e => handleWindDirectionFilesChangeForField(field.id, e)} 
+                              style={{ fontSize: '12px' }} 
+                            />
+                            {Array.isArray(field.value) && field.value.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                                {field.value.map((f: any, idx: number) => (
+                                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', border: '1px solid var(--color-border-light)', borderRadius: '4px', backgroundColor: 'var(--color-bg-light)' }}>
+                                    <span style={{ fontSize: '12px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                    <button 
+                                      type="button" 
+                                      style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer' }} 
+                                      onClick={() => {
+                                        const updatedFiles = field.value.filter((_: any, i: number) => i !== idx);
+                                        handleUpdateFieldValue(field.id, updatedFiles);
+                                      }}
+                                    >
+                                      X
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={handleAddField}
+                  >
+                    + {t('Thêm Nhập Liệu')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={handleAddSelectField}
+                  >
+                    + {t('Thêm Dropdown')}
+                  </button>
+                </div>
+
+                {/* Custom Specifications / Choices Section */}
+                <div style={{ marginTop: '16px', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h5 style={{ color: 'var(--color-primary)', margin: 0, fontSize: '13.5px', fontWeight: 600 }}>
+                      {t('LỰA CHỌN & THÔNG SỐ BỔ SUNG')}
+                    </h5>
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-outline" 
+                      onClick={() => setSpecCustomRows([...specCustomRows, { key: '', value: '' }])}
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                    >
+                      + {t('Thêm Dòng')}
+                    </button>
+                  </div>
+                  {specCustomRows.length === 0 ? (
+                    <p style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>
+                      {t('Chưa có thông số bổ sung nào.')}
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {specCustomRows.map((row, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            value={row.key} 
+                            onChange={e => {
+                              const updated = [...specCustomRows];
+                              updated[idx].key = e.target.value;
+                              setSpecCustomRows(updated);
+                            }}
+                            placeholder={t('Tên thông số (VD: Độ bám dính)')}
+                            style={{ flex: 1, padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                            required
+                          />
+                          <input 
+                            type="text" 
+                            value={row.value} 
+                            onChange={e => {
+                              const updated = [...specCustomRows];
+                              updated[idx].value = e.target.value;
+                              setSpecCustomRows(updated);
+                            }}
+                            placeholder={t('Giá trị (VD: Cao)')}
+                            style={{ flex: 1, padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
+                            required
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => setSpecCustomRows(specCustomRows.filter((_, i) => i !== idx))}
+                            style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', padding: '0 4px', fontSize: '14px', fontWeight: 'bold' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => { setShowEditProductModal(false); setSelectedProduct(null); }}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PRICE HISTORY MODAL */}
+      {priceHistoryProduct && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '550px' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700 }}>{t('LỊCH SỬ THAY ĐỔI ĐƠN GIÁ BÁN')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setPriceHistoryProduct(null)}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '13px', marginBottom: '12px' }}>
+                {t('Mã sản phẩm:')} <strong>{priceHistoryProduct.productCode}</strong> ({priceHistoryProduct.productName})
+              </p>
+              <div className="table-container">
+                <table style={{ fontSize: '12.5px' }}>
+                  <thead>
+                    <tr>
+                      <th>{t('Ngày')}</th>
+                      <th>{t('Đơn Giá')}</th>
+                      <th>{t('Ghi Chú')}</th>
+                      <th>{t('Người Sửa')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(priceHistoryProduct.priceHistory || []).map((history: any, hidx: number) => (
+                      <tr key={hidx}>
+                        <td>{history.date}</td>
+                        <td style={{ fontWeight: 'bold' }}>{history.price?.toLocaleString()} đ</td>
+                        <td style={{ color: 'var(--color-primary-dark)', fontStyle: history.note ? 'normal' : 'italic' }}>
+                          {history.note || '-'}
+                        </td>
+                        <td>{history.updatedBy || t('Hệ thống')}</td>
+                      </tr>
+                    ))}
+                    {(!priceHistoryProduct.priceHistory || priceHistoryProduct.priceHistory.length === 0) && (
+                      <tr>
+                        <td colSpan={4} style={{ textAlign: 'center' }}>{t('Chưa có lịch sử thay đổi giá.')}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPARE EDIT REQUEST MODAL */}
+      {showCompareModal && selectedEditRequest && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '800px', width: '100%' }}>
+            <div className="modal-header">
+              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('SO SÁNH THAY ĐỔI CHI TIẾT')}</span>
+              <button className="btn btn-sm btn-outline" onClick={() => {
+                setShowCompareModal(false);
+                setSelectedEditRequest(null);
+              }}>{t('Đóng')}</button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ padding: '12px', border: '1px solid #fed7d7', borderRadius: '4px', backgroundColor: '#fff5f5' }}>
+                  <h4 style={{ color: '#c53030', borderBottom: '1px solid #feb2b2', paddingBottom: '6px', marginBottom: '10px' }}>{t('DỮ LIỆU CŨ')}</h4>
+                  <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {JSON.stringify(selectedEditRequest.originalData, null, 2)}
+                  </pre>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #c6f6d5', borderRadius: '4px', backgroundColor: '#f0fff4' }}>
+                  <h4 style={{ color: '#22543d', borderBottom: '1px solid #9ae6b4', paddingBottom: '6px', marginBottom: '10px' }}>{t('ĐỀ XUẤT MỚI')}</h4>
+                  <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    {JSON.stringify(selectedEditRequest.updatedData, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={() => {
+                setShowCompareModal(false);
+                setSelectedEditRequest(null);
+              }}>{t('Hủy')}</button>
+              <button type="button" className="btn btn-danger" onClick={() => handleRejectRequest(selectedEditRequest)}>{t('Từ Chối')}</button>
+              <button type="button" className="btn btn-success" onClick={() => handleApproveRequest(selectedEditRequest)}>{t('Duyệt & Áp Dụng')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Image Preview Zoom Modal */}
       {previewImage && (
         <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 1200 }}>
