@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Search, Trash2, X, Eye, Download, Folder, FileText, 
   ChevronDown, ChevronUp, Upload, HelpCircle, Save, Calendar, 
@@ -6,6 +6,19 @@ import {
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
 import './CustomerHistory.css';
+
+const PO_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const getDraftSafeLink = (value: unknown) => {
+  if (typeof value !== 'string') return '';
+  return value.startsWith('data:') ? '' : value;
+};
+
+const getDraftSafeItems = (items: any[]) => items.map(item => ({
+  ...item,
+  previewImage: getDraftSafeLink(item.previewImage),
+  previewImages: (item.previewImages || []).map(getDraftSafeLink).filter(Boolean)
+}));
 
 interface POFormFullScreenProps {
   isOpen: boolean;
@@ -64,8 +77,36 @@ export default function POFormFullScreen({
   // Lightbox for image preview
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  // Form lifecycle and local draft state
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftResetRevision, setDraftResetRevision] = useState(0);
+  const initializedFormKeyRef = useRef('');
+  const draftKey = !po && currentUser?.uid
+    ? `sunflower:po-draft:${currentUser.uid}:${templatePo?.id || 'new'}`
+    : '';
+
   // Load initial data
   useEffect(() => {
+    if (!isOpen) {
+      initializedFormKeyRef.current = '';
+      return;
+    }
+
+    // Wait until customer data is available before initializing a new form.
+    if (!po && customers.length === 0) return;
+
+    const formKey = `${po ? `edit:${po.id}` : templatePo ? `repeat:${templatePo.id}` : 'new'}:${draftResetRevision}`;
+    if (initializedFormKeyRef.current === formKey) return;
+
+    initializedFormKeyRef.current = formKey;
+    setDraftReady(false);
+    setDraftRestored(false);
+    setSaveError('');
+    setIsSaving(false);
+
     if (po) {
       setCustomerId(po.customerId || '');
       setCustomerPoCode(po.customerPoCode || '');
@@ -160,7 +201,110 @@ export default function POFormFullScreen({
       setPoItems([]);
       setAssignments([]);
     }
-  }, [po, templatePo, isOpen, customers]);
+
+    // Restore an unfinished create/repeat order. File data URLs are not stored
+    // because they can exceed the browser storage quota; repository URLs remain.
+    if (!po && draftKey) {
+      try {
+        const rawDraft = window.localStorage.getItem(draftKey);
+        if (rawDraft) {
+          const draft = JSON.parse(rawDraft);
+          const isCurrentDraft = Number(draft.savedAt) > Date.now() - PO_DRAFT_MAX_AGE_MS;
+
+          if (!isCurrentDraft) {
+            window.localStorage.removeItem(draftKey);
+          } else {
+            const restoredCustomerId = templatePo?.customerId || draft.customerId;
+            if (customers.some(customer => customer.id === restoredCustomerId)) {
+              setCustomerId(restoredCustomerId);
+            }
+            setCustomerPoCode(typeof draft.customerPoCode === 'string' ? draft.customerPoCode : '');
+            if (typeof draft.expectedDeliveryDate === 'string' && draft.expectedDeliveryDate) {
+              setExpectedDeliveryDate(draft.expectedDeliveryDate);
+            }
+            setNotes(typeof draft.notes === 'string' ? draft.notes : '');
+            setPoItems(Array.isArray(draft.poItems) ? draft.poItems : []);
+            setAssignments(Array.isArray(draft.assignments) ? draft.assignments : []);
+            setPdfFile(getDraftSafeLink(draft.links?.pdfLink));
+            setExcelFile(getDraftSafeLink(draft.links?.excelLink));
+            setAiFile(getDraftSafeLink(draft.links?.aiLink));
+            setCorelFile(getDraftSafeLink(draft.links?.corelLink));
+            setContractFile(getDraftSafeLink(draft.links?.contractLink));
+            setQuoteFile(getDraftSafeLink(draft.links?.quoteLink));
+            setDraftRestored(true);
+          }
+        }
+      } catch (error) {
+        console.warn('Unable to restore PO draft:', error);
+        window.localStorage.removeItem(draftKey);
+      }
+    }
+
+    setDraftReady(true);
+  }, [po, templatePo, isOpen, customers, draftKey, draftResetRevision]);
+
+  // Keep text, items and assignments safe when the modal is closed or the page
+  // is refreshed. Large local file data is intentionally excluded.
+  useEffect(() => {
+    if (!draftReady || !draftKey || po) return;
+
+    const hasMeaningfulDraft = Boolean(
+      templatePo ||
+      customerPoCode.trim() ||
+      notes.trim() ||
+      poItems.length > 0 ||
+      assignments.length > 0 ||
+      pdfFile || excelFile || aiFile || corelFile || contractFile || quoteFile
+    );
+
+    const timer = window.setTimeout(() => {
+      if (!hasMeaningfulDraft) {
+        window.localStorage.removeItem(draftKey);
+        return;
+      }
+
+      try {
+        window.localStorage.setItem(draftKey, JSON.stringify({
+          savedAt: Date.now(),
+          customerId,
+          customerPoCode,
+          expectedDeliveryDate,
+          notes,
+          poItems: getDraftSafeItems(poItems),
+          assignments,
+          links: {
+            pdfLink: getDraftSafeLink(pdfFile),
+            excelLink: getDraftSafeLink(excelFile),
+            aiLink: getDraftSafeLink(aiFile),
+            corelLink: getDraftSafeLink(corelFile),
+            contractLink: getDraftSafeLink(contractFile),
+            quoteLink: getDraftSafeLink(quoteFile)
+          }
+        }));
+      } catch (error) {
+        console.warn('Unable to save PO draft:', error);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    draftReady,
+    draftKey,
+    po,
+    templatePo,
+    customerId,
+    customerPoCode,
+    expectedDeliveryDate,
+    notes,
+    poItems,
+    assignments,
+    pdfFile,
+    excelFile,
+    aiFile,
+    corelFile,
+    contractFile,
+    quoteFile
+  ]);
 
   // Load repeat order products history for selected customer
   useEffect(() => {
@@ -456,11 +600,47 @@ export default function POFormFullScreen({
     setAssignments(updated);
   };
 
+  const hasUnsavedCreateData = Boolean(
+    !po && (
+      templatePo ||
+      customerPoCode.trim() ||
+      notes.trim() ||
+      poItems.length > 0 ||
+      assignments.length > 0 ||
+      pdfFile || excelFile || aiFile || corelFile || contractFile || quoteFile
+    )
+  );
+
+  const handleClose = () => {
+    if (isSaving) return;
+    if (hasUnsavedCreateData) {
+      const shouldClose = window.confirm(
+        'Đơn hàng chưa được lưu chính thức. Hệ thống đã giữ bản nháp để bạn có thể tiếp tục sau. Bạn có muốn đóng form?'
+      );
+      if (!shouldClose) return;
+    }
+    onClose();
+  };
+
+  const handleDiscardDraft = () => {
+    if (!draftKey) return;
+    const shouldDiscard = window.confirm('Bạn có chắc muốn xóa bản nháp và bắt đầu lại?');
+    if (!shouldDiscard) return;
+    window.localStorage.removeItem(draftKey);
+    setDraftRestored(false);
+    setDraftResetRevision(revision => revision + 1);
+  };
+
   // Form submit
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!customerId) {
       alert(t('Vui lòng chọn khách hàng!'));
+      return;
+    }
+    if (!expectedDeliveryDate || Number.isNaN(Date.parse(expectedDeliveryDate))) {
+      alert(t('Vui lòng chọn ngày giao hàng dự kiến hợp lệ!'));
       return;
     }
     if (poItems.length === 0) {
@@ -538,7 +718,18 @@ export default function POFormFullScreen({
         : Boolean(po?.designReuseRequested)
     };
 
-    onSave(poData);
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await onSave(poData);
+      if (draftKey) window.localStorage.removeItem(draftKey);
+    } catch (error) {
+      console.error('Error saving PO:', error);
+      setSaveError('Không thể lưu đơn hàng. Vui lòng kiểm tra kết nối và thử lại.');
+      alert('Không thể lưu đơn hàng. Dữ liệu vẫn được giữ trong bản nháp để bạn thử lại.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Calculations for totals footer
@@ -603,7 +794,7 @@ export default function POFormFullScreen({
           alignItems: 'center', 
           padding: '16px 24px', 
           borderBottom: '1px solid var(--color-border)',
-          backgroundColor: 'var(--color-primary-dark)',
+          backgroundColor: 'var(--color-primary-dark, var(--color-primary))',
           color: 'white'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -638,7 +829,8 @@ export default function POFormFullScreen({
             <button 
               type="button" 
               className="btn btn-outline" 
-              onClick={onClose}
+              onClick={handleClose}
+              disabled={isSaving}
               style={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)', background: 'transparent' }}
             >
               {t('Đóng / Hủy')}
@@ -647,9 +839,11 @@ export default function POFormFullScreen({
               type="button" 
               className="btn btn-primary" 
               onClick={handleSubmit}
+              disabled={isSaving}
+              aria-busy={isSaving}
               style={{ 
                 backgroundColor: 'white', 
-                color: 'var(--color-primary-dark)', 
+                color: 'var(--color-primary-dark, var(--color-primary))',
                 fontWeight: 'bold',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -657,7 +851,7 @@ export default function POFormFullScreen({
               }}
             >
               <Save size={16} />
-              <span>{t('Lưu Đơn Hàng PO')}</span>
+              <span>{isSaving ? t('Đang lưu...') : t('Lưu Đơn Hàng PO')}</span>
             </button>
           </div>
         </div>
@@ -814,6 +1008,23 @@ export default function POFormFullScreen({
             flexDirection: 'column',
             gap: '20px'
           }}>
+            {saveError && (
+              <div className="po-save-error" role="alert">
+                {saveError}
+              </div>
+            )}
+            {draftRestored && (
+              <div className="po-draft-notice" role="status">
+                <History size={18} />
+                <div>
+                  <strong>Đã khôi phục bản nháp chưa lưu</strong>
+                  <span>Nội dung, mã hàng và phân công đã được giữ lại. Các tệp vừa chọn từ máy tính cần được chọn lại.</span>
+                </div>
+                <button type="button" className="btn btn-sm btn-outline" onClick={handleDiscardDraft}>
+                  Bỏ bản nháp
+                </button>
+              </div>
+            )}
             {templatePo && (
               <div className="repeat-order-banner">
                 <History size={18} />

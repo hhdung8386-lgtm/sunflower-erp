@@ -289,3 +289,38 @@
     min-width: 0;
   }
 }
+.po-draft-notice,
+.po-save-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+}
+
+.po-draft-notice > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.po-draft-notice span {
+  color: #475569;
+  font-size: 12px;
+}
+
+.po-draft-notice .btn {
+  flex: 0 0 auto;
+  background: #ffffff;
+}
+
+.po-save-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
