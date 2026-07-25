@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Search, Trash2, X, Eye, Download, Folder, FileText, 
-  ChevronDown, ChevronUp, Upload, HelpCircle, Save, Calendar, 
-  Briefcase, CheckSquare, History, Layers
+  Plus, Search, Trash2, X, Download, Folder, FileText,
+  ChevronDown, ChevronUp, Upload, Save, Briefcase, CheckSquare,
+  History, Layers, Paperclip, SlidersHorizontal
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
 import './CustomerHistory.css';
@@ -64,6 +64,8 @@ export default function POFormFullScreen({
   // Department Assignments state
   const [assignments, setAssignments] = useState<any[]>([]);
   const [showAssignments, setShowAssignments] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [expandedItemIds, setExpandedItemIds] = useState<string[]>([]);
 
   // Search popup state for history/catalog
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
@@ -465,6 +467,12 @@ export default function POFormFullScreen({
     setPoItems(poItems.filter((_, i) => i !== index));
   };
 
+  const toggleItemDetails = (itemId: string) => {
+    setExpandedItemIds(current => current.includes(itemId)
+      ? current.filter(id => id !== itemId)
+      : [...current, itemId]);
+  };
+
   const getProductSize = (prod: any) => {
     if (!prod) return '';
     if (prod.size) return prod.size;
@@ -759,6 +767,7 @@ export default function POFormFullScreen({
   };
 
   const footerTotals = calculateFooter();
+  const attachmentCount = [pdfFile, excelFile, aiFile, corelFile, contractFile, quoteFile].filter(Boolean).length;
 
   // Catalog products + past history filter
   const currentCustomer = customers.find(c => c.id === customerId);
@@ -788,7 +797,7 @@ export default function POFormFullScreen({
     <div className="modal-overlay-fullscreen">
       <div className="modal-content-fullscreen">
         {/* HEADER */}
-        <div style={{
+        <div className="po-form-header" style={{
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
@@ -857,18 +866,18 @@ export default function POFormFullScreen({
         </div>
 
         {/* SCROLLABLE BODY */}
-        <div style={{ 
+        <div style={{
           flex: 1, 
           display: 'grid', 
-          gridTemplateColumns: '340px 1fr', 
-          overflow: 'hidden'
+          gridTemplateColumns: '320px minmax(0, 1fr)',
+          overflowY: 'auto'
         }} className="po-form-body-container">
           
           {/* LEFT SIDEBAR PANEL: Info, Files */}
-          <div style={{ 
+          <div className="po-order-sidebar" style={{
             borderRight: '1px solid var(--color-border)', 
             padding: '20px', 
-            overflowY: 'auto',
+            overflowY: 'visible',
             backgroundColor: '#f8fafc',
             display: 'flex',
             flexDirection: 'column',
@@ -933,24 +942,29 @@ export default function POFormFullScreen({
             </div>
 
             {/* Document upload / repository repo link */}
-            <div style={{ 
-              border: '1px solid var(--color-border-light)', 
-              padding: '16px', 
-              borderRadius: '8px', 
-              backgroundColor: 'white',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-            }}>
-              <h4 style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 12px 0', color: 'var(--color-primary)' }}>
-                {t('Tải Bản Cứng / Báo Giá')}
-              </h4>
+            <div className="po-attachments-card">
+              <button
+                type="button"
+                className="po-collapse-trigger"
+                onClick={() => setShowAttachments(current => !current)}
+                aria-expanded={showAttachments}
+              >
+                <span>
+                  <Paperclip size={15} />
+                  {t('Tệp đơn hàng & thiết kế')}
+                  {attachmentCount > 0 && <small>{attachmentCount}</small>}
+                </span>
+                {showAttachments ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              </button>
 
-              {customerId && (
+              {showAttachments && <div className="po-attachment-content">
+                {customerId && (
                 <button 
                   type="button" 
                   className="btn btn-sm btn-outline" 
                   onClick={() => setShowRepoModal(true)}
-                  style={{ 
-                    marginBottom: '14px', 
+                  style={{
+                    marginBottom: '12px',
                     width: '100%', 
                     display: 'inline-flex', 
                     alignItems: 'center', 
@@ -963,9 +977,9 @@ export default function POFormFullScreen({
                   <Folder size={14} />
                   <span>{t('Nhúp từ kho tệp khách hàng')}</span>
                 </button>
-              )}
+                )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="po-attachment-fields">
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '2px', display: 'block' }}>{t('File PDF Đơn Hàng')}</label>
                   <input type="file" accept="application/pdf,image/*" onChange={e => handleLinkFileChange(e, setPdfFile)} style={{ fontSize: '11px', width: '100%' }} />
@@ -997,13 +1011,14 @@ export default function POFormFullScreen({
                   {quoteFile && <span style={{ fontSize: '10px', color: 'var(--color-success)', display: 'block', marginTop: '2px' }}>✓ {t('Đã tải lên')}</span>}
                 </div>
               </div>
+              </div>}
             </div>
           </div>
 
           {/* RIGHT GRID PANEL: Items Grid & Assignments */}
-          <div style={{ 
+          <div className="po-order-main" style={{
             padding: '20px 24px', 
-            overflowY: 'auto',
+            overflowY: 'visible',
             display: 'flex',
             flexDirection: 'column',
             gap: '20px'
@@ -1035,14 +1050,20 @@ export default function POFormFullScreen({
               </div>
             )}
             {/* INLINE EDITING EXCEL-LIKE GRID */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--color-text-main)', margin: 0 }}>
-                  {t('Danh Sách Mã Hàng Cần In & Sản Xuất (PO Items)')}
-                </h3>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {t('Bấm 🔍 để nhập nhanh mã hàng từ Danh mục / Lịch sử khách hàng')}
-                </span>
+            <div className="po-items-card">
+              <div className="po-items-card-header">
+                <div>
+                  <h3>{t('Danh Sách Mã Hàng Cần In & Sản Xuất (PO Items)')}</h3>
+                  <span>{t('Bấm 🔍 để nhập nhanh mã hàng từ Danh mục / Lịch sử khách hàng')}</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleAddRow}
+                >
+                  <Plus size={14} />
+                  <span>{t('Thêm mã hàng')}</span>
+                </button>
               </div>
 
               <div className="po-inline-grid-container">
@@ -1054,17 +1075,17 @@ export default function POFormFullScreen({
                       <th style={{ width: '220px' }}>{t('Tên Hàng *')}</th>
                       <th style={{ width: '140px' }}>{t('Quy Cách')}</th>
                       <th style={{ width: '140px' }}>{t('Chất Liệu')}</th>
-                      <th style={{ width: '80px' }}>{t('ĐVT')}</th>
+                      <th className="po-secondary-column" style={{ width: '80px' }}>{t('ĐVT')}</th>
                       <th style={{ width: '90px' }}>{t('Số Lượng')}</th>
                       <th style={{ width: '110px' }}>{t('Đơn Giá')}</th>
-                      <th style={{ width: '70px' }}>{t('CK (%)')}</th>
-                      <th style={{ width: '120px' }}>{t('Thành Tiền (chưa VAT)')}</th>
-                      <th style={{ width: '70px' }}>{t('Thuế (%)')}</th>
+                      <th className="po-secondary-column" style={{ width: '70px' }}>{t('CK (%)')}</th>
+                      <th className="po-secondary-column" style={{ width: '120px' }}>{t('Thành Tiền (chưa VAT)')}</th>
+                      <th className="po-secondary-column" style={{ width: '70px' }}>{t('Thuế (%)')}</th>
                       <th style={{ width: '120px' }}>{t('Thành Tiền (gồm VAT)')}</th>
                       <th style={{ width: '120px' }}>{t('Ngày Giao')}</th>
                       <th style={{ width: '160px' }}>{t('Ảnh Layout (Max 5)')}</th>
-                      <th style={{ width: '150px' }}>{t('Ghi Chú')}</th>
-                      <th style={{ width: '50px', textAlign: 'center' }} title={t('Xóa dòng')}></th>
+                      <th className="po-secondary-column" style={{ width: '150px' }}>{t('Ghi Chú')}</th>
+                      <th style={{ width: '82px', textAlign: 'center' }}>{t('Thao tác')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1079,9 +1100,12 @@ export default function POFormFullScreen({
 
                       // Backward compatibility for layouts
                       const imagesList = item.previewImages || (item.previewImage ? [item.previewImage] : []);
+                      const itemKey = item.itemId || String(index);
+                      const isExpanded = expandedItemIds.includes(itemKey);
 
                       return (
-                        <tr key={item.itemId || index}>
+                        <React.Fragment key={itemKey}>
+                        <tr>
                           <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-muted)' }}>
                             {index + 1}
                           </td>
@@ -1152,7 +1176,7 @@ export default function POFormFullScreen({
                               <option value="Giấy Ford" />
                             </datalist>
                           </td>
-                          <td>
+                          <td className="po-secondary-column">
                             <input 
                               type="text"
                               className="po-grid-input"
@@ -1180,7 +1204,7 @@ export default function POFormFullScreen({
                               step="any"
                             />
                           </td>
-                          <td>
+                          <td className="po-secondary-column">
                             <input 
                               type="number"
                               className="po-grid-input"
@@ -1190,10 +1214,10 @@ export default function POFormFullScreen({
                               max="100"
                             />
                           </td>
-                          <td style={{ fontWeight: 600, color: 'var(--color-text-main)', textAlign: 'right' }}>
+                          <td className="po-secondary-column" style={{ fontWeight: 600, color: 'var(--color-text-main)', textAlign: 'right' }}>
                             {Math.round(amountBeforeVat).toLocaleString()} đ
                           </td>
-                          <td>
+                          <td className="po-secondary-column">
                             <input 
                               type="number"
                               className="po-grid-input"
@@ -1281,7 +1305,7 @@ export default function POFormFullScreen({
                               )}
                             </div>
                           </td>
-                          <td>
+                          <td className="po-secondary-column">
                             <input 
                               type="text"
                               className="po-grid-input"
@@ -1290,7 +1314,17 @@ export default function POFormFullScreen({
                               placeholder="..."
                             />
                           </td>
-                          <td style={{ textAlign: 'center' }}>
+                          <td>
+                            <div className="po-row-actions">
+                            <button
+                              type="button"
+                              className={`po-detail-toggle ${isExpanded ? 'is-active' : ''}`}
+                              onClick={() => toggleItemDetails(itemKey)}
+                              title={isExpanded ? t('Ẩn chi tiết') : t('Mở chi tiết')}
+                              aria-expanded={isExpanded}
+                            >
+                              <SlidersHorizontal size={14} />
+                            </button>
                             <button 
                               type="button" 
                               className="btn btn-sm btn-danger"
@@ -1300,8 +1334,60 @@ export default function POFormFullScreen({
                             >
                               <Trash2 size={14} />
                             </button>
+                            </div>
                           </td>
                         </tr>
+                        {isExpanded && (
+                          <tr className="po-item-detail-row">
+                            <td colSpan={16}>
+                              <div className="po-item-detail-grid">
+                                <div className="form-group">
+                                  <label>{t('Đơn vị tính')}</label>
+                                  <input
+                                    type="text"
+                                    value={item.unit}
+                                    onChange={(e) => handleUpdateRowField(index, 'unit', e.target.value)}
+                                    placeholder="cái"
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label>{t('Chiết khấu (%)')}</label>
+                                  <input
+                                    type="number"
+                                    value={item.discountRate}
+                                    onChange={(e) => handleUpdateRowField(index, 'discountRate', Number(e.target.value))}
+                                    min="0"
+                                    max="100"
+                                  />
+                                </div>
+                                <div className="form-group">
+                                  <label>{t('Thuế VAT (%)')}</label>
+                                  <input
+                                    type="number"
+                                    value={item.vatRate}
+                                    onChange={(e) => handleUpdateRowField(index, 'vatRate', Number(e.target.value))}
+                                    min="0"
+                                    max="100"
+                                  />
+                                </div>
+                                <div className="form-group po-item-note-field">
+                                  <label>{t('Ghi chú dòng hàng')}</label>
+                                  <input
+                                    type="text"
+                                    value={item.note || ''}
+                                    onChange={(e) => handleUpdateRowField(index, 'note', e.target.value)}
+                                    placeholder={t('Yêu cầu riêng cho mã hàng...')}
+                                  />
+                                </div>
+                                <div className="po-item-calculation">
+                                  <span>{t('Trước VAT')}: <strong>{Math.round(amountBeforeVat).toLocaleString()} đ</strong></span>
+                                  <span>{t('Sau VAT')}: <strong>{Math.round(amountWithVat).toLocaleString()} đ</strong></span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       );
                     })}
 
@@ -1318,19 +1404,9 @@ export default function POFormFullScreen({
               </div>
 
               {/* FOOTER ACTIONS */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '12px' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-outline" 
-                  onClick={handleAddRow}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
-                >
-                  <Plus size={14} />
-                  <span>{t('Thêm dòng mới')}</span>
-                </button>
-
+              <div className="po-items-footer">
                 {/* TOTAL SUMMARY CARD */}
-                <div style={{
+                <div className="po-total-summary-card" style={{
                   backgroundColor: '#f1f5f9',
                   border: '1px solid var(--color-border)',
                   borderRadius: '8px',
@@ -1362,14 +1438,15 @@ export default function POFormFullScreen({
             </div>
 
             {/* DEPARTMENT WORK ASSIGNMENTS SECTION */}
-            <div style={{ 
+            <div className="po-assignment-card" style={{
               border: '1px solid var(--color-border)', 
               borderRadius: '8px',
               backgroundColor: 'white',
               boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
               overflow: 'hidden'
             }}>
-              <div 
+              <div
+                className="po-assignment-header"
                 style={{ 
                   display: 'flex', 
                   justifyContent: 'space-between', 
@@ -1410,7 +1487,7 @@ export default function POFormFullScreen({
                       const deptUsers = users.filter(u => u.role === assign.department && u.active);
 
                       return (
-                        <div key={assign.id} style={{ 
+                        <div key={assign.id} className="po-assignment-entry" style={{
                           border: '1px solid var(--color-border-light)', 
                           borderRadius: '6px', 
                           padding: '12px',
