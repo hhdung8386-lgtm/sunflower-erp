@@ -2,7 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
-import { Plus, Trash2, Pencil, X, FileSpreadsheet } from 'lucide-react';
+import { MachineManagement } from '../components/MachineManagement';
+import {
+  DEFAULT_MACHINES,
+  getMachineCommands,
+  getMachineForAssignment,
+  getMachineRuntimeStatus,
+  getMachineStatusLabel,
+  getRequiredColorCount,
+  PurchaseOrderLike,
+  ProductionMachine,
+  sortMachinesForAssignment,
+  subscribeMachines
+} from '../services/machineService';
+import { AlertTriangle, CalendarDays, FileSpreadsheet, Info, ListChecks, Pencil, Settings2, Trash2, X } from 'lucide-react';
+import './Production.css';
 
 interface ProductionProps {
   pos: any[];
@@ -74,6 +88,10 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
   // Operator view tab filter
   const [operatorTab, setOperatorTab] = useState<'producing' | 'completed'>('producing');
+  const [productionTab, setProductionTab] = useState<'commands' | 'schedule' | 'machines'>('commands');
+  const [machines, setMachines] = useState<ProductionMachine[]>([]);
+
+  useEffect(() => subscribeMachines(setMachines), []);
 
   useEffect(() => {
     // Auto select first PO if available
@@ -93,6 +111,44 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     }
   }, [pos]);
 
+  const machineCatalog = machines.length > 0 ? machines : DEFAULT_MACHINES;
+
+  const getPreferredMachine = (po?: PurchaseOrderLike): ProductionMachine | undefined => {
+    const requiredColors = getRequiredColorCount(po);
+    return sortMachinesForAssignment(machineCatalog, productionCommands, requiredColors)
+      .find(machine => machine.status === 'available' && (requiredColors === 0 || machine.colorCount >= requiredColors));
+  };
+
+  const validateMachineAssignment = (
+    assignment: string,
+    po?: PurchaseOrderLike,
+    excludeCommandId?: string
+  ): boolean => {
+    const machine = getMachineForAssignment(machineCatalog, assignment);
+    if (!machine) return true;
+
+    if (machine.status === 'maintenance' || machine.status === 'fault' || machine.status === 'inactive') {
+      window.alert(`${machine.code} - ${machine.name} hiện ở trạng thái "${getMachineStatusLabel(machine.status)}" nên chưa thể nhận LSX.`);
+      return false;
+    }
+
+    const requiredColors = getRequiredColorCount(po);
+    if (requiredColors > 0 && machine.colorCount > 0 && machine.colorCount < requiredColors) {
+      const shouldContinue = window.confirm(
+        `Đơn hàng được nhận diện cần ${requiredColors} màu nhưng ${machine.name} chỉ khai báo ${machine.colorCount} màu. Bạn vẫn muốn phân công máy này?`
+      );
+      if (!shouldContinue) return false;
+    }
+
+    const conflictingCommands = getMachineCommands(machine, productionCommands, excludeCommandId);
+    if (conflictingCommands.length > 0) {
+      return window.confirm(
+        `${machine.name} đang có ${conflictingCommands.length} LSX hoạt động (${conflictingCommands.map(command => command.lsxCode).join(', ')}). Bạn vẫn muốn xếp thêm lệnh vào máy này?`
+      );
+    }
+    return true;
+  };
+
   const handleOpenAddLsx = () => {
     const activePOs = pos.filter(po => po.status === 'production_pending' || po.status === 'supplier_confirmed');
     if (activePOs.length === 0) {
@@ -105,6 +161,8 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     setQtyToProduce(item.quantity || 10000);
     setProductNameToBeCut(item.productName || '');
     setDeliveryDeadline(firstPo.expectedDeliveryDate ? new Date(firstPo.expectedDeliveryDate).toISOString().split('T')[0] : '');
+    const preferredMachine = getPreferredMachine(firstPo);
+    if (preferredMachine) setMachineId(preferredMachine.name);
     setShowAddLsxModal(true);
   };
 
@@ -114,6 +172,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
     const po = pos.find(p => p.id === linkedPoId);
     if (!po) return;
+    if (!validateMachineAssignment(machineId, po)) return;
 
     const lsxCode = `LSX-${new Date().toISOString().substring(2,7).replace('-','')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -182,6 +241,8 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   const handleEditLsxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLsx) return;
+    const linkedPo = pos.find(po => po.id === selectedLsx.poId);
+    if (!validateMachineAssignment(editMachineId, linkedPo, selectedLsx.id)) return;
 
     await dbService.updateDocument('production_commands', selectedLsx.id, {
       machineId: editMachineId,
@@ -238,6 +299,25 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   };
 
   const activeCommands = (productionCommands || []).filter(cmd => !cmd.deleted);
+  const selectedPoForCreate = pos.find(po => po.id === linkedPoId);
+  const requiredColorsForCreate = getRequiredColorCount(selectedPoForCreate);
+  const createMachineOptions = sortMachinesForAssignment(machineCatalog, activeCommands, requiredColorsForCreate)
+    .filter(machine => machine.status !== 'inactive');
+  const selectedMachineForCreate = getMachineForAssignment(machineCatalog, machineId);
+  const selectedMachineStatusForCreate = selectedMachineForCreate
+    ? getMachineRuntimeStatus(selectedMachineForCreate, activeCommands)
+    : undefined;
+  const recommendedMachineForCreate = createMachineOptions.find(machine => (
+    machine.status === 'available' &&
+    getMachineRuntimeStatus(machine, activeCommands) === 'available' &&
+    (requiredColorsForCreate === 0 || machine.colorCount >= requiredColorsForCreate)
+  ));
+
+  const getMachineOptionLabel = (machine: ProductionMachine, excludeCommandId?: string): string => {
+    const runtimeStatus = getMachineRuntimeStatus(machine, activeCommands, excludeCommandId);
+    const colorLabel = machine.colorCount > 0 ? `${machine.colorCount} màu` : 'chưa khai báo số màu';
+    return `${machine.code} - ${machine.name} (${colorLabel} · ${getMachineStatusLabel(runtimeStatus)})`;
+  };
 
   const handleExportCSV = () => {
     const headers = [
@@ -478,26 +558,79 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   };
 
   const isOperator = currentUser.role === 'producer';
+  const canManageMachines = currentUser.role === 'admin' || currentUser.role === 'producer';
 
   return (
     <div className="production-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
           <h1 className="page-title">
-            {isOperator ? t('PHÒNG MÁY SẢN XUẤT - THỢ B') : t('LỆNH SẢN XUẤT (LSX)')}
+            {productionTab === 'schedule'
+              ? 'LỊCH VÀ TẢI MÁY SẢN XUẤT'
+              : productionTab === 'machines'
+                ? 'DANH MỤC MÁY SẢN XUẤT'
+                : isOperator ? t('PHÒNG MÁY SẢN XUẤT - THỢ B') : t('LỆNH SẢN XUẤT (LSX)')}
           </h1>
           <p className="page-subtitle">
-            {isOperator
-              ? t('Danh sách lệnh in và bế tem được phân công, thông số kỹ thuật lõi/giấy và bản vẽ layout thiết kế.')
-              : t('Phát hành lệnh sản xuất, phân bổ máy in, ca máy, thợ in và ghi nhận sản lượng hoàn thành, hao hụt.')}
+            {productionTab === 'schedule'
+              ? 'Quan sát máy đang chạy, máy sẵn sàng và các LSX đang chiếm tải theo thời gian thực.'
+              : productionTab === 'machines'
+                ? 'Quản lý máy in, số màu, khổ in, năng suất và tình trạng vận hành.'
+                : isOperator
+                  ? t('Danh sách lệnh in và bế tem được phân công, thông số kỹ thuật lõi/giấy và bản vẽ layout thiết kế.')
+                  : t('Phát hành lệnh sản xuất, phân bổ máy in, ca máy, thợ in và ghi nhận sản lượng hoàn thành, hao hụt.')}
           </p>
         </div>
-        {!isOperator && (currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
+        {productionTab === 'commands' && !isOperator && (currentUser.role === 'admin' || currentUser.role === 'producer' || currentUser.role === 'sale') && (
           <button className="btn btn-primary" onClick={handleOpenAddLsx}>{t('PHÁT HÀNH LỆNH SẢN XUẤT (LSX) MỚI')}</button>
         )}
       </div>
 
-      {isOperator ? (
+      <div className="production-tabs" role="tablist" aria-label="Quản lý sản xuất">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={productionTab === 'commands'}
+          className={`production-tab ${productionTab === 'commands' ? 'is-active' : ''}`}
+          onClick={() => setProductionTab('commands')}
+        >
+          <ListChecks size={16} /> Danh sách LSX
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={productionTab === 'schedule'}
+          className={`production-tab ${productionTab === 'schedule' ? 'is-active' : ''}`}
+          onClick={() => setProductionTab('schedule')}
+        >
+          <CalendarDays size={16} /> Lịch máy
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={productionTab === 'machines'}
+          className={`production-tab ${productionTab === 'machines' ? 'is-active' : ''}`}
+          onClick={() => setProductionTab('machines')}
+        >
+          <Settings2 size={16} /> Danh mục máy
+        </button>
+      </div>
+
+      {productionTab === 'schedule' ? (
+        <MachineManagement
+          view="schedule"
+          machines={machineCatalog}
+          productionCommands={activeCommands}
+          canManage={canManageMachines}
+        />
+      ) : productionTab === 'machines' ? (
+        <MachineManagement
+          view="machines"
+          machines={machineCatalog}
+          productionCommands={activeCommands}
+          canManage={canManageMachines}
+        />
+      ) : isOperator ? (
         /* THỢ B OPERATION VIEW */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ display: 'flex', gap: '10px', borderBottom: '2px solid var(--color-border-light)', paddingBottom: '10px' }}>
@@ -747,6 +880,8 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                         setQtyToProduce(item.quantity || 10000);
                         setProductNameToBeCut(item.productName || '');
                         setDeliveryDeadline(po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toISOString().split('T')[0] : '');
+                        const preferredMachine = getPreferredMachine(po);
+                        if (preferredMachine) setMachineId(preferredMachine.name);
                         if (item.specifications) {
                           if (item.specifications.core) setPaperCore(item.specifications.core);
                           if (item.specifications.paperMaterial) setPaperMaterialCode(item.specifications.paperMaterial);
@@ -775,12 +910,29 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                 <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div className="form-group">
                     <label>{t('Máy In Phân Công *')}</label>
-                    <select value={machineId} onChange={e => setMachineId(e.target.value)}>
-                      <option value="Máy Flexo 8 màu OMET">{t('Máy Flexo 8 màu OMET')}</option>
-                      <option value="Máy Flexo 4 màu Gallus">{t('Máy Flexo 4 màu Gallus')}</option>
-                      <option value="Máy in Offset Heidelberg">{t('Máy in Offset Heidelberg')}</option>
-                      <option value="Máy in Kỹ thuật số Konica">{t('Máy in Kỹ thuật số Konica')}</option>
+                    <select value={machineId} onChange={e => setMachineId(e.target.value)} required>
+                      {machineId && !getMachineForAssignment(machineCatalog, machineId) && (
+                        <option value={machineId}>{machineId} (chưa có trong danh mục)</option>
+                      )}
+                      {createMachineOptions.map(machine => (
+                        <option key={machine.id} value={machine.name}>{getMachineOptionLabel(machine)}</option>
+                      ))}
                     </select>
+                    {recommendedMachineForCreate && (
+                      <div className="machine-recommendation">
+                        <Info size={15} />
+                        <span>
+                          Gợi ý: <strong>{recommendedMachineForCreate.code} - {recommendedMachineForCreate.name}</strong>
+                          {requiredColorsForCreate > 0 ? ` đáp ứng đơn ${requiredColorsForCreate} màu` : ' hiện đang sẵn sàng'}.
+                        </span>
+                      </div>
+                    )}
+                    {selectedMachineStatusForCreate && selectedMachineStatusForCreate !== 'available' && (
+                      <div className="machine-recommendation machine-recommendation--warning">
+                        <AlertTriangle size={15} />
+                        <span>Máy đã chọn hiện ở trạng thái <strong>{getMachineStatusLabel(selectedMachineStatusForCreate)}</strong>. Hệ thống sẽ kiểm tra lại trước khi phát hành LSX.</span>
+                      </div>
+                    )}
                   </div>
                   <div className="form-group">
                     <label>{t('Ca Sản Xuất *')}</label>
@@ -895,11 +1047,15 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                 <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div className="form-group">
                     <label>{t('Máy In Phân Công *')}</label>
-                    <select value={editMachineId} onChange={e => setEditMachineId(e.target.value)}>
-                      <option value="Máy Flexo 8 màu OMET">{t('Máy Flexo 8 màu OMET')}</option>
-                      <option value="Máy Flexo 4 màu Gallus">{t('Máy Flexo 4 màu Gallus')}</option>
-                      <option value="Máy in Offset Heidelberg">{t('Máy in Offset Heidelberg')}</option>
-                      <option value="Máy in Kỹ thuật số Konica">{t('Máy in Kỹ thuật số Konica')}</option>
+                    <select value={editMachineId} onChange={e => setEditMachineId(e.target.value)} required>
+                      {editMachineId && !getMachineForAssignment(machineCatalog, editMachineId) && (
+                        <option value={editMachineId}>{editMachineId} (dữ liệu máy cũ)</option>
+                      )}
+                      {sortMachinesForAssignment(machineCatalog, activeCommands, getRequiredColorCount(pos.find(po => po.id === selectedLsx?.poId)))
+                        .filter(machine => machine.status !== 'inactive' || machine.name === editMachineId)
+                        .map(machine => (
+                          <option key={machine.id} value={machine.name}>{getMachineOptionLabel(machine, selectedLsx?.id)}</option>
+                        ))}
                     </select>
                   </div>
                   <div className="form-group">
