@@ -408,6 +408,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       bankAccount,
       files: [], // Repository for custom folders/files
       lastOrderAt: null,
+      createdById: currentUser.uid,
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       createdAt: new Date().toISOString(),
       updatedBy: '',

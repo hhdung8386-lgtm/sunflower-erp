@@ -26,6 +26,7 @@ interface POFormFullScreenProps {
   onClose: () => void;
   po: any | null; // null if creating new PO
   templatePo?: any | null; // source PO when creating a repeat order
+  initialCustomerId?: string; // preselected CRM customer for a first PO
   onSave: (poData: any) => Promise<void>;
   customers: any[];
   suppliers: any[];
@@ -39,6 +40,7 @@ export default function POFormFullScreen({
   onClose,
   po,
   templatePo,
+  initialCustomerId = '',
   onSave,
   customers,
   suppliers,
@@ -89,7 +91,7 @@ export default function POFormFullScreen({
   const [draftResetRevision, setDraftResetRevision] = useState(0);
   const initializedFormKeyRef = useRef('');
   const draftKey = !po && currentUser?.uid
-    ? `sunflower:po-draft:${currentUser.uid}:${templatePo?.id || 'new'}`
+    ? `sunflower:po-draft:${currentUser.uid}:${templatePo?.id || initialCustomerId || 'new'}`
     : '';
 
   // Load initial data
@@ -102,7 +104,7 @@ export default function POFormFullScreen({
     // Wait until customer data is available before initializing a new form.
     if (!po && customers.length === 0) return;
 
-    const formKey = `${po ? `edit:${po.id}` : templatePo ? `repeat:${templatePo.id}` : 'new'}:${draftResetRevision}`;
+    const formKey = `${po ? `edit:${po.id}` : templatePo ? `repeat:${templatePo.id}` : initialCustomerId ? `customer:${initialCustomerId}` : 'new'}:${draftResetRevision}`;
     if (initializedFormKeyRef.current === formKey) return;
 
     initializedFormKeyRef.current = formKey;
@@ -199,8 +201,9 @@ export default function POFormFullScreen({
       setAssignments([]);
     } else {
       // Defaults for creation
-      setCustomerId(customers[0]?.id || '');
-      setCustomerRank(customers[0]?.customerRank || '');
+      const initialCustomer = customers.find(customer => customer.id === initialCustomerId) || customers[0];
+      setCustomerId(initialCustomer?.id || '');
+      setCustomerRank(initialCustomer?.customerRank || '');
       setCustomerPoCode('');
       setExpectedDeliveryDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       setNotes('');
@@ -226,11 +229,16 @@ export default function POFormFullScreen({
           if (!isCurrentDraft) {
             window.localStorage.removeItem(draftKey);
           } else {
-            const restoredCustomerId = templatePo?.customerId || draft.customerId;
+            const restoredCustomerId = templatePo?.customerId || initialCustomerId || draft.customerId;
             if (customers.some(customer => customer.id === restoredCustomerId)) {
               setCustomerId(restoredCustomerId);
             }
-            setCustomerRank(typeof draft.customerRank === 'string' ? draft.customerRank : '');
+            const restoredCustomer = customers.find(customer => customer.id === restoredCustomerId);
+            setCustomerRank(
+              initialCustomerId
+                ? restoredCustomer?.customerRank || ''
+                : typeof draft.customerRank === 'string' ? draft.customerRank : ''
+            );
             setCustomerPoCode(typeof draft.customerPoCode === 'string' ? draft.customerPoCode : '');
             if (typeof draft.expectedDeliveryDate === 'string' && draft.expectedDeliveryDate) {
               setExpectedDeliveryDate(draft.expectedDeliveryDate);
@@ -254,7 +262,7 @@ export default function POFormFullScreen({
     }
 
     setDraftReady(true);
-  }, [po, templatePo, isOpen, customers, draftKey, draftResetRevision]);
+  }, [po, templatePo, initialCustomerId, isOpen, customers, draftKey, draftResetRevision]);
 
   // Keep text, items and assignments safe when the modal is closed or the page
   // is refreshed. Large local file data is intentionally excluded.

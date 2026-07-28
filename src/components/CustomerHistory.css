@@ -28,6 +28,194 @@
   background: var(--color-primary);
 }
 
+/* Sales PO intake queues */
+.sales-list-tabs {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.sales-list-tab {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.sales-list-tab:hover {
+  background: #ffffff;
+  color: var(--color-primary);
+}
+
+.sales-list-tab.is-active {
+  background: var(--color-primary);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+}
+
+.sales-list-tab__count {
+  display: inline-flex;
+  min-width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.sales-list-tab.is-active .sales-list-tab__count {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.sales-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.waiting-customer-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border: 1px solid #dbe3ef;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.waiting-customer-intro > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.waiting-customer-intro strong {
+  color: #172554;
+  font-size: 13px;
+}
+
+.waiting-customer-intro span {
+  color: #64748b;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.waiting-customer-intro .waiting-customer-intro__total {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1e40af;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.waiting-customer-table table {
+  min-width: 1080px;
+}
+
+.waiting-customer-table th:nth-child(1) { width: 150px; }
+.waiting-customer-table th:nth-child(2) { width: 225px; }
+.waiting-customer-table th:nth-child(3) { width: 210px; }
+.waiting-customer-table th:nth-child(4) { width: 180px; }
+.waiting-customer-table th:nth-child(5) { width: 115px; }
+.waiting-customer-table th:nth-child(6) { width: 115px; }
+.waiting-customer-table th:nth-child(7) { width: 120px; }
+.waiting-customer-table th:nth-child(8) { width: 110px; text-align: center; }
+
+.waiting-customer-table td:last-child {
+  text-align: center;
+}
+
+.customer-code-badge,
+.customer-rank-badge,
+.waiting-days-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.customer-code-badge {
+  border-radius: 5px;
+  color: #1e3a8a;
+  font-variant-numeric: tabular-nums;
+}
+
+.customer-rank-badge.has-rank {
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.waiting-days-badge.is-overdue {
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.waiting-customer-name,
+.waiting-customer-secondary {
+  display: block;
+}
+
+.waiting-customer-name {
+  color: #172554;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.waiting-customer-secondary {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.waiting-customer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.waiting-customer-empty {
+  padding: 30px !important;
+  color: #64748b;
+  text-align: center;
+  font-style: italic;
+}
+
 .repeat-order-banner {
   display: flex;
   align-items: flex-start;
@@ -287,6 +475,28 @@
   .approved-library__filters select {
     width: 100%;
     min-width: 0;
+  }
+
+  .sales-list-tabs,
+  .sales-list-tab {
+    width: 100%;
+  }
+
+  .sales-list-tabs {
+    flex-direction: column;
+  }
+
+  .sales-list-tab {
+    justify-content: flex-start;
+  }
+
+  .sales-list-tab__count {
+    margin-left: auto;
+  }
+
+  .waiting-customer-intro {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 .po-draft-notice,

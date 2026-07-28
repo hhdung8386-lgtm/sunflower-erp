@@ -42,6 +42,19 @@ interface SalesProps {
   users: UserProfile[];
 }
 
+type SalesListView = 'orders' | 'waiting-customers';
+
+const getCustomerCode = (customer: any) => (
+  customer.customerCode || customer.code || customer.id || ''
+);
+
+const getWaitingDays = (createdAt: unknown) => {
+  if (typeof createdAt !== 'string') return null;
+  const createdTime = Date.parse(createdAt);
+  if (Number.isNaN(createdTime)) return null;
+  return Math.max(0, Math.floor((Date.now() - createdTime) / (24 * 60 * 60 * 1000)));
+};
+
 export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, initialRepeatPoId, onRepeatOrderOpened, messages, users }) => {
   const { t } = useLanguage();
   const isFull = currentUser.role === 'admin' || currentUser.role === 'accountant';
@@ -53,6 +66,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const [showEditModal, setShowEditModal] = useState(false);
   const [repeatSourcePO, setRepeatSourcePO] = useState<any | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeListView, setActiveListView] = useState<SalesListView>('orders');
+  const [initialCustomerId, setInitialCustomerId] = useState('');
 
   // Auto-select PO when initialSelectedPoId changes
   useEffect(() => {
@@ -70,6 +85,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     if (!sourcePO) return;
     setSelectedPO(null);
     setRepeatSourcePO(sourcePO);
+    setInitialCustomerId('');
     setShowEditModal(false);
     setShowAddModal(true);
     onRepeatOrderOpened?.();
@@ -314,7 +330,16 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
   const handleOpenRepeatOrder = (po: any) => {
     setRepeatSourcePO(po);
+    setInitialCustomerId('');
     setSelectedPO(null);
+    setShowEditModal(false);
+    setShowAddModal(true);
+  };
+
+  const handleOpenCreatePO = (customerId = '') => {
+    setSelectedPO(null);
+    setRepeatSourcePO(null);
+    setInitialCustomerId(customerId);
     setShowEditModal(false);
     setShowAddModal(true);
   };
@@ -497,6 +522,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
       setShowAddModal(false);
       setRepeatSourcePO(null);
+      setInitialCustomerId('');
+      setActiveListView('orders');
     }
 
     if (poData.id) {
@@ -586,9 +613,10 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     document.body.removeChild(link);
   };
 
-  const filteredPOs = pos.filter(po => {
-    if (po.deleted === true) return false;
-    
+  const normalizedSearchTerm = searchTerm.trim().toLocaleLowerCase('vi-VN');
+  const activePOs = pos.filter(po => po.deleted !== true);
+
+  const visiblePOs = activePOs.filter(po => {
     // Filter by sale role: only show POs where saleId matches or assignedSaleId matches or created by self
     if (currentUser.role === 'sale') {
       const createdBySelf = po.createdBy && po.createdBy.includes(currentUser.displayName);
@@ -598,13 +626,51 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         return false;
       }
     }
+    return true;
+  });
+
+  const filteredPOs = visiblePOs.filter(po => {
     return (
-      po.poCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (po.customerPoCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      po.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      po.items.some((i: any) => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
+      String(po.poCode || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
+      String(po.customerPoCode || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
+      String(po.customerName || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
+      (Array.isArray(po.items) && po.items.some((item: any) => (
+        String(item.productName || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm)
+      )))
     );
   });
+
+  const customerIdsWithOrders = new Set(
+    activePOs.map(po => po.customerId).filter(Boolean)
+  );
+  const waitingCustomers = customers
+    .filter(customer => {
+      if (customer.deleted === true || customerIdsWithOrders.has(customer.id)) return false;
+      if (currentUser.role === 'sale' && customer.assignedSaleId && customer.assignedSaleId !== currentUser.uid) {
+        return false;
+      }
+      return true;
+    })
+    .filter(customer => {
+      if (!normalizedSearchTerm) return true;
+      return [
+        getCustomerCode(customer),
+        customer.companyName,
+        customer.contactPerson,
+        customer.phone,
+        customer.email
+      ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm));
+    })
+    .sort((customerA, customerB) => {
+      const createdA = Date.parse(customerA.createdAt || '') || Number.MAX_SAFE_INTEGER;
+      const createdB = Date.parse(customerB.createdAt || '') || Number.MAX_SAFE_INTEGER;
+      return createdA - createdB;
+    });
+
+  const waitingCustomerCount = customers.filter(customer => {
+    if (customer.deleted === true || customerIdsWithOrders.has(customer.id)) return false;
+    return currentUser.role !== 'sale' || !customer.assignedSaleId || customer.assignedSaleId === currentUser.uid;
+  }).length;
 
   const selectedPOTotalWithVat = selectedPO?.items?.length
     ? selectedPO.items.reduce((total: number, item: any) => (
@@ -620,7 +686,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
           <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi hàng đợi công việc và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
-          <button className="btn btn-primary btn-symbol" onClick={() => { setRepeatSourcePO(null); setShowAddModal(true); }} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
+          <button className="btn btn-primary btn-symbol" onClick={() => handleOpenCreatePO()} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
             <Plus size={18} />
           </button>
         )}
@@ -628,10 +694,47 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
 
       {!selectedPO && (
         <div className="card">
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <div className="sales-list-tabs" role="tablist" aria-label={t('Chọn danh sách Sale PO')}>
+            <button
+              type="button"
+              className={`sales-list-tab ${activeListView === 'orders' ? 'is-active' : ''}`}
+              onClick={() => { setActiveListView('orders'); setSearchTerm(''); }}
+              role="tab"
+              aria-selected={activeListView === 'orders'}
+            >
+              <FileText size={16} />
+              <span>{t('Danh sách PO')}</span>
+              <span className="sales-list-tab__count">{visiblePOs.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`sales-list-tab ${activeListView === 'waiting-customers' ? 'is-active' : ''}`}
+              onClick={() => { setActiveListView('waiting-customers'); setSearchTerm(''); }}
+              role="tab"
+              aria-selected={activeListView === 'waiting-customers'}
+            >
+              <Check size={16} />
+              <span>{t('Khách hàng chờ lên đơn')}</span>
+              <span className="sales-list-tab__count">{waitingCustomerCount}</span>
+            </button>
+          </div>
+
+          {activeListView === 'waiting-customers' && (
+            <div className="waiting-customer-intro">
+              <div>
+                <strong>{t('Khách hàng đã có hồ sơ nhưng chưa có PO')}</strong>
+                <span>{t('Danh sách được tự động đối chiếu từ CRM và các PO hiện có. Khi lưu PO đầu tiên, khách hàng sẽ tự rời khỏi danh sách này.')}</span>
+              </div>
+              <span className="waiting-customer-intro__total">{waitingCustomerCount} {t('khách hàng')}</span>
+            </div>
+          )}
+
+          <div className="sales-list-toolbar">
             <input 
               type="text" 
-              placeholder={t('Nhập mã PO, tên sản phẩm hoặc khách hàng...')} 
+              placeholder={activeListView === 'orders'
+                ? t('Nhập mã PO, tên sản phẩm hoặc khách hàng...')
+                : t('Tìm mã khách hàng, công ty, người liên hệ...')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ maxWidth: '400px', flex: 1 }}
@@ -639,12 +742,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
             <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>
               <X size={16} />
             </button>
-            <button className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
-              <FileSpreadsheet size={16} />
-              <span>{t('Xuất Excel')}</span>
-            </button>
+            {activeListView === 'orders' && (
+              <button className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
+                <FileSpreadsheet size={16} />
+                <span>{t('Xuất Excel')}</span>
+              </button>
+            )}
           </div>
 
+          {activeListView === 'orders' ? (
           <div className="table-container">
             <table>
               <thead>
@@ -694,6 +800,77 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="table-container waiting-customer-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('Mã khách hàng')}</th>
+                    <th>{t('Tên Công Ty')}</th>
+                    <th>{t('Người Liên Hệ')}</th>
+                    <th>{t('Sale phụ trách')}</th>
+                    <th>{t('Ngày tạo')}</th>
+                    <th>{t('Số ngày chờ')}</th>
+                    <th>{t('Hạng Khách Hàng')}</th>
+                    <th>{t('Thao Tác')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waitingCustomers.map(customer => {
+                    const assignedSale = users.find(user => (
+                      user.uid === customer.assignedSaleId || (user as any).id === customer.assignedSaleId
+                    ));
+                    const waitingDays = getWaitingDays(customer.createdAt);
+                    const createdDate = customer.createdAt ? new Date(customer.createdAt) : null;
+                    const hasValidCreatedDate = createdDate && !Number.isNaN(createdDate.getTime());
+
+                    return (
+                      <tr key={customer.id}>
+                        <td><span className="customer-code-badge">{getCustomerCode(customer)}</span></td>
+                        <td>
+                          <strong className="waiting-customer-name">{customer.companyName || t('Chưa cung cấp')}</strong>
+                          {customer.phone && <span className="waiting-customer-secondary">{customer.phone}</span>}
+                        </td>
+                        <td>
+                          <span>{customer.contactPerson || t('Chưa cung cấp')}</span>
+                          {customer.email && <span className="waiting-customer-secondary">{customer.email}</span>}
+                        </td>
+                        <td>{assignedSale?.displayName || customer.createdBy || t('Chưa phân công')}</td>
+                        <td>{hasValidCreatedDate ? createdDate.toLocaleDateString(t('vi-VN')) : '—'}</td>
+                        <td>
+                          {waitingDays === null
+                            ? '—'
+                            : <span className={`waiting-days-badge ${waitingDays >= 7 ? 'is-overdue' : ''}`}>{waitingDays} {t('ngày')}</span>}
+                        </td>
+                        <td>
+                          <span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>
+                            {customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}
+                          </span>
+                        </td>
+                        <td>
+                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                            <button className="btn btn-sm btn-primary waiting-customer-action" onClick={() => handleOpenCreatePO(customer.id)}>
+                              <Plus size={14} />
+                              <span>{t('Tạo PO')}</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {waitingCustomers.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="waiting-customer-empty">
+                        {normalizedSearchTerm
+                          ? t('Không tìm thấy khách hàng chờ lên đơn phù hợp.')
+                          : t('Không có khách hàng nào đang chờ lên đơn.')}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -1243,10 +1420,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
             setShowAddModal(false);
             setShowEditModal(false);
             setRepeatSourcePO(null);
+            setInitialCustomerId('');
             setSelectedPO(null);
           }}
           po={showEditModal ? selectedPO : null}
           templatePo={showAddModal ? repeatSourcePO : null}
+          initialCustomerId={showAddModal ? initialCustomerId : ''}
           onSave={handleSavePO}
           customers={customers}
           suppliers={suppliers}
