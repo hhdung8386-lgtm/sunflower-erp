@@ -20,6 +20,7 @@ import {
   PO_QUEUE_STATES,
   POQueueStatus
 } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 import { 
   Plus, 
   Trash2, 
@@ -668,21 +669,22 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     return true;
   });
 
-  const filteredPOs = visiblePOs.filter(po => {
-    return (
+  const filteredPOs = sortNewestFirst(
+    visiblePOs.filter(po => (
       String(po.poCode || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
       String(po.customerPoCode || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
       String(po.customerName || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm) ||
       (Array.isArray(po.items) && po.items.some((item: any) => (
         String(item.productName || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm)
       )))
-    );
-  });
+    )),
+    po => [po.createdAt, po.orderDate]
+  );
 
   const customerIdsWithOrders = new Set(
     activePOs.map(po => po.customerId).filter(Boolean)
   );
-  const waitingCustomers = customers
+  const waitingCustomers = sortNewestFirst(customers
     .filter(customer => {
       if (customer.deleted === true || customerIdsWithOrders.has(customer.id)) return false;
       if (currentUser.role === 'sale' && customer.assignedSaleId && customer.assignedSaleId !== currentUser.uid) {
@@ -699,12 +701,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         customer.phone,
         customer.email
       ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(normalizedSearchTerm));
-    })
-    .sort((customerA, customerB) => {
-      const createdA = Date.parse(customerA.createdAt || '') || Number.MAX_SAFE_INTEGER;
-      const createdB = Date.parse(customerB.createdAt || '') || Number.MAX_SAFE_INTEGER;
-      return createdA - createdB;
-    });
+    }), customer => [customer.createdAt]);
 
   const waitingCustomerCount = customers.filter(customer => {
     if (customer.deleted === true || customerIdsWithOrders.has(customer.id)) return false;

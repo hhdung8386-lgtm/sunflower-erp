@@ -16,6 +16,7 @@ import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
 import { isPOInQueue } from './domain/poWorkflow';
 import { DesignRequest } from './domain/designWorkflow';
+import { sortNewestFirst } from './domain/recordOrdering';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -122,20 +123,28 @@ function App() {
     const unsubUsers = dbService.subscribeCollection('users', (data) => setUsers(data as UserProfile[]));
     const unsubCustomers = dbService.subscribeCollection('customers', setCustomers);
     const unsubPOs = dbService.subscribeCollection('pos', (data) => {
-      // Sort newest first
-      const sorted = [...data].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setPOs(sorted);
+      setPOs(sortNewestFirst(data, po => [po.createdAt, po.orderDate]));
     });
-    const unsubPurchases = dbService.subscribeCollection('purchase_orders', setPurchaseOrders);
-    const unsubProduction = dbService.subscribeCollection('production_commands', setProductionCommands);
-    const unsubDeliveries = dbService.subscribeCollection('deliveries', setDeliveries);
-    const unsubInvoices = dbService.subscribeCollection('invoices', setInvoices);
+    const unsubPurchases = dbService.subscribeCollection('purchase_orders', (data) => {
+      setPurchaseOrders(sortNewestFirst(data, purchaseOrder => [purchaseOrder.createdAt]));
+    });
+    const unsubProduction = dbService.subscribeCollection('production_commands', (data) => {
+      setProductionCommands(sortNewestFirst(data, command => [command.createdAt, command.startedAt]));
+    });
+    const unsubDeliveries = dbService.subscribeCollection('deliveries', (data) => {
+      setDeliveries(sortNewestFirst(data, delivery => [delivery.createdAt]));
+    });
+    const unsubInvoices = dbService.subscribeCollection('invoices', (data) => {
+      setInvoices(sortNewestFirst(data, invoice => [invoice.createdAt]));
+    });
     const unsubInventory = dbService.subscribeCollection('inventory', setInventory);
     const unsubMessages = dbService.subscribeCollection('messages', setMessages);
     const unsubChannels = dbService.subscribeCollection('channels', setChannels);
     const unsubDesignRequests = dbService.subscribeCollection('design_requests', (data) => {
-      const sorted = [...data].sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
-      setDesignRequests(sorted as DesignRequest[]);
+      setDesignRequests(sortNewestFirst(
+        data as DesignRequest[],
+        request => [request.createdAt]
+      ));
     });
 
     return () => {

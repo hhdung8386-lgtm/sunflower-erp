@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { Plus, Trash2, Pencil, X, Download, FileSpreadsheet } from 'lucide-react';
 import { getPOQueueUpdate, isPOCompleted } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 
 interface PurchaseProps {
   pos: any[];
@@ -120,13 +121,13 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
     document.body.removeChild(link);
   };
 
-  const filteredPurchaseOrders = (purchaseOrders || [])
+  const filteredPurchaseOrders = sortNewestFirst((purchaseOrders || [])
     .filter(pur => !pur.deleted)
     .filter(pur => {
       if (currentUser.role === 'admin' || currentUser.role === 'accountant') return true;
       return pur.assignedPurchaserId === currentUser.uid || 
              (!pur.assignedPurchaserId && (pur.createdBy || '').includes(currentUser.displayName));
-    });
+    }), purchaseOrder => [purchaseOrder.createdAt]);
 
   const handleOpenEditSupplier = (sup: any) => {
     setSelectedSupplier(sup);

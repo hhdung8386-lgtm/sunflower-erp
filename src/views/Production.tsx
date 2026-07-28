@@ -17,6 +17,7 @@ import {
 } from '../services/machineService';
 import { AlertTriangle, CalendarDays, FileSpreadsheet, Info, ListChecks, Pencil, Settings2, Trash2, X } from 'lucide-react';
 import { getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 import './Production.css';
 
 interface ProductionProps {
@@ -299,7 +300,10 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     }
   };
 
-  const activeCommands = (productionCommands || []).filter(cmd => !cmd.deleted);
+  const activeCommands = sortNewestFirst(
+    (productionCommands || []).filter(cmd => !cmd.deleted),
+    command => [command.createdAt, command.startedAt]
+  );
   const selectedPoForCreate = pos.find(po => po.id === linkedPoId);
   const requiredColorsForCreate = getRequiredColorCount(selectedPoForCreate);
   const createMachineOptions = sortMachinesForAssignment(machineCatalog, activeCommands, requiredColorsForCreate)

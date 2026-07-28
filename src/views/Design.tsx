@@ -29,6 +29,7 @@ import {
   resolveDesignForRequest
 } from '../domain/designWorkflow';
 import { getPOQueueUpdate } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 import { syncDesignRequestsForPOs } from '../services/designRequestService';
 import { dbService, UserProfile } from '../services/firebaseService';
 import './Design.css';
@@ -125,7 +126,7 @@ export const Design: React.FC<DesignProps> = ({
 
   const filteredRequests = useMemo(() => {
     const search = searchTerm.trim().toLocaleLowerCase('vi-VN');
-    return visibleRequests
+    return sortNewestFirst(visibleRequests
       .filter(request => statusFilter === 'all' || getDesignWorkStatus(request.workStatus) === statusFilter)
       .filter(request => !search || [
         request.requestCode,
@@ -135,15 +136,9 @@ export const Design: React.FC<DesignProps> = ({
         request.productName,
         request.size,
         request.material
-      ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(search)))
-      .sort((requestA, requestB) => {
-        const overdueDifference = Number(isDesignRequestOverdue(requestB)) - Number(isDesignRequestOverdue(requestA));
-        if (overdueDifference !== 0) return overdueDifference;
-        const priorityOrder: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-        const priorityDifference = (priorityOrder[requestA.priority] ?? 2) - (priorityOrder[requestB.priority] ?? 2);
-        if (priorityDifference !== 0) return priorityDifference;
-        return Date.parse(requestA.createdAt || '') - Date.parse(requestB.createdAt || '');
-      });
+      ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(search))),
+      request => [request.createdAt]
+    );
   }, [searchTerm, statusFilter, visibleRequests]);
 
   const selectedRequest = designRequests.find(request => request.id === selectedRequestId) || null;

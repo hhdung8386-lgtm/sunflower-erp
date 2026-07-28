@@ -3,6 +3,7 @@ import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 import '../components/CustomerHistory.css';
 import { 
   Plus, 
@@ -461,6 +462,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         await dbService.updateDocument('customers', id, {
           deleted: true,
           deleteRequested: false,
+          deleteRequestedAt: '',
           updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
           updatedAt: new Date().toISOString()
         });
@@ -474,7 +476,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       if (window.confirm(t('Bạn có muốn gửi yêu cầu xóa khách hàng này tới Admin phê duyệt?'))) {
         await dbService.updateDocument('customers', id, {
           deleteRequested: true,
-          deleteRequestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`
+          deleteRequestedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+          deleteRequestedAt: new Date().toISOString()
         });
         alert(t('Đã gửi yêu cầu xóa khách hàng tới Admin.'));
         onRefresh();
@@ -759,7 +762,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     if (window.confirm(t('Bạn có chắc muốn phê duyệt xóa khách hàng này?'))) {
       await dbService.updateDocument('customers', cust.id, {
         deleted: true,
-        deleteRequested: false
+        deleteRequested: false,
+        deleteRequestedAt: ''
       });
       alert(t('Đã xóa khách hàng.'));
       onRefresh();
@@ -770,7 +774,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     if (window.confirm(t('Từ chối yêu cầu xóa khách hàng này?'))) {
       await dbService.updateDocument('customers', cust.id, {
         deleteRequested: false,
-        deleteRequestedBy: ''
+        deleteRequestedBy: '',
+        deleteRequestedAt: ''
       });
       alert(t('Đã từ chối yêu cầu xóa.'));
       onRefresh();
@@ -1410,7 +1415,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {customers.filter(c => c.deleteRequested && !c.deleted).map(cust => (
+            {sortNewestFirst(
+              customers.filter(c => c.deleteRequested && !c.deleted),
+              customer => [customer.deleteRequestedAt, customer.updatedAt, customer.createdAt]
+            ).map(cust => (
               <div key={cust.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', border: '1px solid #fed7d7', borderRadius: '4px', backgroundColor: '#fff5f5' }}>
                 <div>
                   <span style={{ fontWeight: 'bold', color: 'var(--color-danger)' }}>[${t('YÊU CẦU XÓA KHÁCH HÀNG')}] </span>
@@ -1423,7 +1431,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               </div>
             ))}
             
-            {editRequests.filter(r => r.status === 'pending').map(req => (
+            {sortNewestFirst(
+              editRequests.filter(r => r.status === 'pending'),
+              request => [request.requestedAt, request.createdAt]
+            ).map(req => (
               <div key={req.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '4px', backgroundColor: '#ffffff' }}>
                 <div>
                   <span style={{ fontWeight: 'bold', color: 'var(--color-warning)' }}>[${t('YÊU CẦU CHỈNH SỬA')}] </span>

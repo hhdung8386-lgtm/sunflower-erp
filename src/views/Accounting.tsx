@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { BarChart } from '../components/VisualCharts';
 import { Plus, Trash2, Pencil } from 'lucide-react';
 import { getPOQueueLabel, getPOQueueStatus, getPOQueueUpdate } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 
 interface AccountingProps {
   pos: any[];
@@ -71,8 +72,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     const purList = await dbService.getCollection('purchase_orders');
     const custList = await dbService.getCollection('customers');
     const supList = await dbService.getCollection('suppliers');
-    setInvoices(invList);
-    setPurchaseOrders(purList);
+    setInvoices(sortNewestFirst(invList, invoice => [invoice.createdAt]));
+    setPurchaseOrders(sortNewestFirst(purList, purchaseOrder => [purchaseOrder.createdAt]));
     setCustomers(custList);
     setSuppliers(supList);
   };

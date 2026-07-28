@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { getPODeliveryStage, getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
+import { sortNewestFirst } from '../domain/recordOrdering';
 import './Delivery.css';
 
 interface DeliveryProps {
@@ -170,7 +171,10 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   // Refresh delivery trips list
   const fetchDeliveries = async () => {
     const list = await dbService.getCollection('deliveries');
-    setDeliveries(list.filter((trip: any) => !trip.deleted));
+    setDeliveries(sortNewestFirst(
+      list.filter((trip: any) => !trip.deleted),
+      trip => [trip.createdAt]
+    ));
   };
 
   const fetchVehicles = async () => {
