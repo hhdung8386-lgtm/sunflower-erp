@@ -543,6 +543,54 @@ const DEFAULT_PRODUCTION_COMMANDS: any[] = [
 
 const DEFAULT_DELIVERIES: any[] = [];
 
+const DEFAULT_DELIVERY_VEHICLES: any[] = [
+  {
+    id: 'vehicle-01',
+    plate: '29H-123.45',
+    vehicleName: 'Xe tải thùng kín 1,25 tấn',
+    capacityKg: 1250,
+    driverName: 'Nguyễn Văn Hải',
+    driverPhone: '0903 111 225',
+    status: 'ready',
+    suitableRegions: ['Hà Nội', 'Bắc Ninh'],
+    createdAt: '2026-07-01T08:00:00Z'
+  },
+  {
+    id: 'vehicle-02',
+    plate: '29C-456.78',
+    vehicleName: 'Xe tải thùng kín 2,5 tấn',
+    capacityKg: 2500,
+    driverName: 'Trần Đức Long',
+    driverPhone: '0912 334 668',
+    status: 'ready',
+    suitableRegions: ['Hải Dương', 'Hưng Yên', 'Phú Thọ'],
+    createdAt: '2026-07-01T08:00:00Z'
+  },
+  {
+    id: 'vehicle-03',
+    plate: '89C-246.80',
+    vehicleName: 'Xe tải 1,9 tấn',
+    capacityKg: 1900,
+    driverName: 'Lê Văn Tài',
+    driverPhone: '0988 246 801',
+    status: 'maintenance',
+    maintenanceNote: 'Bảo dưỡng định kỳ',
+    suitableRegions: ['Hưng Yên', 'Hải Dương'],
+    createdAt: '2026-07-01T08:00:00Z'
+  },
+  {
+    id: 'vehicle-04',
+    plate: '29D-112.23',
+    vehicleName: 'Xe van giao hàng 750 kg',
+    capacityKg: 750,
+    driverName: 'Phạm Minh Quân',
+    driverPhone: '0975 112 233',
+    status: 'ready',
+    suitableRegions: ['Hà Nội'],
+    createdAt: '2026-07-01T08:00:00Z'
+  }
+];
+
 const DEFAULT_INVOICES: any[] = [
   {
     id: 'inv-001',
@@ -621,6 +669,7 @@ const initLocalStorage = () => {
   if (!localStorage.getItem('erp_inventory')) localStorage.setItem('erp_inventory', JSON.stringify(DEFAULT_INVENTORY));
   if (!localStorage.getItem('erp_production_commands')) localStorage.setItem('erp_production_commands', JSON.stringify(DEFAULT_PRODUCTION_COMMANDS));
   if (!localStorage.getItem('erp_deliveries')) localStorage.setItem('erp_deliveries', JSON.stringify(DEFAULT_DELIVERIES));
+  if (!localStorage.getItem('erp_delivery_vehicles')) localStorage.setItem('erp_delivery_vehicles', JSON.stringify(DEFAULT_DELIVERY_VEHICLES));
   if (!localStorage.getItem('erp_invoices')) localStorage.setItem('erp_invoices', JSON.stringify(DEFAULT_INVOICES));
   
   if (!localStorage.getItem('erp_product_classifications')) {
@@ -665,6 +714,7 @@ const seedFirestoreIfNeeded = async () => {
     await checkAndSeed('purchase_orders', DEFAULT_PURCHASE_ORDERS);
     await checkAndSeed('production_commands', DEFAULT_PRODUCTION_COMMANDS);
     await checkAndSeed('deliveries', DEFAULT_DELIVERIES);
+    await checkAndSeed('delivery_vehicles', DEFAULT_DELIVERY_VEHICLES);
     await checkAndSeed('invoices', DEFAULT_INVOICES);
     await checkAndSeed('channels', DEFAULT_CHANNELS);
     await checkAndSeed('product_classifications', DEFAULT_PRODUCT_CLASSIFICATIONS);

@@ -14,6 +14,7 @@ if (!localStorage.getItem('erp_clean_slate_reset_v2')) {
     'erp_purchase_orders',
     'erp_production_commands',
     'erp_deliveries',
+    'erp_delivery_vehicles',
     'erp_invoices',
     'erp_inventory',
     'erp_users',
