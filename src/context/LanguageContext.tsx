@@ -97,6 +97,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     'Chờ xử lý chiết khấu': 'Waiting for discount closing',
     'Hoàn tất': 'Completed',
     'Mở PO': 'Open PO',
+    'Thoát bảng PO': 'Exit PO table',
     'Cần Chăm Sóc (Khách > 30 ngày chưa đặt đơn)': 'Customers Requiring Relationship Care (No order > 30 days)',
     'Đơn Hàng Sắp Giao Trong Tuần': 'Deliveries Scheduled This Week',
     'Xem chi tiết': 'View details',

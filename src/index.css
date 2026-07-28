@@ -753,6 +753,56 @@ tr:hover td {
   gap: 4px;
 }
 
+.dashboard-metric-card {
+  min-height: 112px;
+  justify-content: center;
+  border: none;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.12);
+}
+
+.dashboard-metric-card--revenue {
+  background: #8f3fa3;
+}
+
+.dashboard-metric-card--receivable {
+  background: #f97316;
+}
+
+.dashboard-metric-card--payable {
+  background: #38a4d5;
+}
+
+.dashboard-metric-card--active {
+  background: #7dbdca;
+}
+
+.dashboard-metric-card .metric-title,
+.dashboard-metric-card .metric-value,
+.dashboard-metric-card .metric-sub {
+  color: #ffffff;
+}
+
+.dashboard-metric-card .metric-title,
+.dashboard-metric-card .metric-sub {
+  opacity: 0.9;
+}
+
+.po-queue-donut {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.po-queue-actions {
+  flex: 1 1 230px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboard-po-drilldown {
+  min-height: calc(100vh - var(--header-height) - 48px);
+}
+
 .metric-title {
   font-size: 12px;
   font-weight: 600;
@@ -1349,6 +1399,16 @@ tr:hover td {
   .charts-row-mobile {
     flex-direction: column !important;
     gap: 16px !important;
+  }
+
+  .po-donut-row-interactive {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .po-queue-actions {
+    width: 100%;
+    grid-template-columns: 1fr;
   }
 }
 

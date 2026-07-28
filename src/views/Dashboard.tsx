@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
-import { BarChart } from '../components/VisualCharts';
+import { BarChart, DonutChart } from '../components/VisualCharts';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { 
   ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
@@ -144,6 +144,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     PO_QUEUE_STATES.map(state => [state.value, t(state.label)])
   ) as Record<POQueueStatus, string>;
 
+  const poQueueChartData = PO_QUEUE_STATES
+    .filter(state => state.value !== 'completed')
+    .map(state => ({
+      status: state.value,
+      label: t(state.label),
+      color: state.color,
+      value: filteredPOs.filter(po => isPOInQueue(po, state.value)).length
+    }));
+
   // Reminder managers
   const handleAddReminderSubmit = async (poId: string, poCode: string) => {
     if (!newReminderText.trim() || !newReminderDate) return;
@@ -224,11 +233,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const categoryPOs = getCategoryPOs(selectedProgressCategory);
 
     return (
-      <div className="dashboard-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button 
-            type="button" 
-            className="btn btn-outline btn-symbol"
+      <div className="dashboard-view dashboard-po-drilldown" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <h1 className="page-title">{t('CHI TIẾT TIẾN ĐỘ ĐƠN HÀNG')}</h1>
+            <p className="page-subtitle">
+              {t('Phân nhóm:')} <strong>{categoryLabels[selectedProgressCategory]}</strong> ({categoryPOs.length} {t('đơn hàng')})
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-outline"
             onClick={() => {
               setSelectedProgressCategory(null);
               setExpandedPoId(null);
@@ -236,13 +251,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
             title={t('Quay lại Dashboard')}
           >
             <ArrowLeft size={16} />
+            {t('Thoát bảng PO')}
           </button>
-          <div>
-            <h1 className="page-title">{t('CHI TIẾT TIẾN ĐỘ ĐƠN HÀNG')}</h1>
-            <p className="page-subtitle">
-              {t('Phân nhóm:')} <strong>{categoryLabels[selectedProgressCategory]}</strong> ({categoryPOs.length} {t('đơn hàng')})
-            </p>
-          </div>
         </div>
 
         <div className="card" style={{ padding: '20px' }}>
@@ -312,13 +322,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 </h4>
 
                                 <div className="po-inline-grid-container" style={{ marginBottom: '14px' }}>
-                                  <table className="po-inline-grid" style={{ minWidth: '700px' }}>
+                                  <table className="po-inline-grid" style={{ minWidth: '1250px' }}>
                                     <thead>
                                       <tr>
                                         <th style={{ padding: '6px 8px' }}>STT</th>
                                         <th style={{ padding: '6px 8px' }}>Mã Hàng</th>
                                         <th style={{ padding: '6px 8px' }}>Tên Hàng</th>
-                                        <th style={{ padding: '6px 8px' }}>Quy Cách & Chất Liệu</th>
+                                        <th style={{ padding: '6px 8px' }}>Quy Cách</th>
+                                        <th style={{ padding: '6px 8px' }}>Chất Liệu</th>
                                         <th style={{ padding: '6px 8px' }}>ĐVT</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>SL</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>Đơn Giá</th>
@@ -346,7 +357,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             <td>{idx + 1}</td>
                                             <td style={{ fontWeight: 'bold' }}>{item.productCode}</td>
                                             <td>{item.productName}</td>
-                                            <td>{item.size} ({item.material})</td>
+                                            <td>{item.size || '—'}</td>
+                                            <td>{item.material || '—'}</td>
                                             <td>{item.unit || 'cái'}</td>
                                             <td style={{ textAlign: 'right' }}>{qty.toLocaleString()}</td>
                                             <td style={{ textAlign: 'right' }}>{prc.toLocaleString()} đ</td>
@@ -498,7 +510,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {categoryPOs.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)' }}>
                       {t('Không có đơn hàng PO nào thuộc nhóm tiến độ này.')}
                     </td>
                   </tr>
@@ -635,24 +647,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {user.role === 'admin' && (
         <>
           <div className="metrics-grid">
-            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #059669' }}>
+            <div className="metric-card dashboard-metric-card dashboard-metric-card--revenue">
               <span className="metric-title">{t('DOANH THU ĐÃ THU')}</span>
-              <span className="metric-value" style={{ color: '#047857' }}>{totalRevenue.toLocaleString()} đ</span>
+              <span className="metric-value">{totalRevenue.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Từ các hóa đơn đã thanh toán')}</span>
             </div>
-            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #dc2626' }}>
+            <div className="metric-card dashboard-metric-card dashboard-metric-card--receivable">
               <span className="metric-title">{t('CÔNG NỢ PHẢI THU (AR)')}</span>
-              <span className="metric-value" style={{ color: 'var(--color-danger)' }}>{arDebt.toLocaleString()} đ</span>
+              <span className="metric-value">{arDebt.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Khách hàng chưa thanh toán hết')}</span>
             </div>
-            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #d97706' }}>
+            <div className="metric-card dashboard-metric-card dashboard-metric-card--payable">
               <span className="metric-title">{t('CÔNG NỢ PHẢI TRẢ (AP)')}</span>
-              <span className="metric-value" style={{ color: 'var(--color-warning)' }}>{apDebt.toLocaleString()} đ</span>
+              <span className="metric-value">{apDebt.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Phải trả nhà cung cấp vật tư')}</span>
             </div>
-            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #2563eb' }}>
+            <div className="metric-card dashboard-metric-card dashboard-metric-card--active">
               <span className="metric-title">{t('ĐƠN ĐANG XỬ LÝ')}</span>
-              <span className="metric-value" style={{ color: '#1d4ed8' }}>{activePOs.length} {t('đơn')}</span>
+              <span className="metric-value">{activePOs.length} {t('đơn')}</span>
               <span className="metric-sub">{t('Tổng số PO chưa hoàn thành')}</span>
             </div>
           </div>
@@ -697,23 +709,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span className="card-title">{t('Hàng Đợi Xử Lý PO')}</span>
               </div>
               <div
-                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', flex: 1 }}
+                style={{ display: 'flex', gap: '18px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}
                 className="po-donut-row-interactive"
               >
-                {PO_QUEUE_STATES.filter(state => state.value !== 'completed').map(state => {
-                  const count = filteredPOs.filter(po => isPOInQueue(po, state.value)).length;
-                  return (
+                <div className="po-queue-donut">
+                  <DonutChart data={poQueueChartData} />
+                </div>
+                <div className="po-queue-actions">
+                  {poQueueChartData.map(state => (
                     <button
-                      key={state.value}
+                      key={state.status}
                       type="button"
-                      onClick={() => setSelectedProgressCategory(state.value)}
+                      onClick={() => setSelectedProgressCategory(state.status)}
                       className="po-progress-card-btn"
                       title={t('Click để xem danh sách đơn hàng chi tiết')}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '12px 14px',
+                        padding: '9px 12px',
                         borderRadius: '8px',
                         border: `1px solid ${state.color}55`,
                         borderLeft: `4px solid ${state.color}`,
@@ -726,10 +740,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       }}
                     >
                       <span>{t(state.label)}</span>
-                      <strong style={{ color: state.color, fontSize: '18px' }}>{count}</strong>
+                      <strong style={{ color: state.color, fontSize: '17px' }}>{state.value}</strong>
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
