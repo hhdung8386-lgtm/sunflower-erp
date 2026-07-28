@@ -134,6 +134,7 @@ body {
   height: 100vh;
   position: sticky;
   top: 0;
+  transition: transform var(--transition-normal), width var(--transition-normal), border-color var(--transition-normal);
 }
 
 .sidebar-logo {
@@ -1469,9 +1470,50 @@ tr:hover td {
   transition: grid-template-columns var(--transition-normal);
 }
 
-/* Collapsible sidebar layout styles removed as sidebar is always visible on desktop */
 .desktop-menu-btn {
-  display: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.desktop-menu-btn:hover {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.desktop-menu-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (min-width: 769px) {
+  .app-container.sidebar-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .app-container.sidebar-collapsed .app-sidebar {
+    width: 0;
+    overflow: hidden;
+    border-right-color: transparent;
+    transform: translateX(-100%);
+  }
+}
+
+@media (max-width: 768px) {
+  .desktop-menu-btn {
+    display: none;
+  }
 }
 
 /* ==========================================

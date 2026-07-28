@@ -40,6 +40,9 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('erp_sidebar_collapsed') === 'true';
+  });
   const { t, language, setLanguage } = useLanguage();
 
   const getDefaultPagesForRole = (role: string): string[] => {
@@ -539,7 +542,7 @@ function App() {
   const unreadChannelCount = getUnreadChannelMessagesTotal();
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Mobile backdrop overlay */}
       <div 
         className={`sidebar-overlay-mobile ${isSidebarOpen ? 'show' : ''}`} 
@@ -744,11 +747,30 @@ function App() {
       {/* APP HEADER */}
       <header className="app-header">
         <div className="header-title-container">
+          <button
+            type="button"
+            className="desktop-menu-btn"
+            onClick={() => {
+              setIsSidebarCollapsed((currentValue) => {
+                const nextValue = !currentValue;
+                localStorage.setItem('erp_sidebar_collapsed', String(nextValue));
+                return nextValue;
+              });
+            }}
+            aria-label={isSidebarCollapsed ? 'Mở thanh menu' : 'Ẩn thanh menu'}
+            aria-expanded={!isSidebarCollapsed}
+            title={isSidebarCollapsed ? 'Mở thanh menu' : 'Ẩn thanh menu'}
+          >
+            <Menu size={20} aria-hidden="true" />
+          </button>
           
           {/* Hamburger menu toggle button for mobile */}
           <button 
+            type="button"
             className="mobile-menu-btn" 
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            onClick={() => setIsSidebarOpen((currentValue) => !currentValue)}
+            aria-label={isSidebarOpen ? 'Đóng thanh menu' : 'Mở thanh menu'}
+            aria-expanded={isSidebarOpen}
           >
             <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }}>
               <line x1="3" y1="12" x2="21" y2="12"></line>
