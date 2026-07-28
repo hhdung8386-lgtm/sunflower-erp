@@ -606,6 +606,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     );
   });
 
+  const selectedPOTotalWithVat = selectedPO?.items?.length
+    ? selectedPO.items.reduce((total: number, item: any) => (
+        total + calculatePOItemFinancials(item).amountWithVat
+      ), 0)
+    : Number(selectedPO?.netAmount || 0);
+
   return (
     <div className="sales-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
@@ -776,18 +782,18 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <thead>
                         <tr>
                           <th>STT</th>
-                          <th>{t('Mã Hàng')}</th>
-                          <th>{t('Tên Hàng')}</th>
-                          <th>{t('Quy Cách / Chất Liệu')}</th>
+                          <th>{t('Mã hàng')}</th>
+                          <th>{t('Tên hàng')}</th>
+                          <th>{t('Quy cách / Chất liệu')}</th>
                           <th>{t('ĐVT')}</th>
-                          <th>{t('Số Lượng')}</th>
-                          <th>{t('Đơn Giá')}</th>
-                          <th>{t('Nhà Cung Cấp')}</th>
+                          <th>{t('Số lượng')}</th>
+                          <th>{t('Đơn giá')}</th>
+                          <th>{t('Nhà cung cấp')}</th>
                           <th>{t('Thuế (%)')}</th>
-                          <th>{t('Chiết Khấu')}</th>
-                          <th>{t('Thành Tiền (gồm VAT)')}</th>
+                          <th>{t('Chiết khấu')}</th>
+                          <th>{t('Thành tiền (gồm VAT)')}</th>
                           <th>{t('KPI PO')}</th>
-                          <th>{t('File Liên Quan')}</th>
+                          <th>{t('File liên quan')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -795,6 +801,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           const financials = calculatePOItemFinancials(item);
                           const buyingTotal = financials.quantity * (Number(item.purchasePrice) || 0);
                           const profit = financials.amountBeforeVat - buyingTotal;
+                          const supplierLabel = item.supplierName
+                            || suppliers.find(supplier => supplier.id === item.supplierId)?.supplierName
+                            || t('Chưa chọn');
                           const itemId = item.itemId || `${idx}`;
                           const layoutImages = Array.from(new Set([
                             ...(Array.isArray(item.previewImages) ? item.previewImages : []),
@@ -835,13 +844,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                                 <td>{item.unit || 'cái'}</td>
                                 <td style={{ textAlign: 'right' }}>{financials.quantity.toLocaleString()}</td>
                                 <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${financials.unitPrice.toLocaleString()} đ` : '—'}</td>
-                                <td>{item.supplierName || suppliers.find(supplier => supplier.id === item.supplierId)?.supplierName || t('Chưa chọn')}</td>
+                                <td><span className="po-supplier-name" title={supplierLabel}>{supplierLabel}</span></td>
                                 <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${financials.vatRate}%` : '—'}</td>
                                 <td>
                                   {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
                                     <div className="po-discount-editor po-discount-editor-readonly">
                                       <select
                                         value={financials.discountType}
+                                        title={financials.discountType === 'amount' ? t('Tiền chênh (VNĐ)') : t('Theo phần trăm')}
+                                        aria-label={t('Hình thức chiết khấu')}
                                         onChange={(e) => handleUpdateItemDiscount(idx, {
                                           discountType: e.target.value === 'amount' ? 'amount' : 'percent'
                                         })}
@@ -868,7 +879,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                                       : `${financials.discountRate}%`
                                   ) : '—'}
                                 </td>
-                                <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>
+                                <td className="po-money-cell">
                                   {canViewSaleFinancials ? `${Math.round(financials.amountWithVat).toLocaleString()} đ` : '—'}
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
@@ -886,7 +897,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                                         onClick={() => setPreviewImage(image)}
                                       />
                                     ))}
-                                    {layoutImages.length === 0 && <span>{t('Chưa có')}</span>}
+                                    {layoutImages.length === 0 && <span className="po-empty-value">{t('Chưa có')}</span>}
                                   </div>
                                 </td>
                               </tr>
@@ -1046,8 +1057,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     </table>
                   </div>
                   <div style={{ marginTop: '12px', padding: '12px 0 0 0', borderTop: '1px solid var(--color-border-light)', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                    <span>{t('Tổng giá trị đơn hàng (Net):')}</span>
-                    <span style={{ color: 'var(--color-primary)', fontSize: '15px' }}>{selectedPO.netAmount?.toLocaleString()} đ</span>
+                    <span>{t('Tổng giá trị đơn hàng (gồm VAT):')}</span>
+                    <span className="po-order-total-value">{Math.round(selectedPOTotalWithVat).toLocaleString()} đ</span>
                   </div>
                 </div>
 

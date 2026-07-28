@@ -327,18 +327,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     <thead>
                                       <tr>
                                         <th style={{ padding: '6px 8px' }}>STT</th>
-                                        <th style={{ padding: '6px 8px' }}>Mã Hàng</th>
-                                        <th style={{ padding: '6px 8px' }}>Tên Hàng</th>
-                                        <th style={{ padding: '6px 8px' }}>Quy Cách / Chất Liệu</th>
+                                        <th style={{ padding: '6px 8px' }}>Mã hàng</th>
+                                        <th style={{ padding: '6px 8px' }}>Tên hàng</th>
+                                        <th style={{ padding: '6px 8px' }}>Quy cách / Chất liệu</th>
                                         <th style={{ padding: '6px 8px' }}>ĐVT</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>SL</th>
-                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Đơn Giá</th>
-                                        <th style={{ padding: '6px 8px' }}>Nhà Cung Cấp</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Đơn giá</th>
+                                        <th style={{ padding: '6px 8px' }}>Nhà cung cấp</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thuế (%)</th>
-                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Chiết Khấu</th>
-                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành Tiền (gồm VAT)</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Chiết khấu</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành tiền (gồm VAT)</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>KPI PO</th>
-                                        <th style={{ padding: '6px 8px' }}>File Liên Quan</th>
+                                        <th style={{ padding: '6px 8px' }}>File liên quan</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -379,7 +379,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                     }}
                                                   />
                                                 ))}
-                                                {images.length === 0 && <span style={{ fontStyle: 'italic', fontSize: '11px', color: 'var(--color-text-muted)' }}>{t('Chưa có')}</span>}
+                                                {images.length === 0 && <span className="po-empty-value">{t('Chưa có')}</span>}
                                               </div>
                                             </td>
                                           </tr>

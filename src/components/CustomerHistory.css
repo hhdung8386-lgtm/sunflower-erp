@@ -488,8 +488,11 @@
 
 .po-items-card .po-inline-grid.po-items-overview-table,
 .po-sale-items-table {
-  min-width: 1570px;
+  min-width: 1620px;
   table-layout: fixed;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
 
 .po-items-card .po-inline-grid th {
@@ -500,7 +503,11 @@
   padding: 10px 8px;
   background: #eef3fb;
   color: #1e3a8a;
-  font-size: 11.5px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.005em;
   text-transform: none;
 }
 
@@ -508,6 +515,9 @@
   height: 54px;
   padding: 8px;
   vertical-align: middle;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 
 .po-items-card .po-grid-input {
@@ -515,6 +525,9 @@
   border: 1px solid transparent;
   border-radius: 5px;
   background: #f8fafc;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .po-items-card .po-grid-input:hover,
@@ -606,6 +619,22 @@
   box-shadow: 0 2px 7px rgba(15, 23, 42, 0.04);
 }
 
+.po-sale-items-table th {
+  padding: 10px 8px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.005em;
+}
+
+.po-sale-items-table td {
+  padding: 8px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 .po-sale-items-table th:nth-child(1) { width: 68px; text-align: center; }
 .po-sale-items-table th:nth-child(2) { width: 125px; }
 .po-sale-items-table th:nth-child(3) { width: 180px; }
@@ -613,9 +642,9 @@
 .po-sale-items-table th:nth-child(5) { width: 65px; }
 .po-sale-items-table th:nth-child(6) { width: 85px; text-align: right; }
 .po-sale-items-table th:nth-child(7) { width: 105px; text-align: right; }
-.po-sale-items-table th:nth-child(8) { width: 155px; }
+.po-sale-items-table th:nth-child(8) { width: 180px; }
 .po-sale-items-table th:nth-child(9) { width: 70px; text-align: right; }
-.po-sale-items-table th:nth-child(10) { width: 170px; }
+.po-sale-items-table th:nth-child(10) { width: 190px; }
 .po-sale-items-table th:nth-child(11) { width: 130px; text-align: right; }
 .po-sale-items-table th:nth-child(12) { width: 90px; text-align: center; }
 .po-sale-items-table th:nth-child(13) { width: 150px; }
@@ -633,12 +662,20 @@
 }
 
 .po-supplier-select {
-  font-size: 11px;
+  width: 100%;
+  padding: 7px 30px 7px 9px !important;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .po-discount-editor {
   display: grid;
-  grid-template-columns: minmax(82px, 1fr) 72px;
+  grid-template-columns: minmax(0, 1fr) 64px;
   gap: 4px;
   align-items: center;
 }
@@ -653,11 +690,13 @@
 .po-discount-mode,
 .po-discount-value {
   min-width: 0;
-  font-size: 10.5px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 .po-discount-editor-readonly {
-  grid-template-columns: minmax(72px, 1fr) 66px;
+  grid-template-columns: minmax(0, 1fr) 64px;
 }
 
 .po-discount-editor-readonly .po-discount-mode,
@@ -667,6 +706,54 @@
   border: 1px solid #cbd5e1;
   border-radius: 5px;
   background: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.po-items-card select.po-grid-input,
+.po-sale-items-table select.po-discount-mode {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.po-supplier-name {
+  display: block;
+  color: #1e293b;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.po-money-cell,
+.po-order-total-value {
+  color: var(--color-primary-dark);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.po-order-total-value {
+  color: var(--color-primary);
+  font-size: 15px;
+}
+
+.po-empty-value,
+.po-layout-thumbnails .po-empty-value {
+  color: #64748b;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .po-kpi-badge,

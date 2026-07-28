@@ -1093,18 +1093,18 @@ export default function POFormFullScreen({
                   <thead>
                     <tr>
                       <th style={{ width: '64px', textAlign: 'center' }}>STT</th>
-                      <th style={{ width: '130px' }}>{t('Mã Hàng')}</th>
-                      <th style={{ width: '180px' }}>{t('Tên Hàng *')}</th>
-                      <th style={{ width: '180px' }}>{t('Quy Cách / Chất Liệu')}</th>
+                      <th style={{ width: '130px' }}>{t('Mã hàng')}</th>
+                      <th style={{ width: '180px' }}>{t('Tên hàng *')}</th>
+                      <th style={{ width: '180px' }}>{t('Quy cách / Chất liệu')}</th>
                       <th style={{ width: '70px' }}>{t('ĐVT')}</th>
-                      <th style={{ width: '80px' }}>{t('Số Lượng')}</th>
-                      <th style={{ width: '95px' }}>{t('Đơn Giá')}</th>
-                      <th style={{ width: '150px' }}>{t('Nhà Cung Cấp')}</th>
+                      <th style={{ width: '80px' }}>{t('Số lượng')}</th>
+                      <th style={{ width: '95px' }}>{t('Đơn giá')}</th>
+                      <th style={{ width: '180px' }}>{t('Nhà cung cấp')}</th>
                       <th style={{ width: '65px' }}>{t('Thuế (%)')}</th>
-                      <th style={{ width: '170px' }}>{t('Chiết Khấu')}</th>
-                      <th style={{ width: '125px' }}>{t('Thành Tiền (gồm VAT)')}</th>
+                      <th style={{ width: '190px' }}>{t('Chiết khấu')}</th>
+                      <th style={{ width: '125px' }}>{t('Thành tiền (gồm VAT)')}</th>
                       <th style={{ width: '85px' }}>{t('KPI PO')}</th>
-                      <th style={{ width: '140px' }}>{t('File Liên Quan')}</th>
+                      <th style={{ width: '140px' }}>{t('File liên quan')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1115,6 +1115,9 @@ export default function POFormFullScreen({
                       const imagesList = item.previewImages || (item.previewImage ? [item.previewImage] : []);
                       const itemKey = item.itemId || String(index);
                       const isExpanded = expandedItemIds.includes(itemKey);
+                      const supplierLabel = item.supplierName
+                        || suppliers.find((supplier: any) => supplier.id === item.supplierId)?.supplierName
+                        || '';
 
                       return (
                         <React.Fragment key={itemKey}>
@@ -1241,6 +1244,7 @@ export default function POFormFullScreen({
                               className="po-grid-input po-supplier-select"
                               value={item.supplierId || ''}
                               onChange={(e) => handleUpdateRowField(index, 'supplierId', e.target.value)}
+                              title={supplierLabel || t('Chưa chọn nhà cung cấp')}
                             >
                               <option value="">{t('-- Chọn nhà cung cấp --')}</option>
                               {suppliers.map((supplier: any) => (
@@ -1265,13 +1269,15 @@ export default function POFormFullScreen({
                               <select
                                 className="po-grid-input po-discount-mode"
                                 value={financials.discountType}
+                                title={financials.discountType === 'amount' ? t('Tiền chênh (VNĐ)') : t('Theo phần trăm')}
+                                aria-label={t('Hình thức chiết khấu')}
                                 onChange={(e) => {
                                   const discountType = e.target.value === 'amount' ? 'amount' : 'percent';
                                   handleUpdateRowField(index, 'discountType', discountType);
                                 }}
                               >
-                                <option value="percent">{t('Theo phần trăm')}</option>
-                                <option value="amount">{t('Tiền chênh (VNĐ)')}</option>
+                                <option value="percent">%</option>
+                                <option value="amount">{t('Tiền chênh')}</option>
                               </select>
                               <input
                                 type="number"
@@ -1291,7 +1297,7 @@ export default function POFormFullScreen({
                               </span>
                             </div>
                           </td>
-                          <td style={{ fontWeight: 600, color: 'var(--color-primary-dark)', textAlign: 'right' }}>
+                          <td className="po-money-cell">
                             {Math.round(financials.amountWithVat).toLocaleString()} đ
                           </td>
                           <td style={{ textAlign: 'center' }}>
