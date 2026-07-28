@@ -33,6 +33,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     'Thiết Kế & Layout': 'Design & Layout',
     'Yêu Cầu Thiết Kế': 'Design Requests',
     'Kho Thiết Kế & Layout': 'Design & Layout Library',
+    'Kho Mẫu Thiết Kế': 'Design Library',
     'Mua Hàng & NCC': 'Purchasing & Suppliers',
     'Kho Nguyên Vật Tư': 'Material Inventory',
     'Lệnh Sản Xuất (LSX)': 'Production Commands',

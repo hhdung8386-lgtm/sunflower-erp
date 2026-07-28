@@ -16,11 +16,11 @@
 .design-status-metric,
 .design-metric-card {
   min-height: 82px;
-  border: 1px solid #d9e2f0;
+  border: 1px solid #d7e0ec;
   border-radius: 10px;
   background: #fff;
   color: #16213e;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+  box-shadow: 0 2px 5px rgb(15 23 42 / 5%);
 }
 
 .design-status-metric {
@@ -28,17 +28,20 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-top: 3px solid var(--status-color, #214296);
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.design-status-metric:hover,
+.design-status-metric:hover {
+  border-color: #b5c3d8;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 8%);
+  transform: translateY(-1px);
+}
+
 .design-status-metric.is-active {
   border-color: #214296;
-  box-shadow: 0 4px 14px rgb(33 66 150 / 12%);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px #214296, 0 4px 12px rgb(33 66 150 / 10%);
 }
 
 .design-status-metric span {
@@ -223,12 +226,80 @@
   background: #f7f9fc;
 }
 
+.design-workspace-overlay {
+  z-index: 1000;
+  padding: 24px;
+  background: rgb(15 23 42 / 48%);
+  backdrop-filter: blur(3px);
+}
+
+.design-workspace-modal {
+  width: min(1280px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  gap: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-color: #c8d4e4;
+  background: #f7f9fc;
+  box-shadow: 0 24px 64px rgb(15 23 42 / 24%);
+}
+
+.design-version-overlay {
+  z-index: 1100;
+}
+
 .design-workspace-header,
 .design-version-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.design-workspace-modal > .design-workspace-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 16px 20px;
+  border-bottom: 1px solid #dce4ef;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 5%);
+}
+
+.design-workspace-modal > .design-action-error {
+  margin: 14px 18px 0;
+}
+
+.design-workspace-modal > .design-workspace-grid {
+  margin: 16px 18px 0;
+}
+
+.design-workspace-modal > .design-history-card {
+  margin: 16px 18px 18px;
+}
+
+.design-workspace-header > div {
+  min-width: 0;
+}
+
+.design-workspace-header > div > span {
+  display: block;
+  margin-bottom: 3px;
+  color: #637088;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.design-workspace-header > div > strong {
+  display: block;
+  overflow: hidden;
+  color: #102b78;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .design-workspace-header h2 {
@@ -568,6 +639,27 @@
 }
 
 @media (max-width: 720px) {
+  .design-workspace-overlay {
+    padding: 8px;
+  }
+
+  .design-workspace-modal {
+    max-height: calc(100vh - 16px);
+    border-radius: 8px;
+  }
+
+  .design-workspace-modal > .design-workspace-header {
+    padding: 13px 14px;
+  }
+
+  .design-workspace-modal > .design-workspace-grid {
+    margin: 12px 10px 0;
+  }
+
+  .design-workspace-modal > .design-history-card {
+    margin: 12px 10px 10px;
+  }
+
   .design-request-toolbar,
   .design-workspace-header,
   .design-version-header {

@@ -174,6 +174,14 @@ export const Design: React.FC<DesignProps> = ({
     setActionError('');
   };
 
+  const closeRequest = () => {
+    setSelectedRequestId('');
+    setSelectedVersionNumber(null);
+    setStatusNote('');
+    setFeedbackText('');
+    setActionError('');
+  };
+
   const updatePODesignProgress = async (
     request: DesignRequest,
     updatedWorkStatus: DesignWorkStatus,
@@ -492,7 +500,6 @@ export const Design: React.FC<DesignProps> = ({
             type="button"
             key={status.value}
             className={`design-status-metric ${statusFilter === status.value ? 'is-active' : ''}`}
-            style={{ '--status-color': status.color, '--status-background': status.background } as React.CSSProperties}
             onClick={() => setStatusFilter(current => current === status.value ? 'all' : status.value)}
           >
             <strong>{status.count}</strong>
@@ -583,13 +590,24 @@ export const Design: React.FC<DesignProps> = ({
       </div>
 
       {selectedRequest && (
-        <div className="design-workspace">
+        <div
+          className="modal-overlay design-workspace-overlay"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget && !showVersionModal) closeRequest();
+          }}
+        >
+        <div
+          className="design-workspace design-workspace-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="design-workspace-title"
+        >
           <div className="design-workspace-header">
             <div>
-              <span>{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
+              <span id="design-workspace-title">{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
               <strong>{selectedRequest.requestCode} · {selectedRequest.customerReferenceCode || selectedRequest.poCode}</strong>
             </div>
-            <button className="btn btn-sm btn-outline" onClick={() => { setSelectedRequestId(''); setActionError(''); }}>{t('Đóng')}</button>
+            <button className="btn btn-sm btn-outline" onClick={closeRequest}>{t('Đóng')}</button>
           </div>
 
           {actionError && <div className="design-action-error"><AlertCircle size={16} /> {actionError}</div>}
@@ -733,10 +751,11 @@ export const Design: React.FC<DesignProps> = ({
             </div>
           </section>
         </div>
+        </div>
       )}
 
       {showVersionModal && selectedRequest && (
-        <div className="modal-overlay">
+        <div className="modal-overlay design-version-overlay">
           <div className="modal-content design-version-modal">
             <div className="modal-header">
               <span>{t('THÊM PHIÊN BẢN THIẾT KẾ')} · {selectedRequest.requestCode}</span>

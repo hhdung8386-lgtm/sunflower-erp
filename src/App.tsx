@@ -24,6 +24,7 @@ import {
   Palette, 
   ShoppingBag, 
   Archive, 
+  FolderOpen,
   Settings, 
   Truck, 
   DollarSign, 
@@ -627,9 +628,11 @@ function App() {
               <button
                 className={`sidebar-item ${activePage === 'design_library' ? 'active' : ''}`}
                 onClick={() => { setActivePage('design_library'); setIsSidebarOpen(false); }}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}
+                title={t('Kho Thiết Kế & Layout')}
               >
-                <Archive size={16} />
-                <span>{t('Kho Thiết Kế & Layout')}</span>
+                <FolderOpen size={16} style={{ flexShrink: 0 }} />
+                <span className="sidebar-item-label">{t('Kho Mẫu Thiết Kế')}</span>
               </button>
             </>
           )}
