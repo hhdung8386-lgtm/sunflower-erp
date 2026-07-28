@@ -16,6 +16,7 @@ import {
   subscribeMachines
 } from '../services/machineService';
 import { AlertTriangle, CalendarDays, FileSpreadsheet, Info, ListChecks, Pencil, Settings2, Trash2, X } from 'lucide-react';
+import { getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
 import './Production.css';
 
 interface ProductionProps {
@@ -95,7 +96,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
   useEffect(() => {
     // Auto select first PO if available
-    const activePOs = pos.filter(po => po.status === 'production_pending' || po.status === 'supplier_confirmed');
+    const activePOs = pos.filter(po => isPOInQueue(po, 'waiting_production'));
     if (activePOs.length > 0) {
       const firstPo = activePOs[0];
       setLinkedPoId(firstPo.id);
@@ -150,7 +151,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
   };
 
   const handleOpenAddLsx = () => {
-    const activePOs = pos.filter(po => po.status === 'production_pending' || po.status === 'supplier_confirmed');
+    const activePOs = pos.filter(po => isPOInQueue(po, 'waiting_production'));
     if (activePOs.length === 0) {
       alert('Không có đơn hàng nào ở trạng thái "Chờ sản xuất" hoặc "NCC xác nhận vật tư đủ" để lập lệnh!');
       return;
@@ -206,7 +207,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     const updatedLogs = [
       ...po.historyLogs,
       {
-        status: 'producing',
+        status: 'waiting_production',
         updatedBy: currentUser.displayName,
         updatedAt: new Date().toISOString(),
         note: `Phát hành Lệnh sản xuất ${lsxCode} giao phó thợ máy ${operatorName} đứng máy in ${machineId}.`
@@ -214,7 +215,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     ];
 
     await dbService.updateDocument('pos', po.id, {
-      status: 'producing',
+      ...getPOQueueUpdate('waiting_production', { productionProgress: 'producing' }),
       historyLogs: updatedLogs
     });
 
@@ -280,14 +281,14 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
           const updatedLogs = [
             ...po.historyLogs,
             {
-              status: 'supplier_confirmed',
+              status: 'waiting_production',
               updatedBy: currentUser.displayName,
               updatedAt: new Date().toISOString(),
               note: `Đã hủy lệnh sản xuất ${lsx.lsxCode}. Trạng thái PO quay lại chờ sản xuất.`
             }
           ];
           await dbService.updateDocument('pos', po.id, {
-            status: 'supplier_confirmed',
+            ...getPOQueueUpdate('waiting_production', { productionProgress: 'pending' }),
             historyLogs: updatedLogs
           });
         }
@@ -388,33 +389,32 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       updatedAt: now
     });
 
-    // Update PO status to "production_done"
+    // Advance the PO to the delivery queue. Detailed LSX/QC progress stays in
+    // productionProgress instead of expanding the primary PO status list.
     const po = pos.find(p => p.id === selectedLsx.poId);
     if (po) {
       const updatedLogs = [
         ...po.historyLogs,
         {
-          status: 'production_done',
+          status: 'waiting_production',
           updatedBy: currentUser.displayName,
           updatedAt: now,
-          note: `Lệnh sản xuất ${selectedLsx.lsxCode} hoàn thành. Số lượng in phế phẩm hao hụt: ${scrapQty}. Chuyển QC.`
+          note: `Lệnh sản xuất ${selectedLsx.lsxCode} hoàn thành. Số lượng in phế phẩm hao hụt: ${scrapQty}.`
         },
         {
-          status: 'qc_passed',
-          updatedBy: 'Hệ thống QC (Tự động)',
+          status: 'waiting_delivery',
+          updatedBy: 'Hệ thống sản xuất',
           updatedAt: now,
-          note: 'QC kiểm tra đạt tiêu chuẩn chất lượng tem nhãn. Chuyển đóng gói.'
-        },
-        {
-          status: 'packed',
-          updatedBy: 'Kho đóng gói (Tự động)',
-          updatedAt: now,
-          note: 'Đơn hàng đóng thùng, dán nhãn giao hàng. Sẵn sàng chờ xe giao.'
+          note: 'QC đạt, đã đóng gói và chuyển sang hàng chờ giao cho khách.'
         }
       ];
 
       await dbService.updateDocument('pos', po.id, {
-        status: 'packed', // Advance straight to packed ready for delivery dispatching!
+        ...getPOQueueUpdate('waiting_delivery', {
+          deliveryStage: 'customer_outbound',
+          productionProgress: 'completed',
+          deliveryProgress: 'pending'
+        }),
         historyLogs: updatedLogs
       });
     }
@@ -477,7 +477,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       const updatedLogs = [
         ...po.historyLogs,
         {
-          status: 'producing',
+          status: 'waiting_production',
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
           note: `Thợ máy đề xuất chuyển lệnh sản xuất ${selectedLsx.lsxCode} sang thợ ${targetOp.displayName}. Lý do: ${transferReason}`
@@ -502,7 +502,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       const updatedLogs = [
         ...po.historyLogs,
         {
-          status: 'producing',
+          status: 'waiting_production',
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
           note: `Duyệt chuyển lệnh sản xuất ${lsx.lsxCode} từ thợ ${lsx.operatorName} sang thợ ${lsx.proposedOperatorName}. Lý do: ${lsx.transferReason}`
@@ -533,7 +533,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       const updatedLogs = [
         ...po.historyLogs,
         {
-          status: 'producing',
+          status: 'waiting_production',
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
           note: `Từ chối chuyển lệnh sản xuất ${lsx.lsxCode} của thợ ${lsx.operatorName}. Lệnh tiếp tục chạy.`
@@ -890,7 +890,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                     }} 
                     required
                   >
-                    {pos.filter(po => po.status === 'production_pending' || po.status === 'supplier_confirmed').map(po => (
+                    {pos.filter(po => isPOInQueue(po, 'waiting_production')).map(po => (
                       <option key={po.id} value={po.id}>{po.poCode} - {po.customerName} ({po.items?.[0]?.productName})</option>
                     ))}
                   </select>

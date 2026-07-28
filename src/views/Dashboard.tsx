@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
-import { BarChart, DonutChart } from '../components/VisualCharts';
+import { BarChart } from '../components/VisualCharts';
+import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { 
   ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
   AlertCircle, Calendar, User, DollarSign, Sliders, 
   BarChart2, PieChart, Bell, Eye, Pencil, MessageSquare, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { PO_STATES } from './Sales';
+import {
+  getPOBadgeClass,
+  getPOHistoryStatusLabel,
+  getPOQueueLabel,
+  getPOQueueStatus,
+  getPOQueueUpdate,
+  isPOCompleted,
+  isPOInQueue,
+  PO_QUEUE_STATES,
+  POQueueStatus
+} from '../domain/poWorkflow';
 
 interface DashboardProps {
   user: UserProfile;
@@ -19,6 +30,7 @@ interface DashboardProps {
   deliveries: any[];
   invoices: any[];
   onNavigate: (page: string) => void;
+  onOpenPO: (poId: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -30,7 +42,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   productionCommands,
   deliveries,
   invoices,
-  onNavigate
+  onNavigate,
+  onOpenPO
 }) => {
   const { t } = useLanguage();
 
@@ -51,7 +64,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [endDate, setEndDate] = useState<string>('');
 
   // Drill-down sub-view state
-  const [selectedProgressCategory, setSelectedProgressCategory] = useState<string | null>(null);
+  const [selectedProgressCategory, setSelectedProgressCategory] = useState<POQueueStatus | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -97,7 +110,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const filteredDeliveries = activeDeliveriesList.filter(del => matchesTimeframe(del.deliveryDate || del.createdAt));
 
   // Calculations helper
-  const activePOs = filteredPOs.filter(po => !['delivered', 'debt_collected', 'discounted'].includes(po.status));
+  const activePOs = filteredPOs.filter(po => !isPOCompleted(po));
   
   // CSKH: Customers with lastOrderAt older than 30 days
   const today = new Date();
@@ -125,27 +138,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const lowStockMaterials = activeInventoryList.filter(item => item.qtyInStock < item.minQtyAlert);
 
   // Category filters mapping for clicking
-  const getCategoryPOs = (category: string) => {
-    switch(category) {
-      case 'receive_po':
-        return filteredPOs.filter(p => p.status === 'receive_po');
-      case 'design':
-        return filteredPOs.filter(p => ['design_sent', 'layout_pending', 'bom_extracted'].includes(p.status));
-      case 'production':
-        return filteredPOs.filter(p => ['supplier_ordered', 'supplier_confirmed', 'production_pending', 'producing', 'production_done', 'qc_passed', 'packed'].includes(p.status));
-      case 'delivery':
-        return filteredPOs.filter(p => ['delivering', 'delivered', 'invoiced', 'debt_collected'].includes(p.status));
-      default:
-        return [];
-    }
-  };
+  const getCategoryPOs = (category: POQueueStatus) => filteredPOs.filter(po => isPOInQueue(po, category));
 
-  const categoryLabels: { [key: string]: string } = {
-    receive_po: t('Mới Nhận PO'),
-    design: t('Đang Thiết Kế'),
-    production: t('Đang Sản Xuất'),
-    delivery: t('Đã Giao Hàng & Thu Nợ')
-  };
+  const categoryLabels = Object.fromEntries(
+    PO_QUEUE_STATES.map(state => [state.value, t(state.label)])
+  ) as Record<POQueueStatus, string>;
 
   // Reminder managers
   const handleAddReminderSubmit = async (poId: string, poCode: string) => {
@@ -190,7 +187,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const handleUpdateStatus = async (poId: string, status: string) => {
+  const handleUpdateStatus = async (poId: string, status: POQueueStatus) => {
     try {
       const targetPo = pos.find(p => p.id === poId);
       if (!targetPo) return;
@@ -201,16 +198,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
           status,
           updatedBy: user.displayName,
           updatedAt: new Date().toISOString(),
-          note: `Thay đổi trạng thái từ Bảng Điều Khiển sang: ${PO_STATES.find(s => s.value === status)?.label}`
+          note: `Thay đổi hàng đợi từ Bảng Điều Khiển sang: ${getPOQueueLabel(status)}`
         }
       ];
 
       await dbService.updateDocument('pos', poId, {
-        status,
+        ...getPOQueueUpdate(status, status === 'waiting_delivery'
+          ? { deliveryStage: targetPo.deliveryStage || 'customer_outbound' }
+          : {}),
         updatedBy: `${user.displayName} (${user.role.toUpperCase()})`,
         updatedAt: new Date().toISOString(),
         historyLogs: updatedLogs
       });
+      if (status === 'waiting_receivable') {
+        await ensureReceivableInvoice(targetPo, `${user.displayName} (${user.role.toUpperCase()})`);
+      }
       alert(t('Cập nhật trạng thái thành công!'));
     } catch (err) {
       console.error(err);
@@ -256,6 +258,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <th style={{ textAlign: 'right' }}>{t('Tổng Tiền (gồm VAT)')}</th>
                   <th>{t('Trạng Thái Hiện Tại')}</th>
                   <th>{t('Người Phụ Trách')}</th>
+                  <th>{t('Thao Tác')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,20 +281,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <td>{po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : ''}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{(po.netAmount || po.totalAmount || 0).toLocaleString()} đ</td>
                         <td>
-                          <span className={`badge ${
-                            po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
-                            ['design_sent', 'layout_pending'].includes(po.status) ? 'badge-warning' :
-                            ['producing', 'production_done'].includes(po.status) ? 'badge-info' : 'badge-primary'
-                          }`}>
-                            {PO_STATES.find(s => s.value === po.status)?.label || po.status}
+                          <span className={`badge ${getPOBadgeClass(po)}`}>
+                            {t(getPOQueueLabel(po))}
                           </span>
                         </td>
                         <td>{po.createdBy || t('Không rõ')}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpenPO(po.id);
+                            }}
+                          >
+                            {t('Mở PO')}
+                          </button>
+                        </td>
                       </tr>
 
                       {isExpanded && (
                         <tr>
-                          <td colSpan={8} style={{ padding: '20px', backgroundColor: '#f8fafc', borderBottom: '2px solid var(--color-border)' }}>
+                          <td colSpan={9} style={{ padding: '20px', backgroundColor: '#f8fafc', borderBottom: '2px solid var(--color-border)' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }} className="po-details-expand-grid">
                               {/* Left: Items list & Calculations */}
                               <div>
@@ -372,11 +383,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'white', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--color-border-light)' }}>
                                     <span style={{ fontSize: '13px', fontWeight: 600 }}>{t('Cập nhật nhanh trạng thái PO:')}</span>
                                     <select 
-                                      value={po.status} 
-                                      onChange={(e) => handleUpdateStatus(po.id, e.target.value)}
+                                      value={getPOQueueStatus(po)}
+                                      onChange={(e) => handleUpdateStatus(po.id, e.target.value as POQueueStatus)}
                                       style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--color-border)' }}
                                     >
-                                      {PO_STATES.map(state => (
+                                      {PO_QUEUE_STATES.map(state => (
                                         <option key={state.value} value={state.value}>{state.label}</option>
                                       ))}
                                     </select>
@@ -452,7 +463,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                                 </div>
 
-                                {/* VERTICAL TIMELINE OF 15 STATES */}
+                                {/* Compact queue timeline; legacy log labels remain readable. */}
                                 <div style={{ backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '14px' }}>
                                   <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-dark)', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <Clock size={14} />
@@ -465,7 +476,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                         <div className="timeline-marker" style={{ width: '8px', height: '8px', top: '4px' }}></div>
                                         <div className="timeline-content" style={{ marginLeft: '16px' }}>
                                           <span className="timeline-title" style={{ fontSize: '12px', fontWeight: 700 }}>
-                                            {PO_STATES.find(s => s.value === log.status)?.label || log.status}
+                                            {t(getPOHistoryStatusLabel(log.status))}
                                           </span>
                                           <span className="timeline-date" style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'block' }}>
                                             {new Date(log.updatedAt).toLocaleString('vi-VN')} - {t('Nhân sự:')} {log.updatedBy}
@@ -624,24 +635,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {user.role === 'admin' && (
         <>
           <div className="metrics-grid">
-            <div className="metric-card">
+            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #059669' }}>
               <span className="metric-title">{t('DOANH THU ĐÃ THU')}</span>
-              <span className="metric-value">{totalRevenue.toLocaleString()} đ</span>
+              <span className="metric-value" style={{ color: '#047857' }}>{totalRevenue.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Từ các hóa đơn đã thanh toán')}</span>
             </div>
-            <div className="metric-card">
+            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #dc2626' }}>
               <span className="metric-title">{t('CÔNG NỢ PHẢI THU (AR)')}</span>
               <span className="metric-value" style={{ color: 'var(--color-danger)' }}>{arDebt.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Khách hàng chưa thanh toán hết')}</span>
             </div>
-            <div className="metric-card">
+            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #d97706' }}>
               <span className="metric-title">{t('CÔNG NỢ PHẢI TRẢ (AP)')}</span>
               <span className="metric-value" style={{ color: 'var(--color-warning)' }}>{apDebt.toLocaleString()} đ</span>
               <span className="metric-sub">{t('Phải trả nhà cung cấp vật tư')}</span>
             </div>
-            <div className="metric-card">
+            <div className="metric-card" style={{ backgroundColor: '#ffffff', borderTop: '3px solid #2563eb' }}>
               <span className="metric-title">{t('ĐƠN ĐANG XỬ LÝ')}</span>
-              <span className="metric-value">{activePOs.length} {t('đơn')}</span>
+              <span className="metric-value" style={{ color: '#1d4ed8' }}>{activePOs.length} {t('đơn')}</span>
               <span className="metric-sub">{t('Tổng số PO chưa hoàn thành')}</span>
             </div>
           </div>
@@ -683,71 +694,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             <div className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-header">
-                <span className="card-title">{t('Tiến Độ Các Đơn Hàng PO Hiện Tại')}</span>
+                <span className="card-title">{t('Hàng Đợi Xử Lý PO')}</span>
               </div>
-              
-              <div style={{ display: 'flex', gap: '20px', flex: 1, alignItems: 'center' }} className="po-donut-row-interactive">
-                {/* Visual Donut Chart */}
-                <div style={{ flex: 1.2, maxWidth: '240px' }}>
-                  <DonutChart 
-                    data={[
-                      { label: t('Mới Nhận PO'), value: filteredPOs.filter(p => p.status === 'receive_po').length, color: '#94a3b8' },
-                      { label: t('Đang Thiết Kế'), value: filteredPOs.filter(p => ['design_sent', 'layout_pending'].includes(p.status)).length, color: '#f59e0b' },
-                      { label: t('Đang Sản Xuất'), value: filteredPOs.filter(p => ['production_pending', 'producing'].includes(p.status)).length, color: '#3b82f6' },
-                      { label: t('Đã Giao Hàng'), value: filteredPOs.filter(p => ['delivered', 'debt_collected'].includes(p.status)).length, color: '#10b981' }
-                    ]} 
-                  />
-                </div>
-
-                {/* Clickable cards legend replacement */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(() => {
-                    const totalPoCount = filteredPOs.length || 1;
-                    const items = [
-                      { key: 'receive_po', label: t('Mới Nhận PO'), count: filteredPOs.filter(p => p.status === 'receive_po').length, bg: '#e2e8f0', text: '#475569', color: '#94a3b8' },
-                      { key: 'design', label: t('Đang Thiết Kế'), count: filteredPOs.filter(p => ['design_sent', 'layout_pending', 'bom_extracted'].includes(p.status)).length, bg: '#fef3c7', text: '#b45309', color: '#f59e0b' },
-                      { key: 'production', label: t('Đang Sản Xuất'), count: filteredPOs.filter(p => ['supplier_ordered', 'supplier_confirmed', 'production_pending', 'producing', 'production_done', 'qc_passed', 'packed'].includes(p.status)).length, bg: '#dbeafe', text: '#1d4ed8', color: '#3b82f6' },
-                      { key: 'delivery', label: t('Đã Giao Hàng'), count: filteredPOs.filter(p => ['delivering', 'delivered', 'invoiced', 'debt_collected'].includes(p.status)).length, bg: '#d1fae5', text: '#047857', color: '#10b981' }
-                    ];
-
-                    return items.map(item => {
-                      const percent = Math.round((item.count / totalPoCount) * 100);
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => setSelectedProgressCategory(item.key)}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            border: `1px solid ${item.color}`,
-                            backgroundColor: item.bg,
-                            color: item.text,
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            textAlign: 'left',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
-                          }}
-                          className="po-progress-card-btn"
-                          title={t('Click để xem danh sách đơn hàng chi tiết')}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
-                            <span>{item.label}</span>
-                          </div>
-                          <span>
-                            {item.count} ({percent}%)
-                          </span>
-                        </button>
-                      );
-                    });
-                  })()}
-                </div>
+              <div
+                style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', flex: 1 }}
+                className="po-donut-row-interactive"
+              >
+                {PO_QUEUE_STATES.filter(state => state.value !== 'completed').map(state => {
+                  const count = filteredPOs.filter(po => isPOInQueue(po, state.value)).length;
+                  return (
+                    <button
+                      key={state.value}
+                      type="button"
+                      onClick={() => setSelectedProgressCategory(state.value)}
+                      className="po-progress-card-btn"
+                      title={t('Click để xem danh sách đơn hàng chi tiết')}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        border: `1px solid ${state.color}55`,
+                        borderLeft: `4px solid ${state.color}`,
+                        backgroundColor: '#ffffff',
+                        color: '#1f2937',
+                        cursor: 'pointer',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        textAlign: 'left'
+                      }}
+                    >
+                      <span>{t(state.label)}</span>
+                      <strong style={{ color: state.color, fontSize: '18px' }}>{count}</strong>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -844,7 +826,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="metric-card">
               <span className="metric-title">{t('Đơn Chờ Khách Duyệt Màu')}</span>
               <span className="metric-value" style={{ color: 'var(--color-warning)' }}>
-                {filteredPOs.filter(po => po.saleId === user.uid && po.status === 'layout_pending').length} {t('đơn')}
+                {filteredPOs.filter(po => (
+                  po.saleId === user.uid &&
+                  isPOInQueue(po, 'waiting_design') &&
+                  (po.designProgress === 'customer_approval_pending' || po.status === 'layout_pending')
+                )).length} {t('đơn')}
               </span>
               <span className="metric-sub">{t('Cần đôn đốc khách chốt')}</span>
             </div>
@@ -862,9 +848,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="card-title">{t('Theo Dõi Tiến Độ Đơn Hàng PO Gần Đây')}</span>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {/* Visual navigation category buttons */}
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('receive_po')}>{t('Mới Nhận PO')}</button>
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('design')}>{t('Đang Thiết Kế')}</button>
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Đang Sản Xuất')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_design')}>{t('Chờ thiết kế')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_production')}>{t('Chờ sản xuất')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_delivery')}>{t('Chờ giao')}</button>
                 <button type="button" className="btn btn-sm btn-primary" onClick={() => onNavigate('sales')}>{t('Tạo đơn hàng mới')}</button>
               </div>
             </div>
@@ -887,10 +873,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <td>{new Date(po.orderDate).toLocaleDateString('vi-VN')}</td>
                       <td>{po.netAmount.toLocaleString()} đ</td>
                       <td>
-                        <span className={`badge ${
-                          po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
-                          ['producing', 'production_done'].includes(po.status) ? 'badge-info' : 'badge-warning'
-                        }`}>{PO_STATES.find(s => s.value === po.status)?.label || po.status.toUpperCase()}</span>
+                        <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
                       </td>
                     </tr>
                   ))}
@@ -908,21 +891,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="metric-card">
               <span className="metric-title">{t('Đơn Chờ Thiết Kế')}</span>
               <span className="metric-value" style={{ color: 'var(--color-danger)' }}>
-                {filteredPOs.filter(po => po.status === 'receive_po').length} {t('đơn')}
+                {filteredPOs.filter(po => (
+                  isPOInQueue(po, 'waiting_design') && !['customer_approval_pending', 'revision_requested'].includes(po.designProgress)
+                )).length} {t('đơn')}
               </span>
               <span className="metric-sub">{t('Yêu cầu thiết kế mới từ Sale')}</span>
             </div>
             <div className="metric-card">
               <span className="metric-title">{t('Đơn Đang Gửi Duyệt')}</span>
               <span className="metric-value" style={{ color: 'var(--color-warning)' }}>
-                {filteredPOs.filter(po => po.status === 'design_sent' || po.status === 'layout_pending').length} {t('đơn')}
+                {filteredPOs.filter(po => (
+                  isPOInQueue(po, 'waiting_design') &&
+                  (['customer_approval_pending', 'revision_requested'].includes(po.designProgress) || ['design_sent', 'layout_pending'].includes(po.status))
+                )).length} {t('đơn')}
               </span>
               <span className="metric-sub">{t('Đang chờ khách duyệt layout/màu')}</span>
             </div>
             <div className="metric-card">
               <span className="metric-title">{t('Thiết Kế Đã Duyệt Chốt')}</span>
               <span className="metric-value" style={{ color: 'var(--color-success)' }}>
-                {filteredPOs.filter(po => !['receive_po', 'design_sent', 'layout_pending'].includes(po.status)).length} {t('đơn')}
+                {filteredPOs.filter(po => !isPOInQueue(po, 'waiting_design')).length} {t('đơn')}
               </span>
               <span className="metric-sub">{t('Đã bàn giao để mua hàng/sản xuất')}</span>
             </div>
@@ -932,7 +920,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('Nhiệm Vụ Thiết Kế Chờ Xử Lý')}</span>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('design')}>{t('Đơn Đang Thiết Kế')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_design')}>{t('Đơn Chờ Thiết Kế')}</button>
                 <button className="btn btn-sm btn-primary" onClick={() => onNavigate('design')}>{t('Vào trang thiết kế')}</button>
               </div>
             </div>
@@ -947,7 +935,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPOs.filter(po => po.status === 'receive_po').map(po => (
+                  {filteredPOs.filter(po => isPOInQueue(po, 'waiting_design')).map(po => (
                     <tr key={po.id}>
                       <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                       <td>{po.items.map((i: any) => i.productName).join(', ')}</td>
@@ -955,7 +943,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <td style={{ color: 'var(--color-text-muted)' }}>{po.notes}</td>
                     </tr>
                   ))}
-                  {filteredPOs.filter(po => po.status === 'receive_po').length === 0 && (
+                  {filteredPOs.filter(po => isPOInQueue(po, 'waiting_design')).length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>{t('Tất cả các đơn đã hoàn thành thiết kế!')}</td>
                     </tr>
@@ -1026,7 +1014,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="card-title">{t('Đơn Mua Hàng Gần Đây')}</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Theo dõi hàng PO')}</button>
+                  <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_delivery')}>{t('Theo dõi hàng PO')}</button>
                   <button className="btn btn-sm btn-primary" onClick={() => onNavigate('purchase')}>{t('Mua Vật Tư')}</button>
                 </div>
               </div>
@@ -1075,7 +1063,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="metric-card">
               <span className="metric-title">{t('Đơn Chờ Sản Xuất')}</span>
               <span className="metric-value" style={{ color: 'var(--color-warning)' }}>
-                {filteredPOs.filter(po => po.status === 'production_pending').length} {t('đơn')}
+                {filteredPOs.filter(po => isPOInQueue(po, 'waiting_production')).length} {t('đơn')}
               </span>
               <span className="metric-sub">{t('Đã duyệt layout, đủ vật tư')}</span>
             </div>
@@ -1092,7 +1080,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('Tiến Độ Lệnh Sản Xuất Hiện Tại')}</span>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('production')}>{t('Theo dõi hàng PO')}</button>
+                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_production')}>{t('Theo dõi hàng PO')}</button>
                 <button className="btn btn-sm btn-primary" onClick={() => onNavigate('production')}>{t('Vào Xưởng')}</button>
               </div>
             </div>

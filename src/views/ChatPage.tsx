@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { getPOQueueLabel } from '../domain/poWorkflow';
 import { Plus } from 'lucide-react';
 
 interface ChatPageProps {
@@ -219,7 +220,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           return (
             <div key={po.id} className="chat-task-card">
               <span className="chat-task-card-title">{t('Đơn Hàng')} {poCode}</span>
-              <span className="chat-task-card-desc">{po.customerName} - {po.items?.[0]?.productName || t('Tem Nhãn')} ({po.status.replace('_', ' ').toUpperCase()})</span>
+              <span className="chat-task-card-desc">{po.customerName} - {po.items?.[0]?.productName || t('Tem Nhãn')} ({t(getPOQueueLabel(po))})</span>
               <button 
                 type="button" 
                 className="chat-task-card-btn"

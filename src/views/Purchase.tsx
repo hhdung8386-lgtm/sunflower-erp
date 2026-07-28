@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { Plus, Trash2, Pencil, X, Download, FileSpreadsheet } from 'lucide-react';
+import { getPOQueueUpdate, isPOCompleted } from '../domain/poWorkflow';
 
 interface PurchaseProps {
   pos: any[];
@@ -409,14 +410,17 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
       const updatedLogs = [
         ...linkedPo.historyLogs,
         {
-          status: 'supplier_ordered',
+          status: 'waiting_delivery',
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
           note: `Đã đặt mua vật tư (${materialName} x ${quantity} ${unit}) của nhà cung cấp: ${supplier?.supplierName}`
         }
       ];
       await dbService.updateDocument('pos', linkedPo.id, {
-        status: 'supplier_ordered',
+        ...getPOQueueUpdate('waiting_delivery', {
+          deliveryStage: 'supplier_inbound',
+          purchaseProgress: 'supplier_ordered'
+        }),
         historyLogs: updatedLogs
       });
     }
@@ -485,14 +489,18 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
           const updatedLogs = [
             ...po.historyLogs,
             {
-              status: 'supplier_confirmed',
+              status: 'waiting_production',
               updatedBy: currentUser.displayName,
               updatedAt: new Date().toISOString(),
               note: `Nguyên vật liệu đã về kho (${pur.items.map((i: any) => i.materialName).join(', ')}). Sẵn sàng chuyển lệnh in.`
             }
           ];
           await dbService.updateDocument('pos', po.id, {
-            status: 'supplier_confirmed',
+            ...getPOQueueUpdate('waiting_production', {
+              deliveryStage: '',
+              purchaseProgress: 'materials_received',
+              productionProgress: 'pending'
+            }),
             historyLogs: updatedLogs
           });
         }
@@ -779,7 +787,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
                   <select value={linkedPoId} onChange={e => setLinkedPoId(e.target.value)}>
                     <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
-                    {pos.filter(p => !['delivered', 'debt_collected'].includes(p.status)).map(po => (
+                    {pos.filter(p => !isPOCompleted(p)).map(po => (
                       <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
                     ))}
                   </select>
@@ -956,7 +964,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                   <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
                   <select value={editLinkedPoId} onChange={e => setEditLinkedPoId(e.target.value)}>
                     <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
-                    {pos.filter(p => !['delivered', 'debt_collected'].includes(p.status)).map(po => (
+                    {pos.filter(p => !isPOCompleted(p)).map(po => (
                       <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
                     ))}
                   </select>

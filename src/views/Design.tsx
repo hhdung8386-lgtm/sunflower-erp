@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
-import { PO_STATES } from './Sales';
+import { getPOQueueLabel, getPOQueueUpdate } from '../domain/poWorkflow';
 import { useLanguage } from '../context/LanguageContext';
 import { ApprovedDesignLibrary } from '../components/ApprovedDesignLibrary';
 import { Library, ListChecks, Plus, Trash2, Pencil } from 'lucide-react';
@@ -119,14 +119,16 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
         const updatedLogs = [
           ...po.historyLogs,
           {
-            status: nextVersionNumber === 0 ? 'receive_po' : 'design_sent',
+            status: 'waiting_design',
             updatedBy: currentUser.displayName,
             updatedAt: new Date().toISOString(),
             note: `Xóa phiên bản thiết kế v${selectedDesign.currentVersion} bởi ${currentUser.displayName}.`
           }
         ];
         await dbService.updateDocument('pos', po.id, {
-          status: nextVersionNumber === 0 ? 'receive_po' : 'design_sent',
+          ...getPOQueueUpdate('waiting_design', {
+            designProgress: nextVersionNumber === 0 ? 'request_pending' : 'customer_approval_pending'
+          }),
           historyLogs: updatedLogs
         });
       }
@@ -264,7 +266,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       const updatedLogs = [
         ...po.historyLogs,
         {
-          status: 'design_sent',
+          status: 'waiting_design',
           updatedBy: currentUser.displayName,
           updatedAt: new Date().toISOString(),
           note: `Upload bản thiết kế v${nextVersionNumber} - Chờ duyệt màu.`
@@ -276,7 +278,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
         corelLink: newCorelLink || po.links?.corelLink || ''
       };
       await dbService.updateDocument('pos', po.id, {
-        status: 'design_sent',
+        ...getPOQueueUpdate('waiting_design', { designProgress: 'customer_approval_pending' }),
         historyLogs: updatedLogs,
         links: updatedLinks
       });
@@ -319,7 +321,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
     // Update the PO status
     const po = pos.find(p => p.id === selectedDesign.poId);
     if (po) {
-      const nextPOStatus = approved ? 'production_pending' : 'layout_pending';
+      const nextPOStatus = approved ? 'waiting_production' : 'waiting_design';
       const updatedLogs = [
         ...po.historyLogs,
         {
@@ -345,7 +347,10 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
       };
 
       await dbService.updateDocument('pos', po.id, {
-        status: nextPOStatus,
+        ...getPOQueueUpdate(nextPOStatus, {
+          designProgress: approved ? 'approved' : 'revision_requested',
+          productionProgress: approved ? 'pending' : po.productionProgress || ''
+        }),
         historyLogs: updatedLogs,
         items: updatedItems,
         links: updatedLinks
@@ -536,7 +541,7 @@ export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) =
                         {t('Phiên bản')} v{activeVer.versionNumber}
                       </span>
                       <span className="badge badge-info">
-                        {t('Trạng Thái')}: {t(PO_STATES.find((s: any) => s.value === pos.find((p: any) => p.id === selectedDesign.poId)?.status)?.label || '')}
+                        {t('Trạng Thái')}: {t(getPOQueueLabel(pos.find((p: any) => p.id === selectedDesign.poId)))}
                       </span>
                     </div>
                     {(currentUser.role === 'admin' || currentUser.role === 'designer') && activeVer.versionNumber === selectedDesign.currentVersion && (

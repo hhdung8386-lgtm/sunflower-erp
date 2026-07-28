@@ -3,6 +3,16 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
 import POFormFullScreen from '../components/POFormFullScreen';
+import { ensureReceivableInvoice } from '../services/poWorkflowService';
+import {
+  getPOBadgeClass,
+  getPOHistoryStatusLabel,
+  getPOQueueLabel,
+  getPOQueueStatus,
+  getPOQueueUpdate,
+  PO_QUEUE_STATES,
+  POQueueStatus
+} from '../domain/poWorkflow';
 import { 
   Plus, 
   Trash2, 
@@ -26,25 +36,6 @@ interface SalesProps {
   messages: any[];
   users: UserProfile[];
 }
-
-// The 15 standard states from the requirements document
-export const PO_STATES = [
-  { value: 'receive_po', label: 'Đã nhận PO' },
-  { value: 'bom_extracted', label: 'Đã bóc tách NVL' },
-  { value: 'design_sent', label: 'Đã gửi thiết kế' },
-  { value: 'layout_pending', label: 'Chờ khách duyệt' },
-  { value: 'supplier_ordered', label: 'Đã đặt hàng NCC' },
-  { value: 'supplier_confirmed', label: 'NCC xác nhận' },
-  { value: 'production_pending', label: 'Chờ sản xuất' },
-  { value: 'producing', label: 'Đang sản xuất' },
-  { value: 'production_done', label: 'Sản xuất xong' },
-  { value: 'qc_passed', label: 'QC hoàn thành' },
-  { value: 'packed', label: 'Đã đóng gói' },
-  { value: 'delivering', label: 'Đang giao hàng' },
-  { value: 'delivered', label: 'Khách đã nhận' },
-  { value: 'invoiced', label: 'Đã xuất hóa đơn' },
-  { value: 'debt_collected', label: 'Đã thu công nợ' }
-];
 
 export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, initialRepeatPoId, onRepeatOrderOpened, messages, users }) => {
   const { t } = useLanguage();
@@ -416,7 +407,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         } : null);
       }
 
-      const initialStatus = reusableVersion ? 'layout_pending' : 'receive_po';
+      const initialStatus: POQueueStatus = 'waiting_design';
       const newItems = poData.items.map((item: any, index: number) => index === 0 && reusableVersion
         ? {
             ...item,
@@ -437,6 +428,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         orderDate: new Date().toISOString(),
         expectedDeliveryDate: poData.expectedDeliveryDate,
         status: initialStatus,
+        workflowVersion: 2,
+        designProgress: reusableVersion ? 'customer_approval_pending' : 'request_pending',
         items: newItems,
         assignments: poData.assignments || [],
         totalAmount: poData.totalAmount,
@@ -504,41 +497,40 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     onRefresh();
   };
 
-  const updatePOStatus = async (poId: string, newStatus: string) => {
+  const updatePOStatus = async (poId: string, newStatus: POQueueStatus) => {
     const po = pos.find(p => p.id === poId);
     if (!po) return;
 
     const updatedLogs = [
-      ...po.historyLogs,
+      ...(po.historyLogs || []),
       {
         status: newStatus,
         updatedBy: currentUser.displayName,
         updatedAt: new Date().toISOString(),
-        note: `Cập nhật trạng thái đơn hàng sang: ${PO_STATES.find(s => s.value === newStatus)?.label}`
+        note: `Cập nhật hàng đợi đơn hàng sang: ${getPOQueueLabel(newStatus)}`
       }
     ];
 
+    const queueExtras = newStatus === 'waiting_delivery'
+      ? { deliveryStage: po.deliveryStage || 'customer_outbound' }
+      : {};
+
     await dbService.updateDocument('pos', poId, {
-      status: newStatus,
+      ...getPOQueueUpdate(newStatus, queueExtras),
       historyLogs: updatedLogs
     });
 
-    // If status is "delivered", also create invoice automatically
-    if (newStatus === 'delivered') {
-      const invoiceCode = `INV-${po.poCode.replace('PO-','')}`;
-      await dbService.addDocument('invoices', {
-        invoiceCode,
-        poId: po.id,
-        customerId: po.customerId,
-        type: 'receivable',
-        amount: po.netAmount,
-        paidAmount: 0,
-        status: 'unpaid',
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      });
+    // Entering the receivable queue means the sales invoice has been issued.
+    // Create a receivable only when none exists, preventing duplicate invoices.
+    if (newStatus === 'waiting_receivable') {
+      await ensureReceivableInvoice(po, `${currentUser.displayName} (${currentUser.role.toUpperCase()})`);
     }
 
-    setSelectedPO((prev: any) => prev ? { ...prev, status: newStatus, historyLogs: updatedLogs } : null);
+    setSelectedPO((prev: any) => prev ? {
+      ...prev,
+      ...getPOQueueUpdate(newStatus, queueExtras),
+      historyLogs: updatedLogs
+    } : null);
     onRefresh();
   };
 
@@ -560,7 +552,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : '',
       po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : '',
       po.netAmount,
-      t(PO_STATES.find(s => s.value === po.status)?.label || po.status)
+      t(getPOQueueLabel(po))
     ]);
 
     let csvContent = '\uFEFF'; // BOM for Excel UTF-8
@@ -608,7 +600,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('TIẾP NHẬN ĐƠN HÀNG (SALES PO)')}</h1>
-          <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi 15 trạng thái sản xuất và quản lý file thiết kế, thông số kỹ thuật.')}</p>
+          <p className="page-subtitle">{t('Tạo đơn hàng PO mới, theo dõi hàng đợi công việc và quản lý file thiết kế, thông số kỹ thuật.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && !selectedPO && (
           <button className="btn btn-primary btn-symbol" onClick={() => { setRepeatSourcePO(null); setShowAddModal(true); }} title={t('TẠO ĐƠN HÀNG PO MỚI')}>
@@ -669,10 +661,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <td>{po.netAmount?.toLocaleString()} đ</td>
                       <td>{new Date(po.expectedDeliveryDate).toLocaleDateString(t('vi-VN'))}</td>
                       <td>
-                        <span className={`badge ${
-                          po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' :
-                          po.status === 'producing' ? 'badge-info' : 'badge-warning'
-                        }`}>{t(PO_STATES.find(s => s.value === po.status)?.label || '')}</span>
+                        <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
                       </td>
                       <td>
                         <button className="btn btn-sm btn-outline" onClick={(e) => { e.stopPropagation(); setSelectedPO(po); }}>{t('Chi Tiết')}</button>
@@ -691,7 +680,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         </div>
       )}
 
-      {/* PO DETAIL PANEL WITH 15-STATE TIMELINE */}
+      {/* PO DETAIL PANEL WITH QUEUE-BASED WORKFLOW */}
       {selectedPO && (
         <div className="details-grid" style={{ gridTemplateColumns: '1fr' }}>
           <div className="card">
@@ -723,11 +712,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
                 <span style={{ fontWeight: 600 }}>{t('Cập nhật nhanh tiến độ PO:')}</span>
                 <select 
-                  value={selectedPO.status} 
-                  onChange={(e) => updatePOStatus(selectedPO.id, e.target.value)}
+                  value={getPOQueueStatus(selectedPO)}
+                  onChange={(e) => updatePOStatus(selectedPO.id, e.target.value as POQueueStatus)}
                   style={{ width: '220px' }}
                 >
-                  {PO_STATES.map(state => (
+                  {PO_QUEUE_STATES.map(state => (
                     <option key={state.value} value={state.value}>{t(state.label)}</option>
                   ))}
                 </select>
@@ -735,11 +724,11 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               </div>
             )}
 
-            {/* HORIZONTAL TIMELINE DISPLAY (15 States) */}
+            {/* HORIZONTAL TIMELINE DISPLAY (QUEUE STATES) */}
             <div style={{ overflowX: 'auto', paddingBottom: '10px' }}>
-              <div className="order-progress-timeline" style={{ minWidth: '1500px' }}>
-                {PO_STATES.map((state, idx) => {
-                  const currentIdx = PO_STATES.findIndex(s => s.value === selectedPO.status);
+              <div className="order-progress-timeline" style={{ minWidth: '760px' }}>
+                {PO_QUEUE_STATES.map((state, idx) => {
+                  const currentIdx = PO_QUEUE_STATES.findIndex(s => s.value === getPOQueueStatus(selectedPO));
                   const isCompleted = idx < currentIdx;
                   const isActive = idx === currentIdx;
 
@@ -1189,7 +1178,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <div key={idx} className="timeline-item">
                         <div className="timeline-marker"></div>
                         <div className="timeline-content">
-                          <span className="timeline-title">{t(PO_STATES.find(s => s.value === log.status)?.label || log.status)}</span>
+                          <span className="timeline-title">{t(getPOHistoryStatusLabel(log.status))}</span>
                           <span className="timeline-date">{new Date(log.updatedAt).toLocaleString(t('vi-VN'))} - {t('Nhân Sự Thực Hiện')}: {log.updatedBy}</span>
                           <span style={{ fontSize: '12px' }}>{log.note}</span>
                         </div>

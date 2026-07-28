@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { BarChart } from '../components/VisualCharts';
 import { Plus, Trash2, Pencil } from 'lucide-react';
+import { getPOQueueLabel, getPOQueueStatus, getPOQueueUpdate } from '../domain/poWorkflow';
 
 interface AccountingProps {
   pos: any[];
@@ -102,22 +103,23 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       updatedAt: new Date().toISOString()
     });
 
-    // If fully paid, optionally update PO status to debt_collected
+    // A fully paid receivable moves the customer PO to the discount-closing queue.
     if (status === 'paid') {
       const linkedPo = pos.find(p => p.id === selectedInvoice.poId);
-      if (linkedPo) {
+      if (linkedPo && selectedInvoice.type === 'receivable') {
+        const logs = [
+          ...(linkedPo.historyLogs || []),
+          {
+            status: 'waiting_discount',
+            updatedBy: currentUser.displayName,
+            updatedAt: new Date().toISOString(),
+            note: t('Đã hoàn thành thu hồi công nợ hóa đơn')
+          }
+        ];
         await dbService.updateDocument('pos', linkedPo.id, {
-          status: 'debt_collected'
+          ...getPOQueueUpdate('waiting_discount', { accountingProgress: 'paid' }),
+          historyLogs: logs
         });
-        // Log history
-        const logs = linkedPo.historyLogs || [];
-        logs.push({
-          status: 'debt_collected',
-          updatedBy: currentUser.displayName,
-          updatedAt: new Date().toISOString(),
-          note: t('Đã hoàn thành thu hồi công nợ hóa đơn')
-        });
-        await dbService.updateDocument('pos', linkedPo.id, { historyLogs: logs });
       }
     }
 
@@ -240,7 +242,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
               <strong>Ngày Giao Dự Kiến:</strong> ${new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}
             </div>
             <div>
-              <strong>Trạng Trạng Thái Sản Xuất:</strong> ${po.status.toUpperCase()}<br>
+              <strong>Hàng đợi xử lý:</strong> ${getPOQueueLabel(po)}<br>
               <strong>Ghi Chú Đơn Hàng:</strong> ${po.notes || 'Không có'}
             </div>
           </div>
@@ -323,6 +325,24 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       createdAt: new Date().toISOString()
     });
+
+    if (addType === 'receivable' && linkedPo) {
+      const nextStatus = finalStatus === 'paid' ? 'waiting_discount' : 'waiting_receivable';
+      await dbService.updateDocument('pos', linkedPo.id, {
+        ...getPOQueueUpdate(nextStatus, {
+          accountingProgress: finalStatus === 'paid' ? 'paid' : 'invoiced'
+        }),
+        historyLogs: [
+          ...(linkedPo.historyLogs || []),
+          {
+            status: nextStatus,
+            updatedBy: currentUser.displayName,
+            updatedAt: new Date().toISOString(),
+            note: `Đã ghi nhận hóa đơn ${addInvoiceCode}.`
+          }
+        ]
+      });
+    }
 
     setShowAddInvoiceModal(false);
     setAddInvoiceCode('');
@@ -576,7 +596,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 <tbody>
                   {pos.map(po => {
                     const c = calculateCosting(po);
-                    const isEstimated = !['delivered', 'debt_collected'].includes(po.status);
+                    const queueStatus = getPOQueueStatus(po);
+                    const isEstimated = !['waiting_invoice', 'waiting_receivable', 'waiting_discount', 'completed'].includes(queueStatus);
                     
                     return (
                       <tr key={po.id}>

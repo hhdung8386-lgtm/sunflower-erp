@@ -13,6 +13,7 @@ import { UserManagement } from './views/UserManagement';
 import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
+import { isPOInQueue } from './domain/poWorkflow';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -220,13 +221,13 @@ function App() {
   const getSalesAlertCount = () => {
     if (!user) return 0;
     if (user.role !== 'admin' && user.role !== 'sale') return 0;
-    return pos.filter(p => (p.status === 'receive_po' || p.status === 'layout_pending') && !p.deleted).length;
+    return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
   };
 
   const getDesignAlertCount = () => {
     if (!user) return 0;
     if (user.role !== 'admin' && user.role !== 'designer') return 0;
-    return pos.filter(p => p.status === 'receive_po' && !p.deleted).length;
+    return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
   };
 
   const getLowStockMaterialsCount = () => {
@@ -360,6 +361,10 @@ function App() {
             deliveries={deliveries}
             invoices={invoices}
             onNavigate={(page) => setActivePage(page)}
+            onOpenPO={(poId) => {
+              setSelectedPoId(poId);
+              setActivePage('sales');
+            }}
           />
         );
     }

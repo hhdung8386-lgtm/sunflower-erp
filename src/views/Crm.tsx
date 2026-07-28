@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
+import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import '../components/CustomerHistory.css';
 import { 
   Plus, 
@@ -1660,9 +1661,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       <td>{new Date(po.orderDate).toLocaleDateString('vi-VN')}</td>
                       <td>{po.netAmount.toLocaleString()} đ</td>
                       <td>
-                        <span className={`badge ${
-                          po.status === 'delivered' || po.status === 'debt_collected' ? 'badge-success' : 'badge-warning'
-                        }`}>{po.status.replace('_', ' ').toUpperCase()}</span>
+                        <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
                       </td>
                       <td>
                         {(currentUser.role === 'admin' || currentUser.role === 'sale') && onRepeatOrder ? (

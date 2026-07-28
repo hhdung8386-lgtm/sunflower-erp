@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
+import { getPODeliveryStage, getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
 import './Delivery.css';
 
 interface DeliveryProps {
@@ -195,7 +196,11 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   );
 
   const readyOrders = useMemo(
-    () => pos.filter(po => ['packed', 'partially_delivered'].includes(po.status) && !po.deleted),
+    () => pos.filter(po => (
+      isPOInQueue(po, 'waiting_delivery') &&
+      getPODeliveryStage(po) === 'customer_outbound' &&
+      !po.deleted
+    )),
     [pos]
   );
 
@@ -338,7 +343,9 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
   // Grouping logic: Get packed orders that matches selected region
   const getPackedOrdersInRegion = (reg: string, includeOrderIds: string[] = []) => {
     return pos.filter(po => {
-      const canSchedule = ['packed', 'partially_delivered'].includes(po.status) || includeOrderIds.includes(po.id);
+      const canSchedule = (
+        isPOInQueue(po, 'waiting_delivery') && getPODeliveryStage(po) === 'customer_outbound'
+      ) || includeOrderIds.includes(po.id);
       const notScheduledElsewhere = !scheduledOrderIds.has(po.id) || includeOrderIds.includes(po.id);
       return canSchedule && notScheduledElsewhere && getOrderRegion(po) === reg;
     });
@@ -470,7 +477,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
         const updatedLogs = [
           ...(po.historyLogs || []),
           {
-            status: po.status,
+            status: 'waiting_delivery',
             updatedBy: currentUser.displayName,
             updatedAt: new Date().toISOString(),
             note: `Đã xếp vào chuyến ${delCode}, tuyến ${region}, xe ${selectedVehicle.plate}, tài xế ${selectedVehicle.driverName}.`
@@ -596,18 +603,21 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
       if (trip) {
         for (const ord of trip.orders) {
           const po = pos.find(p => p.id === ord.poId);
-          if (po && po.status === 'delivering') {
+          if (po && isPOInQueue(po, 'waiting_delivery')) {
             const updatedLogs = [
               ...(po.historyLogs || []),
               {
-                status: 'packed',
+                status: 'waiting_delivery',
                 updatedBy: currentUser.displayName,
                 updatedAt: new Date().toISOString(),
                 note: `Đã hủy chuyến giao hàng ${trip.delCode}. Trạng thái PO quay lại chờ xe giao.`
               }
             ];
             await dbService.updateDocument('pos', po.id, {
-              status: 'packed',
+              ...getPOQueueUpdate('waiting_delivery', {
+                deliveryStage: 'customer_outbound',
+                deliveryProgress: 'pending'
+              }),
               historyLogs: updatedLogs
             });
           }
@@ -646,13 +656,16 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     if (newStatus === 'delivering' && trip?.orders) {
       for (const order of trip.orders) {
         const po = pos.find(item => item.id === order.poId);
-        if (!po || po.status === 'delivered') continue;
+        if (!po || !isPOInQueue(po, 'waiting_delivery')) continue;
         await dbService.updateDocument('pos', po.id, {
-          status: 'delivering',
+          ...getPOQueueUpdate('waiting_delivery', {
+            deliveryStage: 'customer_outbound',
+            deliveryProgress: 'delivering'
+          }),
           historyLogs: [
             ...(po.historyLogs || []),
             {
-              status: 'delivering',
+              status: 'waiting_delivery',
               updatedBy: currentUser.displayName,
               updatedAt: now,
               note: `Chuyến ${trip.delCode} đã xuất phát. Xe ${trip.vehiclePlate}, tuyến ${trip.region}.`
@@ -692,14 +705,17 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
           const updatedLogs = [
               ...(po.historyLogs || []),
             {
-              status: 'packed',
+              status: 'waiting_delivery',
               updatedBy: currentUser.displayName,
               updatedAt: new Date().toISOString(),
               note: `Hoãn chuyến giao hàng ${trip.delCode}. Trạng thái PO quay lại chờ xe giao.`
             }
           ];
           await dbService.updateDocument('pos', po.id, {
-            status: 'packed',
+            ...getPOQueueUpdate('waiting_delivery', {
+              deliveryStage: 'customer_outbound',
+              deliveryProgress: 'pending'
+            }),
             historyLogs: updatedLogs
           });
         }
@@ -770,14 +786,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
 
     // Check if fully delivered
     const isAllFullyDelivered = updatedItems.every((item: any) => (Number(item.qtyDelivered) || 0) >= Number(item.quantity));
-    const finalPoStatus = isAllFullyDelivered ? 'delivered' : 'partially_delivered';
-
-    // Calculate invoice amount for this specific delivery batch
-    const batchInvoiceAmount = signingPo.items.reduce((sum: number, item: any) => {
-      const itemId = item.itemId || item.productCode;
-      const currentDel = Number(deliveredQuantities[itemId]) || 0;
-      return sum + (currentDel * Number(item.price));
-    }, 0);
+    const finalPoStatus = isAllFullyDelivered ? 'waiting_invoice' : 'waiting_delivery';
 
     // Save updated items and status to PO
     const poLogs = [
@@ -796,28 +805,12 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
 
     await dbService.updateDocument('pos', signingPo.id, {
       items: updatedItems,
-      status: finalPoStatus,
+      ...getPOQueueUpdate(finalPoStatus, {
+        deliveryStage: 'customer_outbound',
+        deliveryProgress: isAllFullyDelivered ? 'delivered' : 'partial'
+      }),
       historyLogs: poLogs
     });
-
-    // Save dynamic receivable invoice for this batch
-    if (batchInvoiceAmount > 0) {
-      const invoiceCode = `VAT-${signingPo.poCode.replace('PO-','')}-${Math.floor(100 + Math.random() * 900)}`;
-      await dbService.addDocument('invoices', {
-        invoiceCode,
-        poId: signingPo.id,
-        poCode: signingPo.poCode,
-        customerId: signingPo.customerId,
-        companyName: signingPo.customerName,
-        type: 'receivable',
-        amount: batchInvoiceAmount,
-        paidAmount: 0,
-        status: 'unpaid',
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-        createdAt: new Date().toISOString()
-      });
-    }
 
     // Update trip details
     const updatedOrders = selectedTrip.orders.map((ord: any) => {
@@ -827,7 +820,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
           status: 'success',
           deliveredQty: currentTripDeliveredQty,
           signatureImage: signatureBase64,
-          note: finalPoStatus === 'delivered' ? 'Giao hoàn tất đơn' : 'Giao hàng một phần'
+          note: isAllFullyDelivered ? 'Giao hoàn tất đơn' : 'Giao hàng một phần'
         };
       }
       return ord;
@@ -897,9 +890,9 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
     if (window.confirm(t(`Bạn có chắc chắn muốn Force Close đóng đơn hàng PO này do dung sai sản xuất?\nChi tiết thiếu: ${missingItems}`))) {
       const now = new Date().toISOString();
       const updatedLogs = [
-        ...po.historyLogs,
+        ...(po.historyLogs || []),
         {
-          status: 'delivered',
+          status: 'waiting_invoice',
           updatedBy: currentUser.displayName,
           updatedAt: now,
           note: `Force Close đơn hàng theo số lượng thực tế đã giao. Lý do: Dung sai hao hụt sản xuất trong mức khách hàng chấp nhận.`
@@ -907,7 +900,10 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
       ];
 
       await dbService.updateDocument('pos', po.id, {
-        status: 'delivered', 
+        ...getPOQueueUpdate('waiting_invoice', {
+          deliveryStage: 'customer_outbound',
+          deliveryProgress: 'delivered_with_tolerance'
+        }),
         historyLogs: updatedLogs
       });
 
@@ -1297,18 +1293,28 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               <table>
                 <thead><tr><th>Mã PO</th><th>Khách hàng</th><th>Yêu cầu</th><th>Đã giao</th><th>Còn thiếu</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody>
-                  {pos.filter(po => po.status === 'partially_delivered' || po.status === 'delivering').map(po => {
+                  {pos.filter(po => (
+                    isPOInQueue(po, 'waiting_delivery') && (
+                      ['partial', 'delivering'].includes(po.deliveryProgress) ||
+                      ['partially_delivered', 'delivering'].includes(po.status)
+                    )
+                  )).map(po => {
                     const totalRequired = po.items?.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0) || 0;
                     const totalDelivered = po.items?.reduce((sum: number, item: any) => sum + Number(item.qtyDelivered || 0), 0) || 0;
                     return (
                       <tr key={po.id}>
                         <td><strong>{po.poCode}</strong></td><td>{po.customerName}</td><td>{totalRequired.toLocaleString('vi-VN')}</td><td>{totalDelivered.toLocaleString('vi-VN')}</td><td>{Math.max(0, totalRequired - totalDelivered).toLocaleString('vi-VN')}</td>
-                        <td><span className="delivery-status warning">{po.status === 'partially_delivered' ? 'Giao một phần' : 'Đang giao'}</span></td>
+                        <td><span className="delivery-status warning">{po.deliveryProgress === 'partial' || po.status === 'partially_delivered' ? 'Giao một phần' : 'Đang giao'}</span></td>
                         <td>{(currentUser.role === 'admin' || currentUser.role === 'sale') && <button className="btn btn-sm btn-danger" onClick={() => handleForceClosePO(po)}>Đóng dung sai</button>}</td>
                       </tr>
                     );
                   })}
-                  {pos.filter(po => po.status === 'partially_delivered' || po.status === 'delivering').length === 0 && (
+                  {pos.filter(po => (
+                    isPOInQueue(po, 'waiting_delivery') && (
+                      ['partial', 'delivering'].includes(po.deliveryProgress) ||
+                      ['partially_delivered', 'delivering'].includes(po.status)
+                    )
+                  )).length === 0 && (
                     <tr><td colSpan={7}><div className="delivery-empty-state">Không có đơn giao dở dang.</div></td></tr>
                   )}
                 </tbody>
