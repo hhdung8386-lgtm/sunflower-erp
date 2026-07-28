@@ -4,6 +4,7 @@ import { Dashboard } from './views/Dashboard';
 import { Crm } from './views/Crm';
 import { Sales } from './views/Sales';
 import { Design } from './views/Design';
+import { DesignLibrary } from './views/DesignLibrary';
 import { Purchase } from './views/Purchase';
 import { Inventory } from './views/Inventory';
 import { Production } from './views/Production';
@@ -14,6 +15,7 @@ import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
 import { isPOInQueue } from './domain/poWorkflow';
+import { DesignRequest } from './domain/designWorkflow';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -77,6 +79,7 @@ function App() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
+  const [designRequests, setDesignRequests] = useState<DesignRequest[]>([]);
 
   // Navigation state links
   const [selectedPoId, setSelectedPoId] = useState<string>('');
@@ -126,6 +129,10 @@ function App() {
     const unsubInventory = dbService.subscribeCollection('inventory', setInventory);
     const unsubMessages = dbService.subscribeCollection('messages', setMessages);
     const unsubChannels = dbService.subscribeCollection('channels', setChannels);
+    const unsubDesignRequests = dbService.subscribeCollection('design_requests', (data) => {
+      const sorted = [...data].sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+      setDesignRequests(sorted as DesignRequest[]);
+    });
 
     return () => {
       unsubUsers();
@@ -138,6 +145,7 @@ function App() {
       unsubInventory();
       unsubMessages();
       unsubChannels();
+      unsubDesignRequests();
     };
   }, [user]);
 
@@ -227,6 +235,13 @@ function App() {
   const getDesignAlertCount = () => {
     if (!user) return 0;
     if (user.role !== 'admin' && user.role !== 'designer') return 0;
+    if (designRequests.length > 0) {
+      return designRequests.filter(request => (
+        !request.archived
+        && request.workStatus !== 'completed'
+        && (user.role !== 'designer' || !request.assignedDesignerId || request.assignedDesignerId === user.uid)
+      )).length;
+    }
     return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
   };
 
@@ -294,7 +309,10 @@ function App() {
         );
       case 'design':
         if (!isPageAllowed('design')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Design pos={pos} currentUser={user} onRefresh={refreshData} />;
+        return <Design pos={pos} designRequests={designRequests} users={users} currentUser={user} onRefresh={refreshData} />;
+      case 'design_library':
+        if (!isPageAllowed('design')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
+        return <DesignLibrary pos={pos} currentUser={user} />;
       case 'purchase':
         if (!isPageAllowed('purchase')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Purchase pos={pos} purchaseOrders={purchaseOrders} currentUser={user} onRefresh={refreshData} users={users} />;
@@ -354,6 +372,7 @@ function App() {
           <Dashboard 
             user={user}
             pos={pos}
+            designRequests={designRequests}
             customers={customers}
             inventory={inventory}
             purchaseOrders={purchaseOrders}
@@ -493,7 +512,7 @@ function App() {
             </form>
 
             <div className="login-card-footer">
-              <button 
+              <button
                 className="lang-toggle-btn" 
                 onClick={() => setLanguage(language === 'vi' ? 'en' : 'vi')}
               >
@@ -593,17 +612,26 @@ function App() {
           )}
 
           {isPageAllowed('design') && (
-            <button 
-              className={`sidebar-item ${activePage === 'design' ? 'active' : ''}`}
-              onClick={() => { setActivePage('design'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Palette size={16} />
-                <span>{t('Thiết Kế & Layout')}</span>
-              </div>
-              {getDesignAlertCount() > 0 && <span className="sidebar-badge">{getDesignAlertCount()}</span>}
-            </button>
+            <>
+              <button
+                className={`sidebar-item ${activePage === 'design' ? 'active' : ''}`}
+                onClick={() => { setActivePage('design'); setIsSidebarOpen(false); }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Palette size={16} />
+                  <span>{t('Yêu Cầu Thiết Kế')}</span>
+                </div>
+                {getDesignAlertCount() > 0 && <span className="sidebar-badge">{getDesignAlertCount()}</span>}
+              </button>
+              <button
+                className={`sidebar-item ${activePage === 'design_library' ? 'active' : ''}`}
+                onClick={() => { setActivePage('design_library'); setIsSidebarOpen(false); }}
+              >
+                <Archive size={16} />
+                <span>{t('Kho Thiết Kế & Layout')}</span>
+              </button>
+            </>
           )}
 
           {isPageAllowed('purchase') && (

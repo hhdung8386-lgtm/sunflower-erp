@@ -666,6 +666,7 @@ const initLocalStorage = () => {
   localStorage.setItem('erp_purchase_orders', JSON.stringify(purchaseOrders));
 
   if (!localStorage.getItem('erp_designs')) localStorage.setItem('erp_designs', JSON.stringify(DEFAULT_DESIGNS));
+  if (!localStorage.getItem('erp_design_requests')) localStorage.setItem('erp_design_requests', '[]');
   if (!localStorage.getItem('erp_inventory')) localStorage.setItem('erp_inventory', JSON.stringify(DEFAULT_INVENTORY));
   if (!localStorage.getItem('erp_production_commands')) localStorage.setItem('erp_production_commands', JSON.stringify(DEFAULT_PRODUCTION_COMMANDS));
   if (!localStorage.getItem('erp_deliveries')) localStorage.setItem('erp_deliveries', JSON.stringify(DEFAULT_DELIVERIES));

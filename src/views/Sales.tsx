@@ -4,6 +4,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
 import POFormFullScreen from '../components/POFormFullScreen';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
+import { syncDesignRequestsForPO } from '../services/designRequestService';
+import { DesignRecord, DesignVersion } from '../domain/designWorkflow';
 import {
   calculatePOItemFinancials,
   PODiscountType,
@@ -392,6 +394,13 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         updatedAt: new Date().toISOString(),
         historyLogs: updatedLogs
       });
+      await syncDesignRequestsForPO({
+        ...selectedPO,
+        ...poData,
+        id: poData.id,
+        items: poData.items,
+        assignments: poData.assignments || []
+      }, currentUser);
 
       setShowEditModal(false);
       setSelectedPO(null);
@@ -416,36 +425,55 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       const nextSeq = String(maxSeq + 1).padStart(4, '0');
       const poCode = `${prefix}${nextSeq}`;
 
-      let reusableDesign: any | null = null;
-      let reusableVersion: any | null = null;
+      const reusableDesignByItemIndex = new Map<number, { design: DesignRecord; version: DesignVersion }>();
       if (poData.repeatSourcePoId && poData.designReuseRequested) {
-        const designList = await dbService.getCollection('designs');
-        reusableDesign = designList.find((design: any) => (
+        const sourcePO = pos.find(candidate => candidate.id === poData.repeatSourcePoId);
+        const designList = (await dbService.getCollection('designs')) as DesignRecord[];
+        const approvedSourceDesigns = designList.filter(design => (
           design.poId === poData.repeatSourcePoId && design.status === 'approved'
-        )) || null;
-        reusableVersion = reusableDesign?.versions?.find((version: any) => (
-          version.versionNumber === reusableDesign.currentVersion
-        )) || reusableDesign?.versions?.[reusableDesign.versions.length - 1] || (reusableDesign?.fileUrl ? {
-          versionNumber: reusableDesign.currentVersion || 1,
-          previewImage: reusableDesign.fileUrl,
-          aiLink: reusableDesign.aiLink || '',
-          corelLink: reusableDesign.corelLink || '',
-          comment: reusableDesign.notes || '',
-          createdAt: reusableDesign.updatedAt || reusableDesign.createdAt || ''
-        } : null);
+        ));
+
+        poData.items.forEach((item: any, itemIndex: number) => {
+          const matchedSourceItemIndex = (sourcePO?.items || []).findIndex((sourceItem: any) => (
+            item.sourceItemId && sourceItem.itemId === item.sourceItemId
+          ));
+          const sourceItemIndex = matchedSourceItemIndex >= 0 ? matchedSourceItemIndex : itemIndex;
+          const sourceItemId = item.sourceItemId || sourcePO?.items?.[sourceItemIndex]?.itemId;
+          const design = approvedSourceDesigns.find(candidate => (
+            (sourceItemId && candidate.itemId === sourceItemId)
+            || candidate.itemIndex === sourceItemIndex
+            || (!candidate.itemId && candidate.itemIndex === undefined && sourceItemIndex === 0)
+          ));
+          if (!design) return;
+          const version = design.versions?.find(candidate => candidate.versionNumber === design.currentVersion)
+            || design.versions?.[design.versions.length - 1]
+            || (design.fileUrl ? {
+              versionNumber: design.currentVersion || 1,
+              previewImage: design.fileUrl,
+              aiLink: design.aiLink || '',
+              corelLink: design.corelLink || '',
+              comment: design.notes || '',
+              createdAt: design.updatedAt || design.createdAt || ''
+            } : null);
+          if (version?.previewImage) reusableDesignByItemIndex.set(itemIndex, { design, version });
+        });
       }
 
       const initialStatus: POQueueStatus = 'waiting_design';
-      const newItems = poData.items.map((item: any, index: number) => index === 0 && reusableVersion
-        ? {
+      const newItems = poData.items.map((item: any, index: number) => {
+        const reusable = reusableDesignByItemIndex.get(index);
+        return reusable ? {
             ...item,
-            previewImage: reusableVersion.previewImage || item.previewImage || '',
-            previewImages: reusableVersion.previewImage
-              ? Array.from(new Set([reusableVersion.previewImage, ...(item.previewImages || [])]))
+            previewImage: reusable.version.previewImage || item.previewImage || '',
+            previewImages: reusable.version.previewImage
+              ? Array.from(new Set([reusable.version.previewImage, ...(item.previewImages || [])]))
               : (item.previewImages || []),
             designReuseStatus: 'pending_verification'
           }
-        : item);
+          : { ...item, designReuseStatus: '' };
+      });
+      const reusedItemCount = reusableDesignByItemIndex.size;
+      const allItemsReused = newItems.length > 0 && reusedItemCount === newItems.length;
 
       const newPO = {
         poCode,
@@ -458,7 +486,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         expectedDeliveryDate: poData.expectedDeliveryDate,
         status: initialStatus,
         workflowVersion: 2,
-        designProgress: reusableVersion ? 'customer_approval_pending' : 'request_pending',
+        designProgress: allItemsReused ? 'customer_approval_pending' : reusedItemCount > 0 ? 'in_progress' : 'request_pending',
         items: newItems,
         assignments: poData.assignments || [],
         totalAmount: poData.totalAmount,
@@ -470,7 +498,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         repeatSourcePoId: poData.repeatSourcePoId || '',
         repeatSourcePoCode: poData.repeatSourcePoCode || '',
         designReuseRequested: Boolean(poData.designReuseRequested),
-        designReuseStatus: reusableVersion ? 'pending_verification' : (poData.designReuseRequested ? 'source_not_approved' : ''),
+        designReuseStatus: allItemsReused ? 'pending_verification' : reusedItemCount > 0 ? 'partially_reused' : (poData.designReuseRequested ? 'source_not_approved' : ''),
         createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
         createdAt: new Date().toISOString(),
         updatedBy: '',
@@ -480,8 +508,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
             status: initialStatus,
             updatedBy: currentUser.displayName,
             updatedAt: new Date().toISOString(),
-            note: reusableVersion
-              ? `Tạo đơn đặt lại từ ${poData.repeatSourcePoCode}. Đã kế thừa mẫu thiết kế v${reusableVersion.versionNumber} đã duyệt và chuyển sang bước kiểm tra/xác nhận.`
+            note: reusedItemCount > 0
+              ? `Tạo đơn đặt lại từ ${poData.repeatSourcePoCode}. Đã kế thừa ${reusedItemCount}/${newItems.length} mẫu thiết kế đã duyệt; từng mặt hàng được chuyển sang bước phù hợp.`
               : poData.repeatSourcePoCode
                 ? `Tạo đơn đặt lại từ ${poData.repeatSourcePoCode}. Đã kế thừa thông số; chưa tìm thấy mẫu thiết kế đã duyệt để tự động sử dụng.`
                 : 'Khởi tạo đơn hàng mới trên ERP'
@@ -490,27 +518,38 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       };
 
       const createdPO = await dbService.addDocument('pos', newPO);
-      if (reusableDesign && reusableVersion) {
+      const createdDesignRequests = await syncDesignRequestsForPO({
+        ...newPO,
+        id: createdPO.id
+      }, currentUser);
+      for (const [itemIndex, reusable] of reusableDesignByItemIndex.entries()) {
+        const request = createdDesignRequests.find(candidate => candidate.itemIndex === itemIndex);
+        if (!request) continue;
         const reusedVersion = {
-          ...reusableVersion,
+          ...reusable.version,
           versionNumber: 1,
-          comment: `Tái sử dụng từ ${poData.repeatSourcePoCode} - mẫu v${reusableVersion.versionNumber}. ${reusableVersion.comment || ''}`.trim(),
+          comment: `Tái sử dụng từ ${poData.repeatSourcePoCode} - mẫu v${reusable.version.versionNumber}. ${reusable.version.comment || ''}`.trim(),
           feedbackFromClient: '',
           feedbackAt: '',
           createdAt: new Date().toISOString(),
           createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-          reusedFromDesignId: reusableDesign.id,
+          reusedFromDesignId: reusable.design.id,
           reusedFromPoId: poData.repeatSourcePoId,
-          reusedFromVersion: reusableVersion.versionNumber
+          reusedFromVersion: reusable.version.versionNumber
         };
         await dbService.addDocument('designs', {
-          id: createdPO.id,
+          id: `design-${request.id}`,
           poId: createdPO.id,
+          poCode,
+          designRequestId: request.id,
+          itemId: request.itemId,
+          itemIndex,
+          customerReferenceCode: newPO.customerPoCode || poCode,
           designerId: currentUser.role === 'designer' ? currentUser.uid : 'u-designer',
           status: 'client_pending',
           currentVersion: 1,
           versions: [reusedVersion],
-          reusedFromDesignId: reusableDesign.id,
+          reusedFromDesignId: reusable.design.id,
           reusedFromPoId: poData.repeatSourcePoId,
           createdAt: new Date().toISOString()
         });

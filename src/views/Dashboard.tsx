@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { BarChart, DonutChart } from '../components/VisualCharts';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { calculatePOItemFinancials } from '../domain/poFinancials';
+import { DesignRequest } from '../domain/designWorkflow';
 import { 
   ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
   AlertCircle, Calendar, User, DollarSign, Sliders, 
@@ -24,6 +25,7 @@ import {
 interface DashboardProps {
   user: UserProfile;
   pos: any[];
+  designRequests: DesignRequest[];
   customers: any[];
   inventory: any[];
   purchaseOrders: any[];
@@ -37,6 +39,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({
   user,
   pos,
+  designRequests,
   customers,
   inventory,
   purchaseOrders,
@@ -50,6 +53,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Filter out deleted documents
   const activePOsList = (pos || []).filter(po => !po.deleted);
+  const activeDesignRequests = (designRequests || []).filter(request => (
+    request.archived !== true
+    && (user.role !== 'designer' || !request.assignedDesignerId || request.assignedDesignerId === user.uid)
+  ));
   const activeCustomersList = (customers || []).filter(c => !c.deleted);
   const activeInventoryList = (inventory || []).filter(i => !i.deleted);
   const activePurchaseOrdersList = (purchaseOrders || []).filter(pur => !pur.deleted);
@@ -902,28 +909,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <>
           <div className="metrics-grid">
             <div className="metric-card">
-              <span className="metric-title">{t('Đơn Chờ Thiết Kế')}</span>
+              <span className="metric-title">{t('Yêu Cầu Chờ Thiết Kế')}</span>
               <span className="metric-value" style={{ color: 'var(--color-danger)' }}>
-                {filteredPOs.filter(po => (
-                  isPOInQueue(po, 'waiting_design') && !['customer_approval_pending', 'revision_requested'].includes(po.designProgress)
-                )).length} {t('đơn')}
+                {activeDesignRequests.filter(request => request.workStatus !== 'completed').length} {t('yêu cầu')}
               </span>
-              <span className="metric-sub">{t('Yêu cầu thiết kế mới từ Sale')}</span>
+              <span className="metric-sub">{t('Mỗi mặt hàng là một yêu cầu độc lập')}</span>
             </div>
             <div className="metric-card">
-              <span className="metric-title">{t('Đơn Đang Gửi Duyệt')}</span>
+              <span className="metric-title">{t('Mẫu Đang Chờ Khách Duyệt')}</span>
               <span className="metric-value" style={{ color: 'var(--color-warning)' }}>
-                {filteredPOs.filter(po => (
-                  isPOInQueue(po, 'waiting_design') &&
-                  (['customer_approval_pending', 'revision_requested'].includes(po.designProgress) || ['design_sent', 'layout_pending'].includes(po.status))
-                )).length} {t('đơn')}
+                {activeDesignRequests.filter(request => request.approvalStatus === 'waiting_client').length} {t('yêu cầu')}
               </span>
               <span className="metric-sub">{t('Đang chờ khách duyệt layout/màu')}</span>
             </div>
             <div className="metric-card">
-              <span className="metric-title">{t('Thiết Kế Đã Duyệt Chốt')}</span>
+              <span className="metric-title">{t('Mẫu Đã Duyệt Chốt')}</span>
               <span className="metric-value" style={{ color: 'var(--color-success)' }}>
-                {filteredPOs.filter(po => !isPOInQueue(po, 'waiting_design')).length} {t('đơn')}
+                {activeDesignRequests.filter(request => request.approvalStatus === 'approved').length} {t('yêu cầu')}
               </span>
               <span className="metric-sub">{t('Đã bàn giao để mua hàng/sản xuất')}</span>
             </div>
@@ -933,7 +935,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="card-title">{t('Nhiệm Vụ Thiết Kế Chờ Xử Lý')}</span>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" className="btn btn-sm btn-outline" style={{ fontSize: '11px' }} onClick={() => setSelectedProgressCategory('waiting_design')}>{t('Đơn Chờ Thiết Kế')}</button>
                 <button className="btn btn-sm btn-primary" onClick={() => onNavigate('design')}>{t('Vào trang thiết kế')}</button>
               </div>
             </div>
@@ -948,15 +949,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPOs.filter(po => isPOInQueue(po, 'waiting_design')).map(po => (
-                    <tr key={po.id}>
-                      <td style={{ fontWeight: 600 }}>{po.poCode}</td>
-                      <td>{po.items.map((i: any) => i.productName).join(', ')}</td>
-                      <td>{po.items.map((i: any) => `${i.size} (${i.material})`).join(', ')}</td>
-                      <td style={{ color: 'var(--color-text-muted)' }}>{po.notes}</td>
+                  {activeDesignRequests.filter(request => request.workStatus !== 'completed').map(request => (
+                    <tr key={request.id}>
+                      <td style={{ fontWeight: 600 }}>{request.customerReferenceCode || request.poCode}</td>
+                      <td>{request.productName || t('Chưa đặt tên')}</td>
+                      <td>{request.size || '—'}{request.material ? ` (${request.material})` : ''}</td>
+                      <td style={{ color: 'var(--color-text-muted)' }}>{request.designBrief || t('Chưa có ghi chú')}</td>
                     </tr>
                   ))}
-                  {filteredPOs.filter(po => isPOInQueue(po, 'waiting_design')).length === 0 && (
+                  {activeDesignRequests.filter(request => request.workStatus !== 'completed').length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>{t('Tất cả các đơn đã hoàn thành thiết kế!')}</td>
                     </tr>

@@ -1,714 +1,763 @@
-import React, { useState, useEffect } from 'react';
-import { dbService, UserProfile } from '../services/firebaseService';
-import { getPOQueueLabel, getPOQueueUpdate } from '../domain/poWorkflow';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  FileArchive,
+  Image as ImageIcon,
+  ListChecks,
+  Plus,
+  Search,
+  UserRound,
+  XCircle
+} from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
-import { ApprovedDesignLibrary } from '../components/ApprovedDesignLibrary';
-import { Library, ListChecks, Plus, Trash2, Pencil } from 'lucide-react';
-import '../components/CustomerHistory.css';
+import {
+  DESIGN_WORK_STATUSES,
+  DesignPOItem,
+  DesignPOLike,
+  DesignRecord,
+  DesignRequest,
+  DesignRequestHistory,
+  DesignVersion,
+  DesignWorkStatus,
+  getDesignApprovalStatusDefinition,
+  getDesignRequestAgeDays,
+  getDesignWorkStatus,
+  getDesignWorkStatusDefinition,
+  isDesignRequestOverdue,
+  resolveDesignForRequest
+} from '../domain/designWorkflow';
+import { getPOQueueUpdate } from '../domain/poWorkflow';
+import { syncDesignRequestsForPOs } from '../services/designRequestService';
+import { dbService, UserProfile } from '../services/firebaseService';
+import './Design.css';
 
 interface DesignProps {
-  pos: any[];
+  pos: DesignPOLike[];
+  designRequests: DesignRequest[];
+  users: UserProfile[];
   currentUser: UserProfile;
   onRefresh: () => void;
 }
 
-export const Design: React.FC<DesignProps> = ({ pos, currentUser, onRefresh }) => {
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: 'Cực gấp',
+  high: 'Gấp',
+  normal: 'Bình thường',
+  low: 'Thong thả'
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('vi-VN');
+};
+
+const compressPreviewImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Không thể đọc ảnh thiết kế.'));
+  reader.onload = event => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('Tệp được chọn không phải ảnh hợp lệ.'));
+    image.onload = () => {
+      const maxSize = 1200;
+      const ratio = Math.min(1, maxSize / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * ratio));
+      canvas.height = Math.max(1, Math.round(image.height * ratio));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Trình duyệt không hỗ trợ xử lý ảnh.'));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
+    };
+    image.src = String(event.target?.result || '');
+  };
+  reader.readAsDataURL(file);
+});
+
+export const Design: React.FC<DesignProps> = ({
+  pos,
+  designRequests,
+  users,
+  currentUser,
+  onRefresh
+}) => {
   const { t } = useLanguage();
-  const [designs, setDesigns] = useState<any[]>([]);
-  const [selectedDesign, setSelectedDesign] = useState<any | null>(null);
-  const [designTab, setDesignTab] = useState<'requests' | 'library'>('requests');
-  
-  // New version form state
-  const [showAddVersionModal, setShowAddVersionModal] = useState(false);
-  const [newBase64Preview, setNewBase64Preview] = useState('');
-  const [newAiLink, setNewAiLink] = useState('');
-  const [newCorelLink, setNewCorelLink] = useState('');
-  const [newComment, setNewComment] = useState('');
-
-  // Edit version form state
-  const [showEditVersionModal, setShowEditVersionModal] = useState(false);
-  const [editAiLink, setEditAiLink] = useState('');
-  const [editCorelLink, setEditCorelLink] = useState('');
-  const [editComment, setEditComment] = useState('');
-  const [editBase64Preview, setEditBase64Preview] = useState('');
-  
-  // Feedback state
+  const [designs, setDesigns] = useState<DesignRecord[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState('');
+  const [selectedVersionNumber, setSelectedVersionNumber] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | DesignWorkStatus>('all');
+  const [statusNote, setStatusNote] = useState('');
+  const [nextWorkStatus, setNextWorkStatus] = useState<DesignWorkStatus>('unreviewed');
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState('');
+  const [aiLink, setAiLink] = useState('');
+  const [corelLink, setCorelLink] = useState('');
+  const [versionComment, setVersionComment] = useState('');
   const [feedbackText, setFeedbackText] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const migrationKeyRef = useRef('');
 
-  // Fetch designs linked to POs
+  useEffect(() => dbService.subscribeCollection('designs', data => setDesigns(data as DesignRecord[])), []);
+
   useEffect(() => {
-    const fetchDesigns = async () => {
-      const designList = await dbService.getCollection('designs');
-      setDesigns(designList);
-    };
-    fetchDesigns();
-  }, [pos]);
+    if (pos.length === 0) return;
+    const migrationKey = pos.map(po => `${po.id}:${po.updatedAt || po.createdAt || ''}`).join('|');
+    if (migrationKeyRef.current === migrationKey) return;
+    migrationKeyRef.current = migrationKey;
+    void syncDesignRequestsForPOs(pos, currentUser).catch(error => {
+      console.error('Unable to synchronize design requests:', error);
+      migrationKeyRef.current = '';
+    });
+  }, [currentUser, pos]);
 
-  const handleOpenEditVersionModal = (ver: any) => {
-    setEditAiLink(ver.aiLink || '');
-    setEditCorelLink(ver.corelLink || '');
-    setEditComment(ver.comment || '');
-    setEditBase64Preview(ver.previewImage || '');
-    setShowEditVersionModal(true);
+  const visibleRequests = useMemo(() => designRequests.filter(request => {
+    if (request.archived === true) return false;
+    if (currentUser.role !== 'designer') return true;
+    return !request.assignedDesignerId || request.assignedDesignerId === currentUser.uid;
+  }), [currentUser.role, currentUser.uid, designRequests]);
+
+  const filteredRequests = useMemo(() => {
+    const search = searchTerm.trim().toLocaleLowerCase('vi-VN');
+    return visibleRequests
+      .filter(request => statusFilter === 'all' || getDesignWorkStatus(request.workStatus) === statusFilter)
+      .filter(request => !search || [
+        request.requestCode,
+        request.poCode,
+        request.customerReferenceCode,
+        request.productCode,
+        request.productName,
+        request.size,
+        request.material
+      ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(search)))
+      .sort((requestA, requestB) => {
+        const overdueDifference = Number(isDesignRequestOverdue(requestB)) - Number(isDesignRequestOverdue(requestA));
+        if (overdueDifference !== 0) return overdueDifference;
+        const priorityOrder: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+        const priorityDifference = (priorityOrder[requestA.priority] ?? 2) - (priorityOrder[requestB.priority] ?? 2);
+        if (priorityDifference !== 0) return priorityDifference;
+        return Date.parse(requestA.createdAt || '') - Date.parse(requestB.createdAt || '');
+      });
+  }, [searchTerm, statusFilter, visibleRequests]);
+
+  const selectedRequest = designRequests.find(request => request.id === selectedRequestId) || null;
+  const selectedDesign = selectedRequest ? resolveDesignForRequest(designs, selectedRequest) : null;
+  const selectedDesignVersions = selectedDesign?.versions?.length
+    ? selectedDesign.versions
+    : selectedDesign?.fileUrl
+      ? [{
+          versionNumber: selectedDesign.currentVersion || 1,
+          previewImage: selectedDesign.fileUrl,
+          aiLink: selectedDesign.aiLink || '',
+          corelLink: selectedDesign.corelLink || '',
+          comment: selectedDesign.notes || 'Phiên bản được chuyển đổi từ dữ liệu thiết kế cũ.',
+          createdAt: selectedDesign.updatedAt || selectedDesign.createdAt || '',
+          createdBy: selectedDesign.designerName || 'Hệ thống',
+          feedbackFromClient: selectedDesign.status === 'approved' ? 'KHÁCH HÀNG ĐÃ DUYỆT MẪU' : '',
+          feedbackAt: selectedDesign.updatedAt || ''
+        }]
+      : [];
+  const selectedVersion = selectedDesignVersions.find((version: DesignVersion) => (
+    version.versionNumber === selectedVersionNumber
+  )) || selectedDesignVersions[selectedDesignVersions.length - 1] || null;
+
+  const openRequest = (request: DesignRequest) => {
+    setSelectedRequestId(request.id);
+    setNextWorkStatus(getDesignWorkStatus(request.workStatus));
+    setStatusNote('');
+    setActionError('');
   };
 
-  const handleEditVersionSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDesign) return;
-    
-    const activeVer = selectedDesign.selectedVer || (selectedDesign.versions && selectedDesign.versions[selectedDesign.versions.length - 1]);
-    if (!activeVer) return;
-
-    const updatedVersions = selectedDesign.versions.map((ver: any) => {
-      if (ver.versionNumber === activeVer.versionNumber) {
-        return {
-          ...ver,
-          aiLink: editAiLink,
-          corelLink: editCorelLink,
-          comment: editComment,
-          previewImage: editBase64Preview,
-          updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-          updatedAt: new Date().toISOString()
-        };
+  const updatePODesignProgress = async (
+    request: DesignRequest,
+    updatedWorkStatus: DesignWorkStatus,
+    note: string
+  ) => {
+    const po = pos.find(candidate => candidate.id === request.poId);
+    if (!po) return;
+    const requestsForPO = designRequests
+      .filter(candidate => candidate.poId === request.poId && candidate.archived !== true)
+      .map(candidate => candidate.id === request.id ? { ...candidate, workStatus: updatedWorkStatus } : candidate);
+    const allCompleted = requestsForPO.length > 0 && requestsForPO.every(candidate => candidate.workStatus === 'completed');
+    const hasWaitingInfo = requestsForPO.some(candidate => candidate.workStatus === 'waiting_info');
+    const updatedLogs = [
+      ...(po.historyLogs || []),
+      {
+        status: 'waiting_design',
+        updatedBy: currentUser.displayName,
+        updatedAt: new Date().toISOString(),
+        note: `${request.requestCode}: ${getDesignWorkStatusDefinition(updatedWorkStatus).label}${note ? ` – ${note}` : ''}`
       }
-      return ver;
+    ];
+    await dbService.updateDocument('pos', po.id, {
+      ...getPOQueueUpdate('waiting_design', {
+        designProgress: allCompleted ? 'designer_completed' : hasWaitingInfo ? 'waiting_info' : 'in_progress'
+      }),
+      historyLogs: updatedLogs
     });
+  };
 
-    await dbService.updateDocument('designs', selectedDesign.id, {
-      versions: updatedVersions
-    });
-
-    // Sync to PO
-    const po = pos.find(p => p.id === selectedDesign.poId);
-    if (po) {
-      const updatedLinks = {
-        ...(po.links || {}),
-        aiLink: editAiLink || po.links?.aiLink || '',
-        corelLink: editCorelLink || po.links?.corelLink || ''
-      };
-      await dbService.updateDocument('pos', po.id, {
-        links: updatedLinks
-      });
+  const handleUpdateWorkStatus = async () => {
+    if (!selectedRequest || isSaving) return;
+    if (nextWorkStatus === 'waiting_info' && !statusNote.trim()) {
+      setActionError('Vui lòng ghi rõ thông tin còn thiếu để Sale có thể bổ sung.');
+      return;
     }
-
-    setShowEditVersionModal(false);
-    
-    // Refresh
-    const updatedList = await dbService.getCollection('designs');
-    setDesigns(updatedList);
-    setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
-    onRefresh();
-  };
-
-  const handleDeleteLastVersion = async () => {
-    if (!selectedDesign || !selectedDesign.versions || selectedDesign.versions.length === 0) return;
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa phiên bản thiết kế này?'))) {
-      const updatedVersions = [...selectedDesign.versions];
-      updatedVersions.pop(); // Remove last version
-      const nextVersionNumber = updatedVersions.length;
-      
-      await dbService.updateDocument('designs', selectedDesign.id, {
-        versions: updatedVersions,
-        currentVersion: nextVersionNumber,
-        status: nextVersionNumber === 0 ? 'pending' : 'client_pending'
-      });
-
-      // Also revert PO status if needed
-      const po = pos.find(p => p.id === selectedDesign.poId);
-      if (po) {
-        const updatedLogs = [
-          ...po.historyLogs,
-          {
-            status: 'waiting_design',
-            updatedBy: currentUser.displayName,
-            updatedAt: new Date().toISOString(),
-            note: `Xóa phiên bản thiết kế v${selectedDesign.currentVersion} bởi ${currentUser.displayName}.`
-          }
-        ];
-        await dbService.updateDocument('pos', po.id, {
-          ...getPOQueueUpdate('waiting_design', {
-            designProgress: nextVersionNumber === 0 ? 'request_pending' : 'customer_approval_pending'
-          }),
-          historyLogs: updatedLogs
-        });
+    if (nextWorkStatus === 'completed' && !selectedVersion) {
+      setActionError('Vui lòng tải lên ít nhất một phiên bản thiết kế trước khi đánh dấu đã hoàn thành.');
+      return;
+    }
+    setIsSaving(true);
+    setActionError('');
+    const now = new Date().toISOString();
+    const nextHistory = [
+      ...(selectedRequest.history || []),
+      {
+        type: 'work_status',
+        workStatus: nextWorkStatus,
+        approvalStatus: selectedRequest.approvalStatus || 'not_sent',
+        note: statusNote.trim(),
+        updatedBy: currentUser.displayName,
+        updatedAt: now
       }
-
-      // Refresh list
-      const updatedList = await dbService.getCollection('designs');
-      setDesigns(updatedList);
-      setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
+    ];
+    try {
+      await dbService.updateDocument('design_requests', selectedRequest.id, {
+        workStatus: nextWorkStatus,
+        statusNote: statusNote.trim(),
+        startedAt: nextWorkStatus === 'in_progress' && !selectedRequest.startedAt ? now : selectedRequest.startedAt || '',
+        completedAt: nextWorkStatus === 'completed' ? now : '',
+        updatedBy: currentUser.displayName,
+        history: nextHistory
+      });
+      await updatePODesignProgress(selectedRequest, nextWorkStatus, statusNote.trim());
+      setStatusNote('');
       onRefresh();
+    } catch (error) {
+      console.error('Unable to update design work status:', error);
+      setActionError('Không thể cập nhật tiến độ thiết kế. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleEditPreviewFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handlePreviewFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        const base64 = canvas.toDataURL('image/jpeg', 0.7);
-        setEditBase64Preview(base64);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Design status colors mapping
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'approved': return <span className="badge badge-success">{t('Đã Duyệt Màu')}</span>;
-      case 'rejected': return <span className="badge badge-danger">{t('Yêu Cầu Sửa Lại')}</span>;
-      case 'client_pending': return <span className="badge badge-warning">{t('Chờ Khách Duyệt')}</span>;
-      case 'designing': return <span className="badge badge-info">{t('Đang thiết kế')}</span>;
-      default: return <span className="badge badge-danger">{t('Đợi Thiết Kế')}</span>;
+    setActionError('');
+    try {
+      setPreviewImage(await compressPreviewImage(file));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Không thể xử lý ảnh thiết kế.');
     }
   };
 
-  // Resize and convert new version preview image to Base64
-  const handlePreviewFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        const base64 = canvas.toDataURL('image/jpeg', 0.7); // 70% jpeg compression
-        setNewBase64Preview(base64);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+  const resetVersionForm = () => {
+    setShowVersionModal(false);
+    setPreviewImage('');
+    setAiLink('');
+    setCorelLink('');
+    setVersionComment('');
   };
 
-  // Add new design version (Designer action)
-  const handleAddVersion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDesign) return;
-
-    const currentVersions = selectedDesign.versions || [];
-    const nextVersionNumber = currentVersions.length + 1;
-
+  const handleAddVersion = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedRequest || isSaving) return;
+    if (!previewImage) {
+      setActionError('Vui lòng chọn ảnh xem trước của bản thiết kế.');
+      return;
+    }
+    setIsSaving(true);
+    setActionError('');
+    const now = new Date().toISOString();
+    const existingVersions = selectedDesignVersions;
+    const nextVersionNumber = Math.max(0, ...existingVersions.map(version => Number(version.versionNumber) || 0)) + 1;
     const newVersion = {
       versionNumber: nextVersionNumber,
-      previewImage: newBase64Preview,
-      aiLink: newAiLink,
-      corelLink: newCorelLink,
-      comment: newComment,
-      createdAt: new Date().toISOString(),
+      previewImage,
+      aiLink: aiLink.trim(),
+      corelLink: corelLink.trim(),
+      comment: versionComment.trim(),
+      createdAt: now,
       createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       feedbackFromClient: '',
       feedbackAt: ''
     };
-
-    const updatedVersions = [...currentVersions, newVersion];
-    
-    // Update design record
-    await dbService.updateDocument('designs', selectedDesign.id, {
-      versions: updatedVersions,
-      status: 'client_pending', // Set status to waiting client approval
-      currentVersion: nextVersionNumber
-    });
-
-    // Also update PO history logs and status
-    const po = pos.find(p => p.id === selectedDesign.poId);
-    if (po) {
-      const updatedLogs = [
-        ...po.historyLogs,
-        {
-          status: 'waiting_design',
-          updatedBy: currentUser.displayName,
-          updatedAt: new Date().toISOString(),
-          note: `Upload bản thiết kế v${nextVersionNumber} - Chờ duyệt màu.`
-        }
-      ];
-      const updatedLinks = {
-        ...(po.links || {}),
-        aiLink: newAiLink || po.links?.aiLink || '',
-        corelLink: newCorelLink || po.links?.corelLink || ''
-      };
-      await dbService.updateDocument('pos', po.id, {
-        ...getPOQueueUpdate('waiting_design', { designProgress: 'customer_approval_pending' }),
-        historyLogs: updatedLogs,
-        links: updatedLinks
-      });
-    }
-
-    setShowAddVersionModal(false);
-    setNewBase64Preview('');
-    setNewAiLink('');
-    setNewCorelLink('');
-    setNewComment('');
-    
-    // Refresh local lists
-    const updatedList = await dbService.getCollection('designs');
-    setDesigns(updatedList);
-    setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
-    onRefresh();
-  };
-
-  // Client layout approval action (Sale/Admin handles approval)
-  const handleClientFeedback = async (approved: boolean) => {
-    if (!selectedDesign) return;
-
-    const currentVersions = [...(selectedDesign.versions || [])];
-    if (currentVersions.length === 0) return;
-
-    const lastVersionIndex = currentVersions.length - 1;
-    currentVersions[lastVersionIndex] = {
-      ...currentVersions[lastVersionIndex],
-      feedbackFromClient: approved ? 'DUYỆT CHỐT LAYOUT & MÀU IN' : `TỪ CHỐI / YÊU CẦU SỬA: ${feedbackText}`,
-      feedbackAt: new Date().toISOString()
-    };
-
-    const newStatus = approved ? 'approved' : 'rejected';
-    
-    await dbService.updateDocument('designs', selectedDesign.id, {
-      versions: currentVersions,
-      status: newStatus
-    });
-
-    // Update the PO status
-    const po = pos.find(p => p.id === selectedDesign.poId);
-    if (po) {
-      const nextPOStatus = approved ? 'waiting_production' : 'waiting_design';
-      const updatedLogs = [
-        ...po.historyLogs,
-        {
-          status: nextPOStatus,
-          updatedBy: currentUser.displayName,
-          updatedAt: new Date().toISOString(),
-          note: approved 
-            ? `Thiết kế v${selectedDesign.currentVersion} đã được khách hàng duyệt màu/chốt layout.`
-            : `Khách hàng từ chối layout v${selectedDesign.currentVersion}. Yêu cầu: ${feedbackText}`
-        }
-      ];
-
-      // In the item inside PO, update layout preview as well!
-      const updatedItems = [...po.items];
-      if (updatedItems[0] && approved) {
-        updatedItems[0].previewImage = selectedDesign.versions[lastVersionIndex].previewImage;
+    try {
+      if (selectedDesign) {
+        await dbService.updateDocument('designs', selectedDesign.id, {
+          designRequestId: selectedRequest.id,
+          itemId: selectedRequest.itemId,
+          itemIndex: selectedRequest.itemIndex,
+          customerReferenceCode: selectedRequest.customerReferenceCode,
+          versions: [...existingVersions, newVersion],
+          currentVersion: nextVersionNumber,
+          status: 'client_pending',
+          designerId: currentUser.uid,
+          designerName: currentUser.displayName
+        });
+      } else {
+        await dbService.addDocument('designs', {
+          id: `design-${selectedRequest.id}`,
+          designRequestId: selectedRequest.id,
+          poId: selectedRequest.poId,
+          poCode: selectedRequest.poCode,
+          itemId: selectedRequest.itemId,
+          itemIndex: selectedRequest.itemIndex,
+          customerReferenceCode: selectedRequest.customerReferenceCode,
+          designerId: currentUser.uid,
+          designerName: currentUser.displayName,
+          versions: [newVersion],
+          currentVersion: 1,
+          status: 'client_pending',
+          createdAt: now
+        });
       }
 
-      const updatedLinks = {
-        ...(po.links || {}),
-        aiLink: selectedDesign.versions[lastVersionIndex].aiLink || po.links?.aiLink || '',
-        corelLink: selectedDesign.versions[lastVersionIndex].corelLink || po.links?.corelLink || ''
-      };
-
-      await dbService.updateDocument('pos', po.id, {
-        ...getPOQueueUpdate(nextPOStatus, {
-          designProgress: approved ? 'approved' : 'revision_requested',
-          productionProgress: approved ? 'pending' : po.productionProgress || ''
-        }),
-        historyLogs: updatedLogs,
-        items: updatedItems,
-        links: updatedLinks
+      const requestHistory = [
+        ...(selectedRequest.history || []),
+        {
+          type: 'version_uploaded',
+          workStatus: 'completed',
+          approvalStatus: 'waiting_client',
+          note: `Hoàn thành và tải lên phiên bản thiết kế v${nextVersionNumber}. ${versionComment.trim()}`.trim(),
+          updatedBy: currentUser.displayName,
+          updatedAt: now
+        }
+      ];
+      await dbService.updateDocument('design_requests', selectedRequest.id, {
+        workStatus: 'completed',
+        approvalStatus: 'waiting_client',
+        completedAt: now,
+        statusNote: versionComment.trim(),
+        latestVersion: nextVersionNumber,
+        updatedBy: currentUser.displayName,
+        history: requestHistory
       });
-    }
 
-    setFeedbackText('');
-    
-    // Refresh
-    const updatedList = await dbService.getCollection('designs');
-    setDesigns(updatedList);
-    setSelectedDesign(updatedList.find(d => d.id === selectedDesign.id));
-    onRefresh();
+      const po = pos.find(candidate => candidate.id === selectedRequest.poId);
+      if (po) {
+        const requestsForPO = designRequests
+          .filter(candidate => candidate.poId === selectedRequest.poId && candidate.archived !== true)
+          .map(candidate => candidate.id === selectedRequest.id
+            ? { ...candidate, workStatus: 'completed' as DesignWorkStatus, approvalStatus: 'waiting_client' as const }
+            : candidate);
+        const allDesignerWorkCompleted = requestsForPO.length > 0
+          && requestsForPO.every(candidate => candidate.workStatus === 'completed');
+        const updatedItems = (po.items || []).map((item: DesignPOItem, index: number) => (
+          (item.itemId || item.productCode || `item-${index + 1}`) === selectedRequest.itemId
+            ? {
+                ...item,
+                designNotes: versionComment.trim(),
+                designLayouts: Array.from(new Set([...(item.designLayouts || []), previewImage]))
+              }
+            : item
+        ));
+        await dbService.updateDocument('pos', po.id, {
+          ...getPOQueueUpdate('waiting_design', {
+            designProgress: allDesignerWorkCompleted ? 'customer_approval_pending' : 'in_progress'
+          }),
+          items: updatedItems,
+          historyLogs: [
+            ...(po.historyLogs || []),
+            {
+              status: 'waiting_design',
+              updatedBy: currentUser.displayName,
+              updatedAt: now,
+              note: `${selectedRequest.requestCode}: Designer đã hoàn thành v${nextVersionNumber}, chờ Sale gửi khách hàng duyệt.`
+            }
+          ]
+        });
+      }
+      setSelectedVersionNumber(nextVersionNumber);
+      resetVersionForm();
+      onRefresh();
+    } catch (error) {
+      console.error('Unable to add design version:', error);
+      setActionError('Không thể lưu phiên bản thiết kế. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Helper: check if a design record exists for a PO. If not, auto create one when designer opens it
-  const getOrCreateDesign = async (po: any) => {
-    let design = designs.find(d => d.poId === po.id);
-    if (!design) {
-      // Create empty design record
-      const newDesign = {
-        id: po.id,
-        poId: po.id,
-        designerId: currentUser.role === 'designer' ? currentUser.uid : 'u-designer',
-        status: 'pending',
-        versions: [],
-        currentVersion: 0
-      };
-      design = await dbService.addDocument('designs', newDesign);
-      
-      const updatedList = await dbService.getCollection('designs');
-      setDesigns(updatedList);
-      design = updatedList.find(d => d.poId === po.id);
+  const handleClientFeedback = async (approved: boolean) => {
+    if (!selectedRequest || !selectedDesign || !selectedVersion || isSaving) return;
+    if (!approved && !feedbackText.trim()) {
+      setActionError('Vui lòng nhập nội dung khách hàng yêu cầu sửa.');
+      return;
     }
-    setSelectedDesign(design);
+    setIsSaving(true);
+    setActionError('');
+    const now = new Date().toISOString();
+    const updatedVersions = selectedDesignVersions.map((version: DesignVersion) => (
+      version.versionNumber === selectedVersion.versionNumber
+        ? {
+            ...version,
+            feedbackFromClient: approved ? 'KHÁCH HÀNG ĐÃ DUYỆT MẪU' : `KHÁCH YÊU CẦU SỬA: ${feedbackText.trim()}`,
+            feedbackAt: now
+          }
+        : version
+    ));
+    const nextWorkStatus: DesignWorkStatus = approved ? 'completed' : 'queued';
+    const nextApprovalStatus = approved ? 'approved' : 'revision_requested';
+    try {
+      await dbService.updateDocument('designs', selectedDesign.id, {
+        status: approved ? 'approved' : 'rejected',
+        versions: updatedVersions
+      });
+      await dbService.updateDocument('design_requests', selectedRequest.id, {
+        workStatus: nextWorkStatus,
+        approvalStatus: nextApprovalStatus,
+        approvalNote: feedbackText.trim(),
+        completedAt: approved ? selectedRequest.completedAt || now : '',
+        updatedBy: currentUser.displayName,
+        history: [
+          ...(selectedRequest.history || []),
+          {
+            type: 'client_feedback',
+            workStatus: nextWorkStatus,
+            approvalStatus: nextApprovalStatus,
+            note: approved ? 'Khách hàng đã duyệt mẫu.' : feedbackText.trim(),
+            updatedBy: currentUser.displayName,
+            updatedAt: now
+          }
+        ]
+      });
+
+      const po = pos.find(candidate => candidate.id === selectedRequest.poId);
+      if (po) {
+        const requestsForPO = designRequests
+          .filter(candidate => candidate.poId === selectedRequest.poId && candidate.archived !== true)
+          .map(candidate => candidate.id === selectedRequest.id
+            ? { ...candidate, approvalStatus: nextApprovalStatus, workStatus: nextWorkStatus }
+            : candidate);
+        const allApproved = requestsForPO.length > 0 && requestsForPO.every(candidate => candidate.approvalStatus === 'approved');
+        const updatedItems = (po.items || []).map((item: DesignPOItem, index: number) => (
+          approved && (item.itemId || item.productCode || `item-${index + 1}`) === selectedRequest.itemId
+            ? { ...item, previewImage: selectedVersion.previewImage }
+            : item
+        ));
+        await dbService.updateDocument('pos', po.id, {
+          ...getPOQueueUpdate(allApproved ? 'waiting_production' : 'waiting_design', {
+            designProgress: allApproved ? 'approved' : approved ? 'partially_approved' : 'revision_requested',
+            productionProgress: allApproved ? 'pending' : po.productionProgress || ''
+          }),
+          items: updatedItems,
+          historyLogs: [
+            ...(po.historyLogs || []),
+            {
+              status: allApproved ? 'waiting_production' : 'waiting_design',
+              updatedBy: currentUser.displayName,
+              updatedAt: now,
+              note: approved
+                ? `${selectedRequest.requestCode}: khách hàng đã duyệt mẫu${allApproved ? '; toàn bộ mặt hàng đã sẵn sàng chuyển sản xuất.' : '.'}`
+                : `${selectedRequest.requestCode}: khách hàng yêu cầu Designer sửa – ${feedbackText.trim()}`
+            }
+          ]
+        });
+      }
+      setFeedbackText('');
+      onRefresh();
+    } catch (error) {
+      console.error('Unable to save client feedback:', error);
+      setActionError('Không thể cập nhật phản hồi khách hàng. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const metrics = DESIGN_WORK_STATUSES.map(status => ({
+    ...status,
+    count: visibleRequests.filter(request => getDesignWorkStatus(request.workStatus) === status.value).length
+  }));
 
   return (
-    <div className="design-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="design-request-view">
       <div className="page-header">
         <div>
-          <h1 className="page-title">{t('QUẢN LÝ THIẾT KẾ & DUYỆT MẪU')}</h1>
-          <p className="page-subtitle">{t('Tải lên bản vẽ layout duyệt màu (Base64) và liên kết file thiết kế gốc (AI, Corel) trên Google Drive.')}</p>
+          <h1 className="page-title">{t('YÊU CẦU THIẾT KẾ')}</h1>
+          <p className="page-subtitle">{t('Mỗi mặt hàng trong PO là một công việc thiết kế độc lập, chỉ hiển thị thông tin cần thiết cho bộ phận Thiết kế.')}</p>
         </div>
       </div>
 
-      <div className="history-tabs" role="tablist" aria-label="Quản lý thiết kế">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={designTab === 'requests'}
-          className={`history-tab ${designTab === 'requests' ? 'is-active' : ''}`}
-          onClick={() => {
-            setDesignTab('requests');
-            setSelectedDesign(null);
-          }}
-        >
-          <ListChecks size={16} /> Yêu cầu thiết kế
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={designTab === 'library'}
-          className={`history-tab ${designTab === 'library' ? 'is-active' : ''}`}
-          onClick={() => {
-            setDesignTab('library');
-            setSelectedDesign(null);
-          }}
-        >
-          <Library size={16} /> Kho mẫu đã duyệt
-        </button>
+      <div className="design-request-metrics">
+        {metrics.map(status => (
+          <button
+            type="button"
+            key={status.value}
+            className={`design-status-metric ${statusFilter === status.value ? 'is-active' : ''}`}
+            style={{ '--status-color': status.color, '--status-background': status.background } as React.CSSProperties}
+            onClick={() => setStatusFilter(current => current === status.value ? 'all' : status.value)}
+          >
+            <strong>{status.count}</strong>
+            <span>{t(status.label)}</span>
+          </button>
+        ))}
       </div>
 
-      {designTab === 'library' && <ApprovedDesignLibrary designs={designs} pos={pos} />}
+      <div className="card design-request-list-card">
+        <div className="design-request-toolbar">
+          <div className="design-request-search">
+            <Search size={16} />
+            <input
+              value={searchTerm}
+              onChange={event => setSearchTerm(event.target.value)}
+              placeholder={t('Tìm mã yêu cầu, mã PO, mã hàng hoặc sản phẩm...')}
+            />
+          </div>
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as 'all' | DesignWorkStatus)}>
+            <option value="all">{t('Tất cả tiến độ')}</option>
+            {DESIGN_WORK_STATUSES.map(status => <option key={status.value} value={status.value}>{t(status.label)}</option>)}
+          </select>
+          <span className="design-request-result-count">{filteredRequests.length} {t('yêu cầu')}</span>
+        </div>
 
-      {designTab === 'requests' && <div className="card">
-        <span className="card-title">{t('Danh Sách Yêu Cầu Thiết Kế Từ Đơn Hàng')}</span>
-        <div className="table-container">
+        <div className="table-container design-request-table">
           <table>
             <thead>
               <tr>
+                <th>{t('Mã yêu cầu')}</th>
                 <th>{t('Mã PO')}</th>
-                <th>{t('Tên Công Ty')}</th>
-                <th>{t('Sản Phẩm')}</th>
-                <th>{t('Kích Thước Quy Cách *')}</th>
-                <th>{t('Trạng Thái')}</th>
+                <th>{t('Mặt hàng cần thiết kế')}</th>
+                <th>{t('Quy cách / Chất liệu')}</th>
+                <th>{t('Hạn xử lý')}</th>
+                <th>{t('Người phụ trách')}</th>
+                <th>{t('Tiến độ thiết kế')}</th>
                 <th>{t('Thao Tác')}</th>
               </tr>
             </thead>
             <tbody>
-              {pos.map(po => {
-                const design = designs.find(d => d.poId === po.id);
-                const item = po.items[0] || {};
+              {filteredRequests.map(request => {
+                const status = getDesignWorkStatusDefinition(request.workStatus);
+                const designer = users.find(user => user.uid === request.assignedDesignerId);
+                const ageDays = getDesignRequestAgeDays(request);
+                const overdue = isDesignRequestOverdue(request);
                 return (
-                  <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => getOrCreateDesign(po)}>
-                    <td style={{ fontWeight: 600 }}>{po.poCode}</td>
-                    <td>{po.customerName}</td>
-                    <td style={{ fontWeight: 500 }}>{item.productName}</td>
-                    <td>{item.size}</td>
-                    <td>{getStatusBadge(design ? design.status : 'pending')}</td>
+                  <tr key={request.id} className={overdue ? 'is-overdue' : ''} onClick={() => openRequest(request)}>
                     <td>
-                      <button className="btn btn-sm btn-outline" onClick={() => getOrCreateDesign(po)}>
-                        {t('Chi Tiết')}
+                      <strong className="design-request-code">{request.requestCode}</strong>
+                      <span className={`design-priority design-priority--${request.priority || 'normal'}`}>{t(PRIORITY_LABELS[request.priority] || 'Bình thường')}</span>
+                    </td>
+                    <td>
+                      <strong>{request.customerReferenceCode || request.poCode}</strong>
+                      <span className="design-secondary-text">{request.poCode}</span>
+                    </td>
+                    <td>
+                      <strong>{request.productName || t('Chưa đặt tên')}</strong>
+                      <span className="design-secondary-text">{request.productCode || t('Chưa có mã hàng')}</span>
+                    </td>
+                    <td>
+                      <span>{request.size || '—'}</span>
+                      <span className="design-secondary-text">{request.material || '—'}</span>
+                    </td>
+                    <td>
+                      <span className={overdue ? 'design-overdue-text' : ''}>{formatDate(request.dueDate)}</span>
+                      <span className="design-secondary-text">{ageDays === null ? '—' : `${ageDays} ${t(request.workStatus === 'completed' ? 'ngày xử lý' : 'ngày chờ')}`}</span>
+                    </td>
+                    <td>{designer?.displayName || t('Chưa phân công')}</td>
+                    <td>
+                      <span className="design-work-badge" style={{ color: status.color, background: status.background, borderColor: status.color }}>
+                        {t(status.label)}
+                      </span>
+                    </td>
+                    <td>
+                      <button className="btn btn-sm btn-outline" onClick={event => { event.stopPropagation(); openRequest(request); }}>
+                        {t('Mở công việc')}
                       </button>
                     </td>
                   </tr>
                 );
               })}
+              {filteredRequests.length === 0 && (
+                <tr><td colSpan={8} className="design-empty-row">{t('Không có yêu cầu thiết kế phù hợp.')}</td></tr>
+              )}
             </tbody>
           </table>
         </div>
-      </div>}
+      </div>
 
-      {/* DETAILED DESIGN WORKSPACE */}
-      {designTab === 'requests' && selectedDesign && (
-        <div className="details-grid" style={{ gridTemplateColumns: '350px 1fr' }}>
-          {/* Version logs */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">{t('Phiên bản')} v{selectedDesign.currentVersion}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedDesign(null)}>{t('Đóng')}</button>
+      {selectedRequest && (
+        <div className="design-workspace">
+          <div className="design-workspace-header">
+            <div>
+              <span>{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
+              <strong>{selectedRequest.requestCode} · {selectedRequest.customerReferenceCode || selectedRequest.poCode}</strong>
             </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '450px', overflowY: 'auto' }}>
-              {selectedDesign.versions && selectedDesign.versions.map((ver: any) => (
-                <div 
-                  key={ver.versionNumber} 
-                  style={{ 
-                    padding: '12px', 
-                    borderRadius: '4px', 
-                    border: '1px solid var(--color-border-light)',
-                    backgroundColor: selectedDesign.currentVersion === ver.versionNumber ? 'var(--color-primary-light)' : '#ffffff',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => setSelectedDesign((prev: any) => ({ ...prev, selectedVer: ver }))}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '13px' }}>
-                    <span style={{ color: 'var(--color-primary)' }}>{t('Phiên bản')} v{ver.versionNumber}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                      {new Date(ver.createdAt).toLocaleDateString(t('vi-VN'))}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', margin: '4px 0' }}>{ver.comment || t('Không có ghi chú')}</p>
-                  {ver.feedbackFromClient && (
-                    <div style={{ fontSize: '11px', marginTop: '6px', padding: '4px', backgroundColor: '#ffffff', borderLeft: '3px solid var(--color-success)', color: 'var(--color-text-main)' }}>
-                      {ver.feedbackFromClient}
-                    </div>
+            <button className="btn btn-sm btn-outline" onClick={() => { setSelectedRequestId(''); setActionError(''); }}>{t('Đóng')}</button>
+          </div>
+
+          {actionError && <div className="design-action-error"><AlertCircle size={16} /> {actionError}</div>}
+
+          <div className="design-workspace-grid">
+            <section className="card design-brief-card">
+              <div className="design-section-title"><ListChecks size={17} /><span>{t('Thông tin bàn giao từ Sale')}</span></div>
+              <dl className="design-brief-grid">
+                <div><dt>{t('Mã PO')}</dt><dd>{selectedRequest.customerReferenceCode || selectedRequest.poCode}</dd></div>
+                <div><dt>{t('Mã hàng')}</dt><dd>{selectedRequest.productCode || '—'}</dd></div>
+                <div><dt>{t('Tên hàng')}</dt><dd>{selectedRequest.productName || '—'}</dd></div>
+                <div><dt>{t('Quy cách')}</dt><dd>{selectedRequest.size || '—'}</dd></div>
+                <div><dt>{t('Chất liệu')}</dt><dd>{selectedRequest.material || '—'}</dd></div>
+                <div><dt>{t('Hạn hoàn thành')}</dt><dd>{formatDate(selectedRequest.dueDate)}</dd></div>
+              </dl>
+              <div className="design-brief-note">
+                <strong>{t('Yêu cầu và ghi chú thiết kế')}</strong>
+                <p>{selectedRequest.designBrief || t('Sale chưa cung cấp ghi chú riêng.')}</p>
+              </div>
+              <div className="design-reference-gallery">
+                <strong>{t('Artwork và hình ảnh tham khảo')}</strong>
+                <div>
+                  {(selectedRequest.referenceImages || []).map((imageUrl: string, index: number) => (
+                    <a href={imageUrl} target="_blank" rel="noopener noreferrer" key={`${imageUrl.slice(0, 40)}-${index}`}>
+                      <img src={imageUrl} alt={`${t('Ảnh tham khảo')} ${index + 1}`} />
+                    </a>
+                  ))}
+                  {(selectedRequest.referenceImages || []).length === 0 && (
+                    <span className="design-reference-empty"><ImageIcon size={24} />{t('Chưa có artwork hoặc hình ảnh tham khảo.')}</span>
                   )}
                 </div>
-              ))}
-              {(!selectedDesign.versions || selectedDesign.versions.length === 0) && (
-                <span style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)' }}>{t('Chưa có phiên bản thiết kế nào.')}</span>
-              )}
-            </div>
+              </div>
+            </section>
 
-            {/* Designer button */}
-            {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
-              <button 
-                className="btn btn-primary btn-symbol" 
-                style={{ width: '100%', marginTop: '10px' }} 
-                onClick={() => setShowAddVersionModal(true)}
-                title={t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')}
-              >
-                <Plus size={18} />
-              </button>
-            )}
+            <section className="card design-progress-card">
+              <div className="design-section-title"><Clock3 size={17} /><span>{t('Cập nhật tiến độ nội bộ')}</span></div>
+              <label>{t('Trạng thái công việc của Designer')}</label>
+              <select value={nextWorkStatus} onChange={event => setNextWorkStatus(event.target.value as DesignWorkStatus)} disabled={currentUser.role === 'sale'}>
+                {DESIGN_WORK_STATUSES.map(status => <option key={status.value} value={status.value}>{t(status.label)}</option>)}
+              </select>
+              <label>{t('Ghi chú cập nhật / thông tin cần bổ sung')}</label>
+              <textarea
+                rows={4}
+                value={statusNote}
+                onChange={event => setStatusNote(event.target.value)}
+                placeholder={t('Mô tả tiến độ hoặc ghi rõ nội dung đang thiếu...')}
+                disabled={currentUser.role === 'sale'}
+              />
+              {currentUser.role !== 'sale' && (
+                <button className="btn btn-primary" onClick={handleUpdateWorkStatus} disabled={isSaving}>
+                  {isSaving ? t('Đang lưu...') : t('Lưu tiến độ thiết kế')}
+                </button>
+              )}
+
+              <div className="design-progress-summary">
+                <div>
+                  <span>{t('Tiến độ Designer')}</span>
+                  <strong>{t(getDesignWorkStatusDefinition(selectedRequest.workStatus).label)}</strong>
+                </div>
+                <div>
+                  <span>{t('Phản hồi khách hàng')}</span>
+                  <strong>{t(getDesignApprovalStatusDefinition(selectedRequest.approvalStatus).label)}</strong>
+                </div>
+              </div>
+            </section>
           </div>
 
-          {/* Active version detail layout */}
-          <div className="card">
-            {(() => {
-              const activeVer = selectedDesign.selectedVer || (selectedDesign.versions && selectedDesign.versions[selectedDesign.versions.length - 1]);
-              
-              if (!activeVer) {
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '60px 0' }}>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '15px' }}>{t('Chưa có tệp tin bản vẽ nào cho đơn hàng này.')}</p>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{t('Bắt đầu bằng việc nhấn nút "Upload Phiên Bản Mới" phía cột trái.')}</p>
+          <div className="design-workspace-grid design-version-workspace">
+            <section className="card">
+              <div className="design-version-header">
+                <div className="design-section-title"><FileArchive size={17} /><span>{t('Phiên bản thiết kế')}</span></div>
+                {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
+                  <button className="btn btn-sm btn-primary" onClick={() => setShowVersionModal(true)}><Plus size={14} /> {t('Thêm phiên bản')}</button>
+                )}
+              </div>
+              <div className="design-version-list">
+                {selectedDesignVersions.map((version: DesignVersion) => (
+                  <button
+                    type="button"
+                    key={version.versionNumber}
+                    className={selectedVersion?.versionNumber === version.versionNumber ? 'is-active' : ''}
+                    onClick={() => setSelectedVersionNumber(version.versionNumber)}
+                  >
+                    <strong>v{version.versionNumber}</strong>
+                    <span>{formatDate(version.createdAt)}</span>
+                    <small>{version.comment || t('Không có ghi chú')}</small>
+                  </button>
+                ))}
+                {selectedDesignVersions.length === 0 && (
+                  <div className="design-version-empty">{t('Chưa có phiên bản thiết kế nào.')}</div>
+                )}
+              </div>
+            </section>
+
+            <section className="card design-version-preview">
+              {selectedVersion ? (
+                <>
+                  <div className="design-version-preview__image">
+                    {selectedVersion.previewImage
+                      ? <img src={selectedVersion.previewImage} alt={`Thiết kế v${selectedVersion.versionNumber}`} />
+                      : <span><ImageIcon size={28} />{t('Không có ảnh xem trước')}</span>}
                   </div>
-                );
-              }
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="card-header" style={{ paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span className="card-title" style={{ fontSize: '16px', color: 'var(--color-primary)' }}>
-                        {t('Phiên bản')} v{activeVer.versionNumber}
-                      </span>
-                      <span className="badge badge-info">
-                        {t('Trạng Thái')}: {t(getPOQueueLabel(pos.find((p: any) => p.id === selectedDesign.poId)))}
-                      </span>
+                  <div className="design-version-preview__meta">
+                    <div><strong>{t('Phiên bản')} v{selectedVersion.versionNumber}</strong><span>{selectedVersion.comment || t('Không có ghi chú')}</span></div>
+                    <div className="design-source-links">
+                      {selectedVersion.aiLink && <a href={selectedVersion.aiLink} target="_blank" rel="noopener noreferrer">File AI</a>}
+                      {selectedVersion.corelLink && <a href={selectedVersion.corelLink} target="_blank" rel="noopener noreferrer">File Corel</a>}
+                      {!selectedVersion.aiLink && !selectedVersion.corelLink && <span>{t('Chưa có file thiết kế gốc')}</span>}
                     </div>
-                    {(currentUser.role === 'admin' || currentUser.role === 'designer') && activeVer.versionNumber === selectedDesign.currentVersion && (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => handleOpenEditVersionModal(activeVer)} title={t('Sửa')}>
-                          <Pencil size={14} />
-                        </button>
-                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={handleDeleteLastVersion} title={t('Xóa')}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    )}
+                    {selectedVersion.feedbackFromClient && <p className="design-client-feedback">{selectedVersion.feedbackFromClient}</p>}
                   </div>
+                </>
+              ) : (
+                <div className="design-version-empty design-version-empty--large"><ImageIcon size={30} />{t('Chưa có bản thiết kế để xem trước.')}</div>
+              )}
 
-                  <div className="details-grid">
-                    {/* Render compressed Base64 image directly in <img> */}
-                    <div style={{ textAlign: 'center', border: '1px solid var(--color-border-light)', padding: '10px', borderRadius: '4px' }}>
-                      <h4 style={{ textAlign: 'left', marginBottom: '8px', fontSize: '13px' }}>{t('Bản Vẽ Thiết Kế Duyệt Màu')}</h4>
-                      {activeVer.previewImage ? (
-                        <img 
-                          src={activeVer.previewImage} 
-                          alt={`Mẫu duyệt v${activeVer.versionNumber}`} 
-                          style={{ maxWidth: '100%', maxHeight: '350px', objectFit: 'contain', border: '1px solid var(--color-border)', borderRadius: '4px' }}
-                        />
-                      ) : (
-                        <div style={{ padding: '80px 0', backgroundColor: '#f8fafc', color: 'var(--color-text-muted)' }}>{t('Không có hình ảnh xem trước')}</div>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '4px', border: '1px solid var(--color-border-light)' }}>
-                        <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)', fontSize: '13.5px' }}>{t('File Thiết Kế Gốc')}</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {activeVer.aiLink ? (
-                            <a href={activeVer.aiLink} target="_blank" rel="noopener noreferrer" className="file-link-item" style={{ justifyContent: 'center' }}>
-                              {t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}
-                            </a>
-                          ) : (
-                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>{t('Chưa tải lên file gốc')} (AI)</span>
-                          )}
-
-                          {activeVer.corelLink ? (
-                            <a href={activeVer.corelLink} target="_blank" rel="noopener noreferrer" className="file-link-item" style={{ justifyContent: 'center' }}>
-                              {t('Đường dẫn Thiết kế Corel Draw (.cdr)')}
-                            </a>
-                          ) : (
-                            <span style={{ fontSize: '12.5px', color: 'var(--color-text-muted)' }}>{t('Chưa tải lên file gốc')} (Corel)</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* CLIENT/SALE LAYOUT APPROVAL ACTION */}
-                      {(currentUser.role === 'admin' || currentUser.role === 'sale') && selectedDesign.status === 'client_pending' && (
-                        <div style={{ border: '1px solid var(--color-border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--color-warning-bg)' }}>
-                          <h4 style={{ color: 'var(--color-warning)', marginBottom: '8px', fontSize: '13.5px' }}>{t('ĐỒNG Ý PHÊ DUYỆT CHỐT LAYOUT MÀU SẮC')}</h4>
-                          <p style={{ fontSize: '12.5px', marginBottom: '10px' }}>{t('Ý kiến phê duyệt hoặc yêu cầu chỉnh sửa của khách hàng:')}</p>
-                          <textarea 
-                            value={feedbackText} 
-                            onChange={(e) => setFeedbackText(e.target.value)} 
-                            placeholder={t('Nhập nội dung ý kiến tại đây...')}
-                            style={{ marginBottom: '12px' }}
-                          />
-                          <div className="btn-group">
-                            <button className="btn btn-success" onClick={() => handleClientFeedback(true)}>
-                              {t('Phê Duyệt Chốt Layout')}
-                            </button>
-                            <button className="btn btn-danger" onClick={() => handleClientFeedback(false)} disabled={!feedbackText}>
-                              {t('Yêu Cầu Sửa Lại')}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div style={{ padding: '12px', borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f1f5f9', fontSize: '13px' }}>
-                        <span style={{ fontWeight: 600, display: 'block', fontSize: '12.5px' }}>{t('Ý Kiến Thiết Kế / Ghi Chú')} (v{activeVer.versionNumber}):</span>
-                        <p style={{ margin: '4px 0' }}>{activeVer.comment || t('Không có ghi chú')}</p>
-                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed var(--color-border)', fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                          <div><strong>{t('Tạo bởi:')}</strong> {activeVer.createdBy || t('Không xác định')} {activeVer.createdAt && `(${new Date(activeVer.createdAt).toLocaleString(t('vi-VN'))})`}</div>
-                          {activeVer.updatedBy && <div><strong>{t('Cập nhật bởi:')}</strong> {activeVer.updatedBy} {activeVer.updatedAt && `(${new Date(activeVer.updatedAt).toLocaleString(t('vi-VN'))})`}</div>}
-                        </div>
-                      </div>
-                    </div>
+              {(currentUser.role === 'admin' || currentUser.role === 'sale') && selectedDesign?.status === 'client_pending' && selectedVersion && (
+                <div className="design-approval-panel">
+                  <strong>{t('Cập nhật phản hồi của khách hàng')}</strong>
+                  <textarea value={feedbackText} onChange={event => setFeedbackText(event.target.value)} placeholder={t('Nhập nội dung khách hàng yêu cầu sửa...')} />
+                  <div>
+                    <button className="btn btn-success" onClick={() => handleClientFeedback(true)} disabled={isSaving}><CheckCircle2 size={15} /> {t('Khách đã duyệt')}</button>
+                    <button className="btn btn-danger" onClick={() => handleClientFeedback(false)} disabled={isSaving}><XCircle size={15} /> {t('Yêu cầu Designer sửa')}</button>
                   </div>
                 </div>
-              );
-            })()}
+              )}
+            </section>
           </div>
+
+          <section className="card design-history-card">
+            <div className="design-section-title"><UserRound size={17} /><span>{t('Lịch sử xử lý công việc')}</span></div>
+            <div className="design-history-list">
+              {[...(selectedRequest.history || [])].reverse().map((entry: DesignRequestHistory, index: number) => (
+                <div key={`${entry.updatedAt || 'history'}-${index}`}>
+                  <span className="design-history-dot" />
+                  <strong>{entry.updatedBy || t('Hệ thống')}</strong>
+                  <time>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('vi-VN') : '—'}</time>
+                  <p>{entry.note || t(getDesignWorkStatusDefinition(entry.workStatus).label)}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       )}
 
-      {/* UPLOAD VERSION MODAL */}
-      {designTab === 'requests' && showAddVersionModal && (
+      {showVersionModal && selectedRequest && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content design-version-modal">
             <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CẬP NHẬT PHIÊN BẢN THIẾT KẾ MỚI')} (v{selectedDesign.versions.length + 1})</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddVersionModal(false)}>{t('Đóng')}</button>
+              <span>{t('THÊM PHIÊN BẢN THIẾT KẾ')} · {selectedRequest.requestCode}</span>
+              <button className="btn btn-sm btn-outline" onClick={resetVersionForm}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddVersion}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label>{t('Bản Vẽ Layout Duyệt Màu (Ảnh)*')}</label>
-                  <div className="image-upload-box">
-                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{t('Ảnh mẫu sẽ được nén Base64 tự động để lưu trữ an toàn dưới 100KB.')}</span>
-                    <input type="file" accept="image/*" onChange={handlePreviewFileChange} style={{ display: 'block', margin: '10px auto' }} required />
-                    {newBase64Preview && (
-                      <img src={newBase64Preview} alt="Preview" className="image-preview-thumbnail" />
-                    )}
-                  </div>
+                  <label>{t('Ảnh xem trước bản thiết kế')} *</label>
+                  <input type="file" accept="image/*" onChange={handlePreviewFile} required />
+                  {previewImage && <img className="design-upload-preview" src={previewImage} alt={t('Ảnh xem trước')} />}
                 </div>
-                <div className="form-group">
-                  <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
-                  <input type="url" value={newAiLink} onChange={e => setNewAiLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
+                <div className="form-grid">
+                  <div className="form-group"><label>Link file AI</label><input type="url" value={aiLink} onChange={event => setAiLink(event.target.value)} placeholder="https://drive.google.com/..." /></div>
+                  <div className="form-group"><label>Link file Corel</label><input type="url" value={corelLink} onChange={event => setCorelLink(event.target.value)} placeholder="https://drive.google.com/..." /></div>
                 </div>
-                <div className="form-group">
-                  <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
-                  <input type="url" value={newCorelLink} onChange={e => setNewCorelLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
-                </div>
-                <div className="form-group">
-                  <label>{t('Ý Kiến Thiết Kế / Ghi Chú')} *</label>
-                  <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder={t('Ví dụ: Chỉnh lại font chữ, sửa màu cyan đậm...')} required />
-                </div>
+                <div className="form-group"><label>{t('Ghi chú phiên bản')} *</label><textarea value={versionComment} onChange={event => setVersionComment(event.target.value)} required /></div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddVersionModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Thiết Kế')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT VERSION MODAL */}
-      {designTab === 'requests' && showEditVersionModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA THÔNG TIN PHIÊN BẢN')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditVersionModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleEditVersionSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Bản Vẽ Layout Duyệt Màu (Ảnh)')}</label>
-                  <div className="image-upload-box">
-                    <input type="file" accept="image/*" onChange={handleEditPreviewFileChange} style={{ display: 'block', margin: '10px auto' }} />
-                    {editBase64Preview && (
-                      <img src={editBase64Preview} alt="Preview" className="image-preview-thumbnail" />
-                    )}
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Đường dẫn Thiết kế Gốc AI (Adobe Illustrator)')}</label>
-                  <input type="url" value={editAiLink} onChange={e => setEditAiLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
-                </div>
-                <div className="form-group">
-                  <label>{t('Đường dẫn Thiết kế Corel Draw (.cdr)')}</label>
-                  <input type="url" value={editCorelLink} onChange={e => setEditCorelLink(e.target.value)} placeholder="https://drive.google.com/file/d/..." />
-                </div>
-                <div className="form-group">
-                  <label>{t('Ý Kiến Thiết Kế / Ghi Chú')} *</label>
-                  <textarea value={editComment} onChange={e => setEditComment(e.target.value)} required />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditVersionModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Thay Đổi')}</button>
+                <button type="button" className="btn btn-outline" onClick={resetVersionForm}>{t('Hủy')}</button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? t('Đang lưu...') : t('Hoàn thành và gửi Sale')}</button>
               </div>
             </form>
           </div>

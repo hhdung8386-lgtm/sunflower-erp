@@ -1,56 +1,29 @@
 import React, { useMemo, useState } from 'react';
 import { CheckCircle2, FileArchive, Image as ImageIcon, Search } from 'lucide-react';
+import { DesignPOItem, DesignRecord, DesignVersion } from '../domain/designWorkflow';
 import './CustomerHistory.css';
-
-interface DesignVersion {
-  versionNumber?: number;
-  previewImage?: string;
-  aiLink?: string;
-  corelLink?: string;
-  comment?: string;
-  feedbackAt?: string;
-  createdAt?: string;
-}
-
-interface DesignRecord {
-  id: string;
-  poId: string;
-  status?: string;
-  currentVersion?: number;
-  versions?: DesignVersion[];
-  fileUrl?: string;
-  aiLink?: string;
-  corelLink?: string;
-  notes?: string;
-  updatedAt?: string;
-}
-
-interface POItemRecord {
-  productCode?: string;
-  productName?: string;
-  size?: string;
-  material?: string;
-  specifications?: Record<string, unknown>;
-}
 
 interface PORecord {
   id: string;
   poCode?: string;
   customerId?: string;
   customerName?: string;
-  items?: POItemRecord[];
+  items?: DesignPOItem[];
 }
 
 interface ApprovedDesignLibraryProps {
   designs: DesignRecord[];
   pos: PORecord[];
+  currentUser?: { role?: string };
 }
 
 interface ApprovedTemplate {
   design: DesignRecord;
   po: PORecord;
-  item: POItemRecord;
+  item: DesignPOItem;
   version: DesignVersion;
+  customerKey: string;
+  customerLabel: string;
 }
 
 const formatDate = (value?: string): string => {
@@ -59,7 +32,7 @@ const formatDate = (value?: string): string => {
   return Number.isNaN(date.getTime()) ? 'Chưa xác định' : date.toLocaleDateString('vi-VN');
 };
 
-export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ designs, pos }) => {
+export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ designs, pos, currentUser }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customerFilter, setCustomerFilter] = useState('all');
 
@@ -76,25 +49,35 @@ export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ de
         createdAt: design.updatedAt
       } : undefined);
       if (!po || !version) return null;
-      return { design, po, item: po.items?.[0] || {}, version };
+      const item = po.items?.find(candidate => (
+        design.itemId && candidate.itemId === design.itemId
+      )) || po.items?.[design.itemIndex || 0] || po.items?.[0] || {};
+      const customerKey = currentUser?.role === 'designer'
+        ? design.customerReferenceCode || po.poCode || po.id
+        : po.customerId || po.customerName || po.id;
+      const customerLabel = currentUser?.role === 'designer'
+        ? design.customerReferenceCode || po.poCode || 'Chưa có mã khách hàng'
+        : po.customerName || 'Chưa xác định khách hàng';
+      return { design, po, item, version, customerKey, customerLabel };
     })
     .filter((template): template is ApprovedTemplate => template !== null)
     .sort((a, b) => {
       const aDate = new Date(a.version.feedbackAt || a.design.updatedAt || a.version.createdAt || 0).getTime();
       const bDate = new Date(b.version.feedbackAt || b.design.updatedAt || b.version.createdAt || 0).getTime();
       return bDate - aDate;
-    }), [designs, pos]);
+    }), [currentUser?.role, designs, pos]);
 
   const customers = useMemo(() => Array.from(new Map(
-    approvedTemplates.map(template => [template.po.customerId || template.po.customerName, {
-      id: template.po.customerId || template.po.customerName || '',
-      name: template.po.customerName || 'Chưa xác định'
+    approvedTemplates.map(template => [template.customerKey, {
+      id: template.customerKey,
+      name: template.customerLabel
     }])
   ).values()).filter(customer => customer.id), [approvedTemplates]);
 
   const filteredTemplates = approvedTemplates.filter(template => {
     const haystack = [
-      template.po.customerName,
+      currentUser?.role === 'designer' ? undefined : template.po.customerName,
+      template.customerLabel,
       template.po.poCode,
       template.item.productCode,
       template.item.productName,
@@ -102,7 +85,7 @@ export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ de
       template.item.material
     ].filter(Boolean).join(' ').toLocaleLowerCase('vi');
     const matchesSearch = haystack.includes(searchQuery.trim().toLocaleLowerCase('vi'));
-    const matchesCustomer = customerFilter === 'all' || (template.po.customerId || template.po.customerName) === customerFilter;
+    const matchesCustomer = customerFilter === 'all' || template.customerKey === customerFilter;
     return matchesSearch && matchesCustomer;
   });
 
@@ -137,7 +120,7 @@ export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ de
       </div>
 
       <div className="approved-library__grid">
-        {filteredTemplates.map(({ design, po, item, version }) => (
+        {filteredTemplates.map(({ design, po, item, version, customerLabel }) => (
           <article className="approved-template-card" key={design.id}>
             <div className="approved-template-card__preview">
               {version.previewImage ? (
@@ -148,7 +131,7 @@ export const ApprovedDesignLibrary: React.FC<ApprovedDesignLibraryProps> = ({ de
               <span className="approved-template-card__status"><CheckCircle2 size={13} /> Đã duyệt</span>
             </div>
             <div className="approved-template-card__body">
-              <div className="approved-template-card__customer">{po.customerName || 'Chưa xác định khách hàng'}</div>
+              <div className="approved-template-card__customer">{customerLabel}</div>
               <h3>{item.productName || 'Sản phẩm chưa đặt tên'}</h3>
               <div className="approved-template-card__code">{item.productCode || 'Chưa có mã hàng'} · {po.poCode || 'PO chưa xác định'}</div>
               <dl>
