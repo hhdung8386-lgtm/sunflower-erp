@@ -1067,25 +1067,22 @@ export default function POFormFullScreen({
               </div>
 
               <div className="po-inline-grid-container">
-                <table className="po-inline-grid">
+                <table className="po-inline-grid po-items-overview-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '40px', textAlign: 'center' }}>STT</th>
-                      <th style={{ width: '150px' }}>{t('Mã Hàng')}</th>
-                      <th style={{ width: '220px' }}>{t('Tên Hàng *')}</th>
-                      <th style={{ width: '140px' }}>{t('Quy Cách')}</th>
-                      <th style={{ width: '140px' }}>{t('Chất Liệu')}</th>
-                      <th className="po-secondary-column" style={{ width: '80px' }}>{t('ĐVT')}</th>
-                      <th style={{ width: '90px' }}>{t('Số Lượng')}</th>
-                      <th style={{ width: '110px' }}>{t('Đơn Giá')}</th>
-                      <th className="po-secondary-column" style={{ width: '70px' }}>{t('CK (%)')}</th>
-                      <th className="po-secondary-column" style={{ width: '120px' }}>{t('Thành Tiền (chưa VAT)')}</th>
-                      <th className="po-secondary-column" style={{ width: '70px' }}>{t('Thuế (%)')}</th>
-                      <th style={{ width: '120px' }}>{t('Thành Tiền (gồm VAT)')}</th>
-                      <th style={{ width: '120px' }}>{t('Ngày Giao')}</th>
-                      <th style={{ width: '160px' }}>{t('Ảnh Layout (Max 5)')}</th>
-                      <th className="po-secondary-column" style={{ width: '150px' }}>{t('Ghi Chú')}</th>
-                      <th style={{ width: '82px', textAlign: 'center' }}>{t('Thao tác')}</th>
+                      <th style={{ width: '64px', textAlign: 'center' }}>STT</th>
+                      <th style={{ width: '130px' }}>{t('Mã Hàng')}</th>
+                      <th style={{ width: '180px' }}>{t('Tên Hàng *')}</th>
+                      <th style={{ width: '120px' }}>{t('Quy Cách')}</th>
+                      <th style={{ width: '120px' }}>{t('Chất Liệu')}</th>
+                      <th style={{ width: '70px' }}>{t('ĐVT')}</th>
+                      <th style={{ width: '80px' }}>{t('Số Lượng')}</th>
+                      <th style={{ width: '95px' }}>{t('Đơn Giá')}</th>
+                      <th style={{ width: '65px' }}>{t('CK (%)')}</th>
+                      <th style={{ width: '125px' }}>{t('Thành Tiền (chưa VAT)')}</th>
+                      <th style={{ width: '65px' }}>{t('Thuế (%)')}</th>
+                      <th style={{ width: '125px' }}>{t('Thành Tiền (gồm VAT)')}</th>
+                      <th style={{ width: '140px' }}>{t('Ảnh Layout (Max 5)')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1106,8 +1103,27 @@ export default function POFormFullScreen({
                       return (
                         <React.Fragment key={itemKey}>
                         <tr>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold', color: 'var(--color-text-muted)' }}>
-                            {index + 1}
+                          <td className="po-item-index-cell">
+                            <strong>{index + 1}</strong>
+                            <div className="po-row-actions">
+                              <button
+                                type="button"
+                                className={`po-detail-toggle ${isExpanded ? 'is-active' : ''}`}
+                                onClick={() => toggleItemDetails(itemKey)}
+                                title={isExpanded ? t('Ẩn chi tiết') : t('Mở ngày giao và ghi chú')}
+                                aria-expanded={isExpanded}
+                              >
+                                <SlidersHorizontal size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-danger po-row-delete"
+                                onClick={() => handleRemoveRow(index)}
+                                title={t('Xóa dòng')}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                            <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1176,7 +1192,7 @@ export default function POFormFullScreen({
                               <option value="Giấy Ford" />
                             </datalist>
                           </td>
-                          <td className="po-secondary-column">
+                          <td>
                             <input 
                               type="text"
                               className="po-grid-input"
@@ -1204,7 +1220,7 @@ export default function POFormFullScreen({
                               step="any"
                             />
                           </td>
-                          <td className="po-secondary-column">
+                          <td>
                             <input 
                               type="number"
                               className="po-grid-input"
@@ -1214,10 +1230,10 @@ export default function POFormFullScreen({
                               max="100"
                             />
                           </td>
-                          <td className="po-secondary-column" style={{ fontWeight: 600, color: 'var(--color-text-main)', textAlign: 'right' }}>
+                          <td style={{ fontWeight: 600, color: 'var(--color-text-main)', textAlign: 'right' }}>
                             {Math.round(amountBeforeVat).toLocaleString()} đ
                           </td>
-                          <td className="po-secondary-column">
+                          <td>
                             <input 
                               type="number"
                               className="po-grid-input"
@@ -1229,14 +1245,6 @@ export default function POFormFullScreen({
                           </td>
                           <td style={{ fontWeight: 600, color: 'var(--color-primary-dark)', textAlign: 'right' }}>
                             {Math.round(amountWithVat).toLocaleString()} đ
-                          </td>
-                          <td>
-                            <input 
-                              type="date"
-                              className="po-grid-input"
-                              value={item.deliveryDate}
-                              onChange={(e) => handleUpdateRowField(index, 'deliveryDate', e.target.value)}
-                            />
                           </td>
                           <td>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1305,69 +1313,17 @@ export default function POFormFullScreen({
                               )}
                             </div>
                           </td>
-                          <td className="po-secondary-column">
-                            <input 
-                              type="text"
-                              className="po-grid-input"
-                              value={item.note || ''}
-                              onChange={(e) => handleUpdateRowField(index, 'note', e.target.value)}
-                              placeholder="..."
-                            />
-                          </td>
-                          <td>
-                            <div className="po-row-actions">
-                            <button
-                              type="button"
-                              className={`po-detail-toggle ${isExpanded ? 'is-active' : ''}`}
-                              onClick={() => toggleItemDetails(itemKey)}
-                              title={isExpanded ? t('Ẩn chi tiết') : t('Mở chi tiết')}
-                              aria-expanded={isExpanded}
-                            >
-                              <SlidersHorizontal size={14} />
-                            </button>
-                            <button 
-                              type="button" 
-                              className="btn btn-sm btn-danger"
-                              style={{ padding: '4px 6px', minWidth: 'auto', background: 'transparent', color: '#ef4444', border: 'none' }}
-                              onClick={() => handleRemoveRow(index)}
-                              title={t('Xóa dòng')}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                            </div>
-                          </td>
                         </tr>
                         {isExpanded && (
                           <tr className="po-item-detail-row">
-                            <td colSpan={16}>
+                            <td colSpan={13}>
                               <div className="po-item-detail-grid">
                                 <div className="form-group">
-                                  <label>{t('Đơn vị tính')}</label>
+                                  <label>{t('Ngày giao của mã hàng')}</label>
                                   <input
-                                    type="text"
-                                    value={item.unit}
-                                    onChange={(e) => handleUpdateRowField(index, 'unit', e.target.value)}
-                                    placeholder="cái"
-                                  />
-                                </div>
-                                <div className="form-group">
-                                  <label>{t('Chiết khấu (%)')}</label>
-                                  <input
-                                    type="number"
-                                    value={item.discountRate}
-                                    onChange={(e) => handleUpdateRowField(index, 'discountRate', Number(e.target.value))}
-                                    min="0"
-                                    max="100"
-                                  />
-                                </div>
-                                <div className="form-group">
-                                  <label>{t('Thuế VAT (%)')}</label>
-                                  <input
-                                    type="number"
-                                    value={item.vatRate}
-                                    onChange={(e) => handleUpdateRowField(index, 'vatRate', Number(e.target.value))}
-                                    min="0"
-                                    max="100"
+                                    type="date"
+                                    value={item.deliveryDate}
+                                    onChange={(e) => handleUpdateRowField(index, 'deliveryDate', e.target.value)}
                                   />
                                 </div>
                                 <div className="form-group po-item-note-field">
@@ -1394,7 +1350,7 @@ export default function POFormFullScreen({
                     {/* EMPTY PO ITEMS ROW */}
                     {poItems.length === 0 && (
                       <tr>
-                        <td colSpan={16} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                        <td colSpan={13} style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
                           {t('Chưa có mã hàng nào được thêm. Hãy chọn mã cũ từ 🔍 hoặc bấm "+ Thêm Dòng Mới"')}
                         </td>
                       </tr>

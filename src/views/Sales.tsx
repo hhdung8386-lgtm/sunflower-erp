@@ -42,6 +42,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const isFull = currentUser.role === 'admin' || currentUser.role === 'accountant';
   const isSaleOnly = currentUser.role === 'sale' || currentUser.role === 'designer';
   const isPurchaseOnly = currentUser.role === 'purchaser';
+  const canViewSaleFinancials = isFull || isSaleOnly;
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -747,63 +748,58 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               </div>
             </div>
 
-            <div className="details-grid">
+            <div className="details-grid po-sale-detail-layout" style={{ gridTemplateColumns: '1fr' }}>
               {/* Product specifications and mock preview */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
+                <div className="po-sale-items-card" style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
                   <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('Chi Tiết Các Mặt Hàng Trong PO:')}</h3>
-                  <div className="table-container">
-                    <table>
+                  <div className="po-inline-grid-container">
+                    <table className="po-inline-grid po-items-overview-table po-sale-items-table">
                       <thead>
                         <tr>
-                          <th>{t('Chi tiết')}</th>
+                          <th>STT</th>
                           <th>{t('Mã Hàng')}</th>
                           <th>{t('Tên Hàng')}</th>
                           <th>{t('Quy Cách')}</th>
+                          <th>{t('Chất Liệu')}</th>
+                          <th>{t('ĐVT')}</th>
                           <th>{t('Số Lượng')}</th>
-                          
-                          {/* Sale columns */}
-                          {(isFull || isSaleOnly) && (
-                            <>
-                              <th>{t('Đơn Giá Bán')}</th>
-                              <th>{t('CK (%)')}</th>
-                              <th>{t('Thành Tiền Bán')}</th>
-                            </>
-                          )}
-                          
-                          {/* Purchase columns */}
-                          {(isFull || isPurchaseOnly) && (
-                            <>
-                              <th>{t('Nhà Cung Cấp')}</th>
-                              <th>{t('Đơn Giá Mua')}</th>
-                              <th>{t('Thành Tiền Mua')}</th>
-                            </>
-                          )}
-                          
-                          {/* Profit columns */}
-                          {isFull && (
-                            <>
-                              <th>{t('Tiền Chênh (đ)')}</th>
-                              <th>{t('Lợi Nhuận Gộp')}</th>
-                            </>
-                          )}
+                          <th>{t('Đơn Giá')}</th>
+                          <th>{t('CK (%)')}</th>
+                          <th>{t('Thành Tiền (chưa VAT)')}</th>
+                          <th>{t('Thuế (%)')}</th>
+                          <th>{t('Thành Tiền (gồm VAT)')}</th>
+                          <th>{t('Layout')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedPO.items?.map((item: any, idx: number) => {
-                          const sellingTotal = item.quantity * item.price * (1 - (item.discountRate || 0) / 100);
-                          const buyingTotal = item.quantity * (item.purchasePrice || 0);
+                          const quantity = Number(item.quantity) || 0;
+                          const sellingPrice = Number(item.price) || 0;
+                          const discountRate = Number(item.discountRate) || 0;
+                          const vatRate = item.vatRate === undefined || item.vatRate === null || item.vatRate === ''
+                            ? 8
+                            : Number(item.vatRate) || 0;
+                          const sellingTotal = quantity * sellingPrice * (1 - discountRate / 100);
+                          const totalWithVat = sellingTotal * (1 + vatRate / 100);
+                          const buyingTotal = quantity * (Number(item.purchasePrice) || 0);
                           const profit = sellingTotal - buyingTotal;
                           const itemId = item.itemId || `${idx}`;
+                          const layoutImages = Array.from(new Set([
+                            ...(Array.isArray(item.previewImages) ? item.previewImages : []),
+                            ...(item.previewImage ? [item.previewImage] : []),
+                            ...(Array.isArray(item.designLayouts) ? item.designLayouts : []),
+                            ...(Array.isArray(item.saleLayouts) ? item.saleLayouts : [])
+                          ].filter((image): image is string => typeof image === 'string' && image.length > 0)));
                           
                           return (
                             <React.Fragment key={itemId}>
                               <tr>
-                                <td>
+                                <td className="po-readonly-index">
+                                  <strong>{idx + 1}</strong>
                                   <button 
                                     type="button"
-                                    className="btn btn-sm btn-outline"
-                                    style={{ padding: '2px 6px', fontSize: '11px' }}
+                                    className={`po-detail-toggle ${expandedItemIds.includes(itemId) ? 'is-active' : ''}`}
                                     onClick={() => {
                                       if (expandedItemIds.includes(itemId)) {
                                         setExpandedItemIds(expandedItemIds.filter(id => id !== itemId));
@@ -811,71 +807,63 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                                         setExpandedItemIds([...expandedItemIds, itemId]);
                                       }
                                     }}
+                                    title={expandedItemIds.includes(itemId) ? t('Ẩn chi tiết') : t('Mở chi tiết')}
+                                    aria-expanded={expandedItemIds.includes(itemId)}
                                   >
                                     {expandedItemIds.includes(itemId) ? t('Ẩn') : t('Xem')}
                                   </button>
                                 </td>
                                 <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
                                 <td>{item.productName}</td>
-                                <td style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                  {item.size} ({item.material})
+                                <td>{item.size || '—'}</td>
+                                <td>{item.material || '—'}</td>
+                                <td>{item.unit || 'cái'}</td>
+                                <td style={{ textAlign: 'right' }}>{quantity.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${sellingPrice.toLocaleString()} đ` : '—'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={discountRate}
+                                      onChange={(e) => handleUpdateItemDiscount(idx, Number(e.target.value))}
+                                      className="po-discount-input"
+                                    />
+                                  ) : canViewSaleFinancials ? `${discountRate}%` : '—'}
                                 </td>
-                                <td>{item.quantity?.toLocaleString()}</td>
-                                
-                                {/* Sale cells */}
-                                {(isFull || isSaleOnly) && (
-                                  <>
-                                    <td>{item.price?.toLocaleString()} đ</td>
-                                    <td>
-                                      {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
-                                        <input 
-                                          type="number"
-                                          min="0"
-                                          max="100"
-                                          value={item.discountRate ?? 0}
-                                          onChange={(e) => handleUpdateItemDiscount(idx, Number(e.target.value))}
-                                          style={{ width: '55px', padding: '2px 4px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px' }}
-                                        />
-                                      ) : (
-                                        <span>{item.discountRate || 0}%</span>
-                                      )}
-                                    </td>
-                                    <td>{sellingTotal?.toLocaleString()} đ</td>
-                                  </>
-                                )}
-                                
-                                {/* Purchase cells */}
-                                {(isFull || isPurchaseOnly) && (
-                                  <>
-                                    <td>
-                                      {item.supplierName ? (
-                                        <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-primary)' }}>
-                                          {item.supplierName}
-                                        </span>
-                                      ) : (
-                                        <span style={{ fontStyle: 'italic', color: 'var(--color-warning)' }}>{t('Chưa phân bổ')}</span>
-                                      )}
-                                    </td>
-                                    <td>{(item.purchasePrice || 0)?.toLocaleString()} đ</td>
-                                    <td>{buyingTotal?.toLocaleString()} đ</td>
-                                  </>
-                                )}
-                                
-                                {/* Profit cells */}
-                                {isFull && (
-                                  <>
-                                    <td style={{ fontWeight: '500' }}>
-                                      {((item.price * (1 - (item.discountRate || 0) / 100)) - (item.purchasePrice || 0))?.toLocaleString()} đ
-                                    </td>
-                                    <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 'bold' }}>
-                                      {profit?.toLocaleString()} đ
-                                    </td>
-                                  </>
-                                )}
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{canViewSaleFinancials ? `${Math.round(sellingTotal).toLocaleString()} đ` : '—'}</td>
+                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${vatRate}%` : '—'}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>
+                                  {canViewSaleFinancials ? `${Math.round(totalWithVat).toLocaleString()} đ` : '—'}
+                                </td>
+                                <td>
+                                  <div className="po-layout-thumbnails">
+                                    {layoutImages.slice(0, 5).map((image, imageIndex) => (
+                                      <img
+                                        key={`${imageIndex}-${image.slice(0, 24)}`}
+                                        src={image}
+                                        alt={`${t('Layout')} ${imageIndex + 1}`}
+                                        onClick={() => setPreviewImage(image)}
+                                      />
+                                    ))}
+                                    {layoutImages.length === 0 && <span>{t('Chưa có')}</span>}
+                                  </div>
+                                </td>
                               </tr>
                               {expandedItemIds.includes(itemId) && (
                                 <tr style={{ backgroundColor: '#f8fafc' }}>
-                                  <td colSpan={isFull ? 12 : 8} style={{ padding: '16px', borderBottom: '1px solid var(--color-border-light)' }}>
+                                  <td colSpan={13} style={{ padding: '16px', borderBottom: '1px solid var(--color-border-light)' }}>
+                                    {(isFull || isPurchaseOnly) && (
+                                      <div className="po-commercial-summary">
+                                        <div><span>{t('Nhà Cung Cấp')}</span><strong>{item.supplierName || t('Chưa phân bổ')}</strong></div>
+                                        <div><span>{t('Đơn Giá Mua')}</span><strong>{(Number(item.purchasePrice) || 0).toLocaleString()} đ</strong></div>
+                                        <div><span>{t('Thành Tiền Mua')}</span><strong>{Math.round(buyingTotal).toLocaleString()} đ</strong></div>
+                                        {isFull && (
+                                          <div><span>{t('Lợi Nhuận Gộp')}</span><strong className={profit >= 0 ? 'is-positive' : 'is-negative'}>{Math.round(profit).toLocaleString()} đ</strong></div>
+                                        )}
+                                      </div>
+                                    )}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                                       {/* SALE PANEL */}
                                       <div style={{ borderRight: '1px solid var(--color-border-light)', paddingRight: '20px' }}>
