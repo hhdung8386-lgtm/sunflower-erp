@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   Clock3,
   FileArchive,
@@ -21,7 +22,6 @@ import {
   DesignRequestHistory,
   DesignVersion,
   DesignWorkStatus,
-  getDesignApprovalStatusDefinition,
   getDesignRequestAgeDays,
   getDesignWorkStatus,
   getDesignWorkStatusDefinition,
@@ -487,6 +487,8 @@ export const Design: React.FC<DesignProps> = ({
 
   return (
     <div className="design-request-view">
+      {!selectedRequest && (
+      <>
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('YÊU CẦU THIẾT KẾ')}</h1>
@@ -588,32 +590,36 @@ export const Design: React.FC<DesignProps> = ({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {selectedRequest && (
-        <div
-          className="modal-overlay design-workspace-overlay"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget && !showVersionModal) closeRequest();
-          }}
-        >
-        <div
-          className="design-workspace design-workspace-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="design-workspace-title"
-        >
-          <div className="design-workspace-header">
+        <div className="design-task-page">
+          <header className="design-task-page-header">
+            <button className="btn btn-outline design-task-back" onClick={closeRequest}>
+              <ArrowLeft size={16} /> {t('Quay lại danh sách')}
+            </button>
             <div>
-              <span id="design-workspace-title">{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
-              <strong>{selectedRequest.requestCode} · {selectedRequest.customerReferenceCode || selectedRequest.poCode}</strong>
+              <span>{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
+              <h1>{selectedRequest.requestCode} · {selectedRequest.productName || t('Chưa đặt tên')}</h1>
+              <p>{selectedRequest.customerReferenceCode || selectedRequest.poCode} · {selectedRequest.productCode || t('Chưa có mã hàng')}</p>
             </div>
-            <button className="btn btn-sm btn-outline" onClick={closeRequest}>{t('Đóng')}</button>
-          </div>
+            <span
+              className="design-work-badge design-task-status"
+              style={{
+                color: getDesignWorkStatusDefinition(selectedRequest.workStatus).color,
+                background: getDesignWorkStatusDefinition(selectedRequest.workStatus).background,
+                borderColor: getDesignWorkStatusDefinition(selectedRequest.workStatus).color
+              }}
+            >
+              {t(getDesignWorkStatusDefinition(selectedRequest.workStatus).label)}
+            </span>
+          </header>
 
           {actionError && <div className="design-action-error"><AlertCircle size={16} /> {actionError}</div>}
 
-          <div className="design-workspace-grid">
-            <section className="card design-brief-card">
+          <section className="design-task-panel design-task-overview">
+            <div className="design-task-brief">
               <div className="design-section-title"><ListChecks size={17} /><span>{t('Thông tin bàn giao từ Sale')}</span></div>
               <dl className="design-brief-grid">
                 <div><dt>{t('Mã PO')}</dt><dd>{selectedRequest.customerReferenceCode || selectedRequest.poCode}</dd></div>
@@ -640,9 +646,9 @@ export const Design: React.FC<DesignProps> = ({
                   )}
                 </div>
               </div>
-            </section>
+            </div>
 
-            <section className="card design-progress-card">
+            <aside className="design-progress-card design-task-progress">
               <div className="design-section-title"><Clock3 size={17} /><span>{t('Cập nhật tiến độ nội bộ')}</span></div>
               <label>{t('Trạng thái công việc của Designer')}</label>
               <select value={nextWorkStatus} onChange={event => setNextWorkStatus(event.target.value as DesignWorkStatus)} disabled={currentUser.role === 'sale'}>
@@ -662,21 +668,11 @@ export const Design: React.FC<DesignProps> = ({
                 </button>
               )}
 
-              <div className="design-progress-summary">
-                <div>
-                  <span>{t('Tiến độ Designer')}</span>
-                  <strong>{t(getDesignWorkStatusDefinition(selectedRequest.workStatus).label)}</strong>
-                </div>
-                <div>
-                  <span>{t('Phản hồi khách hàng')}</span>
-                  <strong>{t(getDesignApprovalStatusDefinition(selectedRequest.approvalStatus).label)}</strong>
-                </div>
-              </div>
-            </section>
-          </div>
+            </aside>
+          </section>
 
-          <div className="design-workspace-grid design-version-workspace">
-            <section className="card">
+          <section className="design-task-panel design-version-workspace">
+            <div className="design-version-sidebar">
               <div className="design-version-header">
                 <div className="design-section-title"><FileArchive size={17} /><span>{t('Phiên bản thiết kế')}</span></div>
                 {(currentUser.role === 'admin' || currentUser.role === 'designer') && (
@@ -700,9 +696,9 @@ export const Design: React.FC<DesignProps> = ({
                   <div className="design-version-empty">{t('Chưa có phiên bản thiết kế nào.')}</div>
                 )}
               </div>
-            </section>
+            </div>
 
-            <section className="card design-version-preview">
+            <div className="design-version-preview">
               {selectedVersion ? (
                 <>
                   <div className="design-version-preview__image">
@@ -734,10 +730,10 @@ export const Design: React.FC<DesignProps> = ({
                   </div>
                 </div>
               )}
-            </section>
-          </div>
+            </div>
+          </section>
 
-          <section className="card design-history-card">
+          <section className="design-task-panel design-history-card">
             <div className="design-section-title"><UserRound size={17} /><span>{t('Lịch sử xử lý công việc')}</span></div>
             <div className="design-history-list">
               {[...(selectedRequest.history || [])].reverse().map((entry: DesignRequestHistory, index: number) => (
@@ -750,7 +746,6 @@ export const Design: React.FC<DesignProps> = ({
               ))}
             </div>
           </section>
-        </div>
         </div>
       )}
 

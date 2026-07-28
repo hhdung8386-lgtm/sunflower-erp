@@ -125,6 +125,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     'Người phụ trách': 'Assignee',
     'Tiến độ thiết kế': 'Design status',
     'Mở công việc': 'Open task',
+    'Quay lại danh sách': 'Back to list',
     'Không có yêu cầu thiết kế phù hợp.': 'No matching design requests.',
     'CHI TIẾT CÔNG VIỆC THIẾT KẾ': 'DESIGN TASK DETAILS',
     'Thông tin bàn giao từ Sale': 'Sales handoff information',
