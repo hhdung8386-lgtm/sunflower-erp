@@ -5,6 +5,11 @@ import { FloatingChat } from '../components/FloatingChat';
 import POFormFullScreen from '../components/POFormFullScreen';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import {
+  calculatePOItemFinancials,
+  PODiscountType,
+  withCalculatedPOFinancials
+} from '../domain/poFinancials';
+import {
   getPOBadgeClass,
   getPOHistoryStatusLabel,
   getPOQueueLabel,
@@ -86,12 +91,15 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
   const [expandedItemIds, setExpandedItemIds] = useState<string[]>([]);
   const [newChecklistText, setNewChecklistText] = useState('');
 
-  const handleUpdateItemDiscount = async (itemIdx: number, newDiscount: number) => {
+  const handleUpdateItemDiscount = async (
+    itemIdx: number,
+    update: { discountType?: PODiscountType; discountRate?: number; discountAmount?: number }
+  ) => {
     if (!selectedPO) return;
     
     const updatedItems = selectedPO.items.map((item: any, idx: number) => {
       if (idx === itemIdx) {
-        return { ...item, discountRate: newDiscount };
+        return withCalculatedPOFinancials({ ...item, ...update });
       }
       return item;
     });
@@ -101,17 +109,10 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     let discountAmount = 0;
 
     updatedItems.forEach((item: any) => {
-      const qty = Number(item.quantity) || 0;
-      const prc = Number(item.price) || 0;
-      const disc = Number(item.discountRate) || 0;
-      const vat = Number(item.vatRate) || 0;
-
-      const sub = qty * prc * (1 - disc / 100);
-      const withVat = sub * (1 + vat / 100);
-
-      totalBeforeVat += sub;
-      totalAfterVat += withVat;
-      discountAmount += Math.round(qty * prc * (disc / 100));
+      const financials = calculatePOItemFinancials(item);
+      totalBeforeVat += financials.amountBeforeVat;
+      totalAfterVat += financials.amountWithVat;
+      discountAmount += financials.discountAmount;
     });
 
     const updatedPO = {
@@ -355,6 +356,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         expectedDeliveryDate: poData.expectedDeliveryDate,
         notes: poData.notes,
         customerPoCode: poData.customerPoCode,
+        customerRank: poData.customerRank,
         items: poData.items,
         assignments: poData.assignments || [],
         totalAmount: subtotal,
@@ -425,6 +427,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         customerPoCode: poData.customerPoCode || poCode,
         customerId: poData.customerId,
         customerName: poData.customerName,
+        customerRank: poData.customerRank,
         saleId: currentUser.uid,
         orderDate: new Date().toISOString(),
         expectedDeliveryDate: poData.expectedDeliveryDate,
@@ -488,11 +491,18 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         });
       }
       await dbService.updateDocument('customers', poData.customerId, {
-        lastOrderAt: new Date().toISOString()
+        lastOrderAt: new Date().toISOString(),
+        customerRank: poData.customerRank
       });
 
       setShowAddModal(false);
       setRepeatSourcePO(null);
+    }
+
+    if (poData.id) {
+      await dbService.updateDocument('customers', poData.customerId, {
+        customerRank: poData.customerRank
+      });
     }
 
     onRefresh();
@@ -708,6 +718,14 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               </div>
             </div>
 
+            <div className="po-detail-meta-bar">
+              <span>{t('Hạng Khách Hàng')}</span>
+              <strong className="po-customer-rank-badge">
+                {selectedPO.customerRank || customers.find(customer => customer.id === selectedPO.customerId)?.customerRank || t('Chưa xếp hạng')}
+              </strong>
+              <span className="po-kpi-definition">{t('KPI PO là tỷ lệ giá trị còn lại sau chiết khấu.')}</span>
+            </div>
+
             {/* Status changer for authorized roles */}
             {(currentUser.role === 'admin' || currentUser.role === 'sale' || currentUser.role === 'producer') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
@@ -760,30 +778,23 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           <th>STT</th>
                           <th>{t('Mã Hàng')}</th>
                           <th>{t('Tên Hàng')}</th>
-                          <th>{t('Quy Cách')}</th>
-                          <th>{t('Chất Liệu')}</th>
+                          <th>{t('Quy Cách / Chất Liệu')}</th>
                           <th>{t('ĐVT')}</th>
                           <th>{t('Số Lượng')}</th>
                           <th>{t('Đơn Giá')}</th>
-                          <th>{t('CK (%)')}</th>
-                          <th>{t('Thành Tiền (chưa VAT)')}</th>
+                          <th>{t('Nhà Cung Cấp')}</th>
                           <th>{t('Thuế (%)')}</th>
+                          <th>{t('Chiết Khấu')}</th>
                           <th>{t('Thành Tiền (gồm VAT)')}</th>
-                          <th>{t('Layout')}</th>
+                          <th>{t('KPI PO')}</th>
+                          <th>{t('File Liên Quan')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedPO.items?.map((item: any, idx: number) => {
-                          const quantity = Number(item.quantity) || 0;
-                          const sellingPrice = Number(item.price) || 0;
-                          const discountRate = Number(item.discountRate) || 0;
-                          const vatRate = item.vatRate === undefined || item.vatRate === null || item.vatRate === ''
-                            ? 8
-                            : Number(item.vatRate) || 0;
-                          const sellingTotal = quantity * sellingPrice * (1 - discountRate / 100);
-                          const totalWithVat = sellingTotal * (1 + vatRate / 100);
-                          const buyingTotal = quantity * (Number(item.purchasePrice) || 0);
-                          const profit = sellingTotal - buyingTotal;
+                          const financials = calculatePOItemFinancials(item);
+                          const buyingTotal = financials.quantity * (Number(item.purchasePrice) || 0);
+                          const profit = financials.amountBeforeVat - buyingTotal;
                           const itemId = item.itemId || `${idx}`;
                           const layoutImages = Array.from(new Set([
                             ...(Array.isArray(item.previewImages) ? item.previewImages : []),
@@ -815,27 +826,55 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                                 </td>
                                 <td style={{ fontWeight: 600 }}>{item.productCode || 'N/A'}</td>
                                 <td>{item.productName}</td>
-                                <td>{item.size || '—'}</td>
-                                <td>{item.material || '—'}</td>
-                                <td>{item.unit || 'cái'}</td>
-                                <td style={{ textAlign: 'right' }}>{quantity.toLocaleString()}</td>
-                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${sellingPrice.toLocaleString()} đ` : '—'}</td>
-                                <td style={{ textAlign: 'right' }}>
-                                  {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      value={discountRate}
-                                      onChange={(e) => handleUpdateItemDiscount(idx, Number(e.target.value))}
-                                      className="po-discount-input"
-                                    />
-                                  ) : canViewSaleFinancials ? `${discountRate}%` : '—'}
+                                <td>
+                                  <div className="po-item-spec-readonly">
+                                    <span>{item.size || '—'}</span>
+                                    <small>{item.material || '—'}</small>
+                                  </div>
                                 </td>
-                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{canViewSaleFinancials ? `${Math.round(sellingTotal).toLocaleString()} đ` : '—'}</td>
-                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${vatRate}%` : '—'}</td>
+                                <td>{item.unit || 'cái'}</td>
+                                <td style={{ textAlign: 'right' }}>{financials.quantity.toLocaleString()}</td>
+                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${financials.unitPrice.toLocaleString()} đ` : '—'}</td>
+                                <td>{item.supplierName || suppliers.find(supplier => supplier.id === item.supplierId)?.supplierName || t('Chưa chọn')}</td>
+                                <td style={{ textAlign: 'right' }}>{canViewSaleFinancials ? `${financials.vatRate}%` : '—'}</td>
+                                <td>
+                                  {(currentUser.role === 'admin' || currentUser.role === 'sale') ? (
+                                    <div className="po-discount-editor po-discount-editor-readonly">
+                                      <select
+                                        value={financials.discountType}
+                                        onChange={(e) => handleUpdateItemDiscount(idx, {
+                                          discountType: e.target.value === 'amount' ? 'amount' : 'percent'
+                                        })}
+                                        className="po-discount-mode"
+                                      >
+                                        <option value="percent">%</option>
+                                        <option value="amount">{t('Tiền chênh')}</option>
+                                      </select>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={financials.discountType === 'percent' ? 100 : (financials.grossAmount || undefined)}
+                                        value={financials.discountType === 'amount' ? financials.discountAmount : financials.discountRate}
+                                        onChange={(e) => handleUpdateItemDiscount(idx, financials.discountType === 'amount'
+                                          ? { discountAmount: Number(e.target.value) }
+                                          : { discountRate: Number(e.target.value) }
+                                        )}
+                                        className="po-discount-input"
+                                      />
+                                    </div>
+                                  ) : canViewSaleFinancials ? (
+                                    financials.discountType === 'amount'
+                                      ? `${Math.round(financials.discountAmount).toLocaleString()} đ`
+                                      : `${financials.discountRate}%`
+                                  ) : '—'}
+                                </td>
                                 <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>
-                                  {canViewSaleFinancials ? `${Math.round(totalWithVat).toLocaleString()} đ` : '—'}
+                                  {canViewSaleFinancials ? `${Math.round(financials.amountWithVat).toLocaleString()} đ` : '—'}
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className="po-kpi-badge" title={t('Tỷ lệ giá trị còn lại sau chiết khấu')}>
+                                    {canViewSaleFinancials ? `${financials.kpiPo.toFixed(1)}%` : '—'}
+                                  </span>
                                 </td>
                                 <td>
                                   <div className="po-layout-thumbnails">

@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { BarChart, DonutChart } from '../components/VisualCharts';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
+import { calculatePOItemFinancials } from '../domain/poFinancials';
 import { 
   ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
   AlertCircle, Calendar, User, DollarSign, Sliders, 
@@ -328,27 +329,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                         <th style={{ padding: '6px 8px' }}>STT</th>
                                         <th style={{ padding: '6px 8px' }}>Mã Hàng</th>
                                         <th style={{ padding: '6px 8px' }}>Tên Hàng</th>
-                                        <th style={{ padding: '6px 8px' }}>Quy Cách</th>
-                                        <th style={{ padding: '6px 8px' }}>Chất Liệu</th>
+                                        <th style={{ padding: '6px 8px' }}>Quy Cách / Chất Liệu</th>
                                         <th style={{ padding: '6px 8px' }}>ĐVT</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>SL</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>Đơn Giá</th>
-                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>CK (%)</th>
-                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành Tiền (chưa VAT)</th>
+                                        <th style={{ padding: '6px 8px' }}>Nhà Cung Cấp</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thuế (%)</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Chiết Khấu</th>
                                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>Thành Tiền (gồm VAT)</th>
-                                        <th style={{ padding: '6px 8px' }}>Layout</th>
+                                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>KPI PO</th>
+                                        <th style={{ padding: '6px 8px' }}>File Liên Quan</th>
                                       </tr>
                                     </thead>
                                     <tbody>
                                       {(po.items || []).map((item: any, idx: number) => {
-                                        const qty = Number(item.quantity) || 0;
-                                        const prc = Number(item.price || item.unitPrice) || 0;
-                                        const disc = Number(item.discountRate) || 0;
-                                        const vat = Number(item.vatRate) || 8;
-                                        
-                                        const subtotal = qty * prc * (1 - disc / 100);
-                                        const totalWithVat = subtotal * (1 + vat / 100);
+                                        const financials = calculatePOItemFinancials(item);
 
                                         const images = item.previewImages || (item.previewImage ? [item.previewImage] : []);
 
@@ -357,15 +352,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             <td>{idx + 1}</td>
                                             <td style={{ fontWeight: 'bold' }}>{item.productCode}</td>
                                             <td>{item.productName}</td>
-                                            <td>{item.size || '—'}</td>
-                                            <td>{item.material || '—'}</td>
+                                            <td>{item.size || '—'}<br /><small>{item.material || '—'}</small></td>
                                             <td>{item.unit || 'cái'}</td>
-                                            <td style={{ textAlign: 'right' }}>{qty.toLocaleString()}</td>
-                                            <td style={{ textAlign: 'right' }}>{prc.toLocaleString()} đ</td>
-                                            <td style={{ textAlign: 'right' }}>{disc}%</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{Math.round(subtotal).toLocaleString()} đ</td>
-                                            <td style={{ textAlign: 'right' }}>{vat}%</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>{Math.round(totalWithVat).toLocaleString()} đ</td>
+                                            <td style={{ textAlign: 'right' }}>{financials.quantity.toLocaleString()}</td>
+                                            <td style={{ textAlign: 'right' }}>{financials.unitPrice.toLocaleString()} đ</td>
+                                            <td>{item.supplierName || 'Chưa chọn'}</td>
+                                            <td style={{ textAlign: 'right' }}>{financials.vatRate}%</td>
+                                            <td style={{ textAlign: 'right' }}>
+                                              {financials.discountType === 'amount'
+                                                ? `${Math.round(financials.discountAmount).toLocaleString()} đ`
+                                                : `${financials.discountRate}%`}
+                                            </td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-primary-dark)' }}>{Math.round(financials.amountWithVat).toLocaleString()} đ</td>
+                                            <td style={{ textAlign: 'right' }}>{financials.kpiPo.toFixed(1)}%</td>
                                             <td>
                                               <div style={{ display: 'flex', gap: '4px' }}>
                                                 {images.map((img: string, iIdx: number) => (

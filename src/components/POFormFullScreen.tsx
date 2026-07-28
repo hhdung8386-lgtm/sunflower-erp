@@ -5,6 +5,7 @@ import {
   History, Layers, Paperclip, SlidersHorizontal
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
+import { calculatePOItemFinancials, withCalculatedPOFinancials } from '../domain/poFinancials';
 import './CustomerHistory.css';
 
 const PO_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -46,6 +47,7 @@ export default function POFormFullScreen({
   t
 }: POFormFullScreenProps) {
   const [customerId, setCustomerId] = useState('');
+  const [customerRank, setCustomerRank] = useState('');
   const [customerPoCode, setCustomerPoCode] = useState('');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
@@ -111,6 +113,7 @@ export default function POFormFullScreen({
 
     if (po) {
       setCustomerId(po.customerId || '');
+      setCustomerRank(po.customerRank || customers.find(customer => customer.id === po.customerId)?.customerRank || '');
       setCustomerPoCode(po.customerPoCode || '');
       setExpectedDeliveryDate(po.expectedDeliveryDate ? po.expectedDeliveryDate.split('T')[0] : '');
       setNotes(po.notes || '');
@@ -127,7 +130,10 @@ export default function POFormFullScreen({
       const items = (po.items || []).map((item: any) => ({
         ...item,
         itemId: item.itemId || `item-${Math.random().toString(36).substr(2, 9)}`,
+        price: item.price !== undefined ? item.price : (item.unitPrice || 0),
+        discountType: item.discountType === 'amount' ? 'amount' : 'percent',
         discountRate: item.discountRate !== undefined ? item.discountRate : 0,
+        discountAmount: item.discountAmount !== undefined ? item.discountAmount : 0,
         vatRate: item.vatRate !== undefined ? item.vatRate : 8,
         deliveryDate: item.deliveryDate ? item.deliveryDate.split('T')[0] : '',
         previewImages: item.previewImages || (item.previewImage ? [item.previewImage] : []),
@@ -145,6 +151,7 @@ export default function POFormFullScreen({
       const defaultDeliveryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       setCustomerId(templatePo.customerId || '');
+      setCustomerRank(templatePo.customerRank || sourceCustomer?.customerRank || '');
       setCustomerPoCode('');
       setExpectedDeliveryDate(defaultDeliveryDate);
       setNotes(`Đơn đặt lại từ ${templatePo.poCode || 'PO cũ'}. ${templatePo.notes || ''}`.trim());
@@ -169,7 +176,9 @@ export default function POFormFullScreen({
           itemId: `item-${Math.random().toString(36).substr(2, 9)}`,
           price: Number(catalogProduct?.currentPrice || 0),
           purchasePrice: 0,
+          discountType: item.discountType === 'amount' ? 'amount' : 'percent',
           discountRate: Number(sourceCustomer?.discountRate ?? item.discountRate ?? 0),
+          discountAmount: item.discountType === 'amount' ? Number(item.discountAmount || 0) : 0,
           vatRate: item.vatRate !== undefined ? item.vatRate : 8,
           deliveryDate: defaultDeliveryDate,
           previewImages,
@@ -191,6 +200,7 @@ export default function POFormFullScreen({
     } else {
       // Defaults for creation
       setCustomerId(customers[0]?.id || '');
+      setCustomerRank(customers[0]?.customerRank || '');
       setCustomerPoCode('');
       setExpectedDeliveryDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       setNotes('');
@@ -220,6 +230,7 @@ export default function POFormFullScreen({
             if (customers.some(customer => customer.id === restoredCustomerId)) {
               setCustomerId(restoredCustomerId);
             }
+            setCustomerRank(typeof draft.customerRank === 'string' ? draft.customerRank : '');
             setCustomerPoCode(typeof draft.customerPoCode === 'string' ? draft.customerPoCode : '');
             if (typeof draft.expectedDeliveryDate === 'string' && draft.expectedDeliveryDate) {
               setExpectedDeliveryDate(draft.expectedDeliveryDate);
@@ -253,6 +264,7 @@ export default function POFormFullScreen({
     const hasMeaningfulDraft = Boolean(
       templatePo ||
       customerPoCode.trim() ||
+      customerRank ||
       notes.trim() ||
       poItems.length > 0 ||
       assignments.length > 0 ||
@@ -269,6 +281,7 @@ export default function POFormFullScreen({
         window.localStorage.setItem(draftKey, JSON.stringify({
           savedAt: Date.now(),
           customerId,
+          customerRank,
           customerPoCode,
           expectedDeliveryDate,
           notes,
@@ -295,6 +308,7 @@ export default function POFormFullScreen({
     po,
     templatePo,
     customerId,
+    customerRank,
     customerPoCode,
     expectedDeliveryDate,
     notes,
@@ -450,7 +464,9 @@ export default function POFormFullScreen({
       unit: 'cái',
       quantity: 1000,
       price: 0,
+      discountType: 'percent',
       discountRate: discountRate,
+      discountAmount: 0,
       vatRate: 8,
       deliveryDate: expectedDeliveryDate || '',
       note: '',
@@ -651,6 +667,10 @@ export default function POFormFullScreen({
       alert(t('Vui lòng chọn ngày giao hàng dự kiến hợp lệ!'));
       return;
     }
+    if (!['A', 'B', 'C', 'D'].includes(customerRank)) {
+      alert(t('Vui lòng chọn hạng khách hàng A, B, C hoặc D!'));
+      return;
+    }
     if (poItems.length === 0) {
       alert(t('Vui lòng thêm ít nhất 1 mặt hàng vào PO!'));
       return;
@@ -672,23 +692,16 @@ export default function POFormFullScreen({
       }
     }
 
+    const normalizedItems = poItems.map(item => withCalculatedPOFinancials(item));
+
     // Calculate totals
-    let totalQty = 0;
     let totalBeforeVat = 0;
     let totalAfterVat = 0;
 
-    poItems.forEach(item => {
-      const qty = Number(item.quantity) || 0;
-      const prc = Number(item.price) || 0;
-      const disc = Number(item.discountRate) || 0;
-      const vat = Number(item.vatRate) || 0;
-
-      const sub = qty * prc * (1 - disc / 100);
-      const withVat = sub * (1 + vat / 100);
-
-      totalQty += qty;
-      totalBeforeVat += sub;
-      totalAfterVat += withVat;
+    normalizedItems.forEach(item => {
+      const financials = calculatePOItemFinancials(item);
+      totalBeforeVat += financials.amountBeforeVat;
+      totalAfterVat += financials.amountWithVat;
     });
 
     const customerObj = customers.find(c => c.id === customerId);
@@ -697,18 +710,16 @@ export default function POFormFullScreen({
       id: po?.id || undefined,
       customerId,
       customerName: customerObj?.companyName || '',
+      customerRank,
       customerPoCode,
       expectedDeliveryDate: new Date(expectedDeliveryDate).toISOString(),
       notes,
-      items: poItems,
+      items: normalizedItems,
       assignments,
       totalAmount: totalBeforeVat, // For consistency, totalAmount is subtotal
-      discountAmount: poItems.reduce((acc, item) => {
-        const qty = Number(item.quantity) || 0;
-        const prc = Number(item.price) || 0;
-        const disc = Number(item.discountRate) || 0;
-        return acc + Math.round(qty * prc * (disc / 100));
-      }, 0),
+      discountAmount: normalizedItems.reduce((acc, item) => (
+        acc + Math.round(calculatePOItemFinancials(item).discountAmount)
+      ), 0),
       netAmount: totalAfterVat, // Store final VAT-included total here or match DB convention
       links: {
         pdfLink: pdfFile,
@@ -748,19 +759,11 @@ export default function POFormFullScreen({
     let totalAfterVat = 0;
 
     poItems.forEach(item => {
-      const qty = Number(item.quantity) || 0;
-      const prc = Number(item.price) || 0;
-      const disc = Number(item.discountRate) || 0;
-      const vat = Number(item.vatRate) || 0;
-
-      const sub = qty * prc * (1 - disc / 100);
-      const vatVal = sub * (vat / 100);
-      const withVat = sub + vatVal;
-
-      totalQty += qty;
-      totalBeforeVat += sub;
-      totalVat += vatVal;
-      totalAfterVat += withVat;
+      const financials = calculatePOItemFinancials(item);
+      totalQty += financials.quantity;
+      totalBeforeVat += financials.amountBeforeVat;
+      totalVat += financials.vatAmount;
+      totalAfterVat += financials.amountWithVat;
     });
 
     return { totalQty, totalBeforeVat, totalVat, totalAfterVat };
@@ -893,7 +896,10 @@ export default function POFormFullScreen({
               <select 
                 value={customerId} 
                 onChange={(e) => {
-                  setCustomerId(e.target.value);
+                  const nextCustomerId = e.target.value;
+                  const nextCustomer = customers.find(customer => customer.id === nextCustomerId);
+                  setCustomerId(nextCustomerId);
+                  setCustomerRank(nextCustomer?.customerRank || '');
                   setPoItems([]); // Reset items on customer change
                 }}
                 disabled={!!po || !!templatePo} // Repeat orders must stay with the original customer
@@ -906,6 +912,22 @@ export default function POFormFullScreen({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontWeight: 600, fontSize: '12px' }}>{t('Hạng Khách Hàng *')}</label>
+              <select
+                value={customerRank}
+                onChange={(e) => setCustomerRank(e.target.value)}
+                required
+                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}
+              >
+                <option value="">{t('-- Chọn hạng khách hàng --')}</option>
+                {['A', 'B', 'C', 'D'].map(rank => (
+                  <option key={rank} value={rank}>{t('Hạng')} {rank}</option>
+                ))}
+              </select>
+              <span className="po-customer-rank-help">{t('Hạng được lưu vào hồ sơ khách hàng sau khi lưu PO.')}</span>
             </div>
 
             <div className="form-group">
@@ -1073,27 +1095,21 @@ export default function POFormFullScreen({
                       <th style={{ width: '64px', textAlign: 'center' }}>STT</th>
                       <th style={{ width: '130px' }}>{t('Mã Hàng')}</th>
                       <th style={{ width: '180px' }}>{t('Tên Hàng *')}</th>
-                      <th style={{ width: '120px' }}>{t('Quy Cách')}</th>
-                      <th style={{ width: '120px' }}>{t('Chất Liệu')}</th>
+                      <th style={{ width: '180px' }}>{t('Quy Cách / Chất Liệu')}</th>
                       <th style={{ width: '70px' }}>{t('ĐVT')}</th>
                       <th style={{ width: '80px' }}>{t('Số Lượng')}</th>
                       <th style={{ width: '95px' }}>{t('Đơn Giá')}</th>
-                      <th style={{ width: '65px' }}>{t('CK (%)')}</th>
-                      <th style={{ width: '125px' }}>{t('Thành Tiền (chưa VAT)')}</th>
+                      <th style={{ width: '150px' }}>{t('Nhà Cung Cấp')}</th>
                       <th style={{ width: '65px' }}>{t('Thuế (%)')}</th>
+                      <th style={{ width: '170px' }}>{t('Chiết Khấu')}</th>
                       <th style={{ width: '125px' }}>{t('Thành Tiền (gồm VAT)')}</th>
-                      <th style={{ width: '140px' }}>{t('Ảnh Layout (Max 5)')}</th>
+                      <th style={{ width: '85px' }}>{t('KPI PO')}</th>
+                      <th style={{ width: '140px' }}>{t('File Liên Quan')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {poItems.map((item, index) => {
-                      const qty = Number(item.quantity) || 0;
-                      const prc = Number(item.price) || 0;
-                      const disc = Number(item.discountRate) || 0;
-                      const vat = Number(item.vatRate) || 0;
-
-                      const amountBeforeVat = qty * prc * (1 - disc / 100);
-                      const amountWithVat = amountBeforeVat * (1 + vat / 100);
+                      const financials = calculatePOItemFinancials(item);
 
                       // Backward compatibility for layouts
                       const imagesList = item.previewImages || (item.previewImage ? [item.previewImage] : []);
@@ -1127,7 +1143,7 @@ export default function POFormFullScreen({
                           </td>
                            <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <input 
+                              <input
                                 type="text"
                                 className="po-grid-input"
                                 value={item.productCode}
@@ -1168,23 +1184,23 @@ export default function POFormFullScreen({
                             </datalist>
                           </td>
                           <td>
-                            <input 
-                              type="text"
-                              className="po-grid-input"
-                              value={item.size}
-                              onChange={(e) => handleUpdateRowField(index, 'size', e.target.value)}
-                              placeholder="Ví dụ: 100x100mm"
-                            />
-                          </td>
-                          <td>
+                            <div className="po-item-spec-cell">
+                              <input
+                                type="text"
+                                className="po-grid-input"
+                                value={item.size}
+                                onChange={(e) => handleUpdateRowField(index, 'size', e.target.value)}
+                                placeholder={t('Quy cách')}
+                              />
                             <input 
                               type="text"
                               className="po-grid-input"
                               value={item.material}
                               onChange={(e) => handleUpdateRowField(index, 'material', e.target.value)}
-                              placeholder="Fasson AW0339F..."
+                              placeholder={t('Chất liệu')}
                               list="materials-suggest"
                             />
+                            </div>
                             <datalist id="materials-suggest">
                               <option value="Decal Giấy Fasson AW0339F" />
                               <option value="Decal Nhựa PVC Avery Dennison" />
@@ -1221,17 +1237,18 @@ export default function POFormFullScreen({
                             />
                           </td>
                           <td>
-                            <input 
-                              type="number"
-                              className="po-grid-input"
-                              value={item.discountRate}
-                              onChange={(e) => handleUpdateRowField(index, 'discountRate', Number(e.target.value))}
-                              min="0"
-                              max="100"
-                            />
-                          </td>
-                          <td style={{ fontWeight: 600, color: 'var(--color-text-main)', textAlign: 'right' }}>
-                            {Math.round(amountBeforeVat).toLocaleString()} đ
+                            <select
+                              className="po-grid-input po-supplier-select"
+                              value={item.supplierId || ''}
+                              onChange={(e) => handleUpdateRowField(index, 'supplierId', e.target.value)}
+                            >
+                              <option value="">{t('-- Chọn nhà cung cấp --')}</option>
+                              {suppliers.map((supplier: any) => (
+                                <option key={supplier.id} value={supplier.id}>
+                                  {supplier.supplierName || supplier.companyName || supplier.name}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td>
                             <input 
@@ -1243,8 +1260,47 @@ export default function POFormFullScreen({
                               max="100"
                             />
                           </td>
+                          <td>
+                            <div className="po-discount-editor">
+                              <select
+                                className="po-grid-input po-discount-mode"
+                                value={financials.discountType}
+                                onChange={(e) => {
+                                  const discountType = e.target.value === 'amount' ? 'amount' : 'percent';
+                                  handleUpdateRowField(index, 'discountType', discountType);
+                                }}
+                              >
+                                <option value="percent">{t('Theo phần trăm')}</option>
+                                <option value="amount">{t('Tiền chênh (VNĐ)')}</option>
+                              </select>
+                              <input
+                                type="number"
+                                className="po-grid-input po-discount-value"
+                                value={financials.discountType === 'amount' ? (item.discountAmount || 0) : (item.discountRate || 0)}
+                                onChange={(e) => handleUpdateRowField(
+                                  index,
+                                  financials.discountType === 'amount' ? 'discountAmount' : 'discountRate',
+                                  Number(e.target.value)
+                                )}
+                                min="0"
+                                max={financials.discountType === 'percent' ? 100 : (financials.grossAmount || undefined)}
+                                step="any"
+                              />
+                              <span className="po-discount-hint">
+                                -{Math.round(financials.discountAmount).toLocaleString()} đ
+                              </span>
+                            </div>
+                          </td>
                           <td style={{ fontWeight: 600, color: 'var(--color-primary-dark)', textAlign: 'right' }}>
-                            {Math.round(amountWithVat).toLocaleString()} đ
+                            {Math.round(financials.amountWithVat).toLocaleString()} đ
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span
+                              className="po-kpi-badge"
+                              title={t('Tỷ lệ giá trị còn lại sau chiết khấu')}
+                            >
+                              {financials.kpiPo.toFixed(1)}%
+                            </span>
                           </td>
                           <td>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1301,7 +1357,7 @@ export default function POFormFullScreen({
                                   width: 'fit-content'
                                 }}>
                                   <Upload size={10} />
-                                  <span>+ Layout</span>
+                                  <span>+ {t('File')}</span>
                                   <input 
                                     type="file" 
                                     accept="image/*" 
@@ -1336,8 +1392,10 @@ export default function POFormFullScreen({
                                   />
                                 </div>
                                 <div className="po-item-calculation">
-                                  <span>{t('Trước VAT')}: <strong>{Math.round(amountBeforeVat).toLocaleString()} đ</strong></span>
-                                  <span>{t('Sau VAT')}: <strong>{Math.round(amountWithVat).toLocaleString()} đ</strong></span>
+                                  <span>{t('Trước chiết khấu')}: <strong>{Math.round(financials.grossAmount).toLocaleString()} đ</strong></span>
+                                  <span>{t('Chiết khấu')}: <strong>{Math.round(financials.discountAmount).toLocaleString()} đ</strong></span>
+                                  <span>{t('Trước VAT')}: <strong>{Math.round(financials.amountBeforeVat).toLocaleString()} đ</strong></span>
+                                  <span>{t('Sau VAT')}: <strong>{Math.round(financials.amountWithVat).toLocaleString()} đ</strong></span>
                                 </div>
                               </div>
                             </td>
