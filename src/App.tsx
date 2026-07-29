@@ -560,11 +560,11 @@ function App() {
 
       {/* APP SIDEBAR NAVIGATION (Strictly Text Links, No Icons) */}
       <aside className={`app-sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="sidebar-logo">
           <img
             src={logo}
             alt="Sunflower"
-            style={{ width: '190px', maxWidth: '100%', maxHeight: '44px', height: 'auto', objectFit: 'contain' }}
+            className="sidebar-logo-image"
           />
         </div>
         <nav className="sidebar-menu">
@@ -572,11 +572,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'dashboard' ? 'active' : ''}`}
               onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Tổng Quan Dashboards')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <LayoutDashboard size={16} />
-                <span>{t('Tổng Quan Dashboards')}</span>
+                <span className="sidebar-item-label">{t('Tổng Quan Dashboards')}</span>
               </div>
               {getDashboardAlertCount() > 0 && <span className="sidebar-badge">{getDashboardAlertCount()}</span>}
             </button>
@@ -586,11 +586,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'chat' ? 'active' : ''}`}
               onClick={() => { setActivePage('chat'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Kênh Thảo Luận')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <MessageSquare size={16} />
-                <span>{t('Kênh Thảo Luận')}</span>
+                <span className="sidebar-item-label">{t('Kênh Thảo Luận')}</span>
               </div>
               {unreadChannelCount > 0 && <span className="sidebar-badge">{unreadChannelCount}</span>}
             </button>
@@ -600,11 +600,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
               onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Khách Hàng (CRM)')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <Users size={16} />
-                <span>{t('Khách Hàng (CRM)')}</span>
+                <span className="sidebar-item-label">{t('Khách Hàng (CRM)')}</span>
               </div>
               {getCrmAlertCount() > 0 && <span className="sidebar-badge">{getCrmAlertCount()}</span>}
             </button>
@@ -614,11 +614,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'sales' ? 'active' : ''}`}
               onClick={() => { setActivePage('sales'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Tiếp Nhận Đơn (Sale PO)')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <FileText size={16} />
-                <span>{t('Tiếp Nhận Đơn (Sale PO)')}</span>
+                <span className="sidebar-item-label">{t('Tiếp Nhận Đơn (Sale PO)')}</span>
               </div>
               {getSalesAlertCount() > 0 && <span className="sidebar-badge">{getSalesAlertCount()}</span>}
             </button>
@@ -629,22 +629,23 @@ function App() {
               <button
                 className={`sidebar-item ${activePage === 'design' ? 'active' : ''}`}
                 onClick={() => { setActivePage('design'); setIsSidebarOpen(false); }}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                title={t('Yêu Cầu Thiết Kế')}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="sidebar-item-content">
                   <Palette size={16} />
-                  <span>{t('Yêu Cầu Thiết Kế')}</span>
+                  <span className="sidebar-item-label">{t('Yêu Cầu Thiết Kế')}</span>
                 </div>
                 {getDesignAlertCount() > 0 && <span className="sidebar-badge">{getDesignAlertCount()}</span>}
               </button>
               <button
                 className={`sidebar-item ${activePage === 'design_library' ? 'active' : ''}`}
                 onClick={() => { setActivePage('design_library'); setIsSidebarOpen(false); }}
-                style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}
                 title={t('Kho Thiết Kế & Layout')}
               >
-                <FolderOpen size={16} style={{ flexShrink: 0 }} />
-                <span className="sidebar-item-label">{t('Kho Mẫu Thiết Kế')}</span>
+                <div className="sidebar-item-content">
+                  <FolderOpen size={16} />
+                  <span className="sidebar-item-label">{t('Kho Mẫu Thiết Kế')}</span>
+                </div>
               </button>
             </>
           )}
@@ -653,11 +654,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'purchase' ? 'active' : ''}`}
               onClick={() => { setActivePage('purchase'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Mua Hàng & NCC')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <ShoppingBag size={16} />
-                <span>{t('Mua Hàng & NCC')}</span>
+                <span className="sidebar-item-label">{t('Mua Hàng & NCC')}</span>
               </div>
               {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
             </button>
@@ -667,11 +668,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'inventory' ? 'active' : ''}`}
               onClick={() => { setActivePage('inventory'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Kho Nguyên Vật Tư')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <Archive size={16} />
-                <span>{t('Kho Nguyên Vật Tư')}</span>
+                <span className="sidebar-item-label">{t('Kho Nguyên Vật Tư')}</span>
               </div>
               {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
             </button>
@@ -681,11 +682,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'production' ? 'active' : ''}`}
               onClick={() => { setActivePage('production'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Lệnh Sản Xuất (LSX)')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <Settings size={16} />
-                <span>{t('Lệnh Sản Xuất (LSX)')}</span>
+                <span className="sidebar-item-label">{t('Lệnh Sản Xuất (LSX)')}</span>
               </div>
               {getProductionAlertCount() > 0 && <span className="sidebar-badge">{getProductionAlertCount()}</span>}
             </button>
@@ -695,11 +696,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'delivery' ? 'active' : ''}`}
               onClick={() => { setActivePage('delivery'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Kế Hoạch Giao Hàng')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <Truck size={16} />
-                <span>{t('Kế Hoạch Giao Hàng')}</span>
+                <span className="sidebar-item-label">{t('Kế Hoạch Giao Hàng')}</span>
               </div>
               {getUpcomingDeliveriesCount() > 0 && <span className="sidebar-badge">{getUpcomingDeliveriesCount()}</span>}
             </button>
@@ -709,11 +710,11 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'accounting' ? 'active' : ''}`}
               onClick={() => { setActivePage('accounting'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              title={t('Kế Toán & Lãi Gộp')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="sidebar-item-content">
                 <DollarSign size={16} />
-                <span>{t('Kế Toán & Lãi Gộp')}</span>
+                <span className="sidebar-item-label">{t('Kế Toán & Lãi Gộp')}</span>
               </div>
               {getUnpaidInvoicesCount() > 0 && <span className="sidebar-badge">{getUnpaidInvoicesCount()}</span>}
             </button>
@@ -723,10 +724,12 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'recycle_bin' ? 'active' : ''}`}
               onClick={() => { setActivePage('recycle_bin'); setIsSidebarOpen(false); }}
-              style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '10px' }}
+              title={t('Thùng Rác')}
             >
-              <Trash2 size={16} />
-              <span>{t('Thùng Rác')}</span>
+              <div className="sidebar-item-content sidebar-item-content-danger">
+                <Trash2 size={16} />
+                <span className="sidebar-item-label">{t('Thùng Rác')}</span>
+              </div>
             </button>
           )}
 
@@ -734,17 +737,18 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'users' ? 'active' : ''}`}
               onClick={() => { setActivePage('users'); setIsSidebarOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              title={t('Quản Lý Tài Khoản')}
             >
-              <UserCog size={16} />
-              <span>{t('Quản Lý Tài Khoản')}</span>
+              <div className="sidebar-item-content">
+                <UserCog size={16} />
+                <span className="sidebar-item-label">{t('Quản Lý Tài Khoản')}</span>
+              </div>
             </button>
           )}
         </nav>
         <div className="sidebar-footer">
           <button 
-            className="btn btn-outline" 
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} 
+            className="btn btn-outline sidebar-logout-btn"
             onClick={() => { handleLogout(); setIsSidebarOpen(false); }}
           >
             <LogOut size={16} />
