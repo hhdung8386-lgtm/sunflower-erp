@@ -4,7 +4,14 @@ import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
-import type { CustomerRecord, LeadRecord } from '../domain/crmModels';
+import type {
+  CustomerContactRecord,
+  CustomerContactRole,
+  CustomerRank,
+  CustomerRecord,
+  LeadRecord
+} from '../domain/crmModels';
+import type { PODiscountType } from '../domain/poFinancials';
 import '../components/CustomerHistory.css';
 import { 
   Plus, 
@@ -23,8 +30,31 @@ import {
   User,
   Eye,
   AlertCircle,
-  Copy
+  Copy,
+  ArrowLeft,
+  Building2,
+  Tag,
+  Users,
+  ShoppingBag
 } from 'lucide-react';
+
+const CUSTOMER_FILE_FOLDERS = [
+  'Hợp đồng',
+  'Biên bản nghiệm thu',
+  'QC',
+  'QA',
+  'Artwork',
+  'Báo giá',
+  'Khác'
+];
+
+const CONTACT_ROLE_LABELS: Record<CustomerContactRole, string> = {
+  primary: 'Liên hệ chính',
+  procurement: 'Mua hàng',
+  warehouse: 'Kho / nhận hàng',
+  accounting: 'Kế toán',
+  other: 'Khác'
+};
 
 interface CrmProps {
   customers: CustomerRecord[];
@@ -274,6 +304,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [showEditModal, setShowEditModal] = useState(false);
   
   // Form fields
+  const [customerCode, setCustomerCode] = useState('');
+  const [customerRank, setCustomerRank] = useState<CustomerRank>('');
   const [companyName, setCompanyName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('');
@@ -281,16 +313,74 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [address, setAddress] = useState('');
   const [taxCode, setTaxCode] = useState('');
   const [assignedSaleId, setAssignedSaleId] = useState('');
+  const [discountType, setDiscountType] = useState<PODiscountType>('percent');
   const [discountRate, setDiscountRate] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   const [debtLimit, setDebtLimit] = useState(0);
   const [paymentTerms, setPaymentTerms] = useState('30 ngày');
   const [note, setNote] = useState('');
+  const [additionalContacts, setAdditionalContacts] = useState<CustomerContactRecord[]>([]);
   
   const [procurementPhone, setProcurementPhone] = useState('');
   const [warehousePhone, setWarehousePhone] = useState('');
   const [bankAccount, setBankAccount] = useState('');
 
   const saleUsers = users.filter(u => u.role === 'sale');
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsubscribe = dbService.subscribeCollection('suppliers', setSuppliers);
+    return unsubscribe;
+  }, []);
+
+  const generateCustomerCode = () => {
+    const usedCodes = new Set(customers.map(customer => customer.customerCode).filter(Boolean));
+    let sequence = customers.length + 1;
+    let candidate = `KH-${String(sequence).padStart(4, '0')}`;
+    while (usedCodes.has(candidate)) {
+      sequence += 1;
+      candidate = `KH-${String(sequence).padStart(4, '0')}`;
+    }
+    return candidate;
+  };
+
+  const buildCustomerContacts = (): CustomerContactRecord[] => {
+    const primaryContact: CustomerContactRecord = {
+      id: 'primary',
+      name: contactPerson.trim(),
+      role: 'primary',
+      phone: phone.trim(),
+      email: email.trim(),
+      note: ''
+    };
+    return [primaryContact, ...additionalContacts].filter(contact => (
+      contact.name.trim() || contact.phone.trim() || contact.email.trim()
+    ));
+  };
+
+  const addContactRow = () => {
+    setAdditionalContacts(previous => [
+      ...previous,
+      {
+        id: `contact-${Date.now()}`,
+        name: '',
+        role: 'procurement',
+        phone: '',
+        email: '',
+        note: ''
+      }
+    ]);
+  };
+
+  const updateContactRow = (
+    contactId: string,
+    field: keyof CustomerContactRecord,
+    value: string
+  ) => {
+    setAdditionalContacts(previous => previous.map(contact => (
+      contact.id === contactId ? { ...contact, [field]: value } : contact
+    )));
+  };
 
   // Product List states
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -303,6 +393,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [productType, setProductType] = useState<'muc_in' | 'tem_trang_cuon' | 'tem_mau_cuon' | 'tem_mau_to'>('tem_trang_cuon');
   const [currentPrice, setCurrentPrice] = useState(0);
   const [productLayoutBase64, setProductLayoutBase64] = useState('');
+  const [productUnit, setProductUnit] = useState('cái');
+  const [productVatRate, setProductVatRate] = useState(8);
+  const [productSupplierId, setProductSupplierId] = useState('');
+  const [productPurchasePrice, setProductPurchasePrice] = useState(0);
+  const [productDiscountType, setProductDiscountType] = useState<PODiscountType>('percent');
+  const [productDiscountRate, setProductDiscountRate] = useState(0);
+  const [productDiscountAmount, setProductDiscountAmount] = useState(0);
+  const [productLeadTimeDays, setProductLeadTimeDays] = useState(0);
 
   // Specs - Ribbon
   const [specRibbonType, setSpecRibbonType] = useState('WAX PREMIUM');
@@ -353,6 +451,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Handle opening create modal
   const openAddModal = () => {
+    setCustomerCode(generateCustomerCode());
+    setCustomerRank('');
     setCompanyName('');
     setContactPerson('');
     setPhone('');
@@ -360,18 +460,23 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setAddress('');
     setTaxCode('');
     setAssignedSaleId(currentUser.role === 'sale' ? currentUser.uid : (saleUsers[0]?.uid || ''));
+    setDiscountType('percent');
     setDiscountRate(0);
+    setDiscountAmount(0);
     setDebtLimit(50000000);
     setPaymentTerms('30 ngày');
     setNote('');
     setProcurementPhone('');
     setWarehousePhone('');
     setBankAccount('');
+    setAdditionalContacts([]);
     setShowAddModal(true);
   };
 
   // Handle opening edit modal
-  const openEditModal = (cust: any) => {
+  const openEditModal = (cust: CustomerRecord) => {
+    setCustomerCode(cust.customerCode);
+    setCustomerRank(cust.customerRank);
     setCompanyName(cust.companyName);
     setContactPerson(cust.contactPerson);
     setPhone(cust.phone);
@@ -379,13 +484,18 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setAddress(cust.address);
     setTaxCode(cust.taxCode);
     setAssignedSaleId(cust.assignedSaleId);
+    setDiscountType(cust.discountType);
     setDiscountRate(cust.discountRate);
+    setDiscountAmount(cust.discountAmount);
     setDebtLimit(cust.debtLimit);
     setPaymentTerms(cust.paymentTerms);
     setNote(cust.note);
     setProcurementPhone(cust.procurementPhone || '');
     setWarehousePhone(cust.warehousePhone || '');
     setBankAccount(cust.bankAccount || '');
+    setAdditionalContacts(
+      (cust.contacts || []).filter(contact => contact.role !== 'primary' && contact.id !== 'primary')
+    );
     setSelectedCustomer(cust);
     setShowEditModal(true);
   };
@@ -396,6 +506,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     if (!companyName) return;
 
     await dbService.addDocument('customers', {
+      customerCode: customerCode.trim() || generateCustomerCode(),
+      customerRank,
       companyName,
       contactPerson,
       phone,
@@ -403,13 +515,19 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       address,
       taxCode,
       assignedSaleId,
+      discountType,
       discountRate: Number(discountRate),
+      discountAmount: Number(discountAmount),
       debtLimit: Number(debtLimit),
       paymentTerms,
       note,
       procurementPhone,
       warehousePhone,
       bankAccount,
+      contacts: buildCustomerContacts(),
+      products: [],
+      documents: [],
+      contracts: [],
       files: [], // Repository for custom folders/files
       lastOrderAt: null,
       createdById: currentUser.uid,
@@ -434,6 +552,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     if (!selectedCustomer) return;
 
     await dbService.updateDocument('customers', selectedCustomer.id, {
+      customerCode: customerCode.trim() || selectedCustomer.customerCode,
+      customerRank,
       companyName,
       contactPerson,
       phone,
@@ -441,13 +561,16 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       address,
       taxCode,
       assignedSaleId,
+      discountType,
       discountRate: Number(discountRate),
+      discountAmount: Number(discountAmount),
       debtLimit: Number(debtLimit),
       paymentTerms,
       note,
       procurementPhone,
       warehousePhone,
       bankAccount,
+      contacts: buildCustomerContacts(),
       updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
       updatedAt: new Date().toISOString()
     });
@@ -495,6 +618,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setProductType(prod.productType);
     setCurrentPrice(prod.currentPrice);
     setProductMaterial(prod.material || '');
+    setProductUnit(prod.unit || 'cái');
+    setProductVatRate(Number(prod.vatRate ?? 8));
+    setProductSupplierId(prod.supplierId || '');
+    setProductPurchasePrice(Number(prod.purchasePrice || 0));
+    setProductDiscountType(prod.discountType === 'amount' ? 'amount' : 'percent');
+    setProductDiscountRate(Number(prod.discountRate || 0));
+    setProductDiscountAmount(Number(prod.discountAmount || 0));
+    setProductLeadTimeDays(Number(prod.leadTimeDays || 0));
     setSpecCustomRows(prod.specifications?.custom || []);
     setProductLayoutBase64(prod.layoutUrl || '');
     setWindDirectionFiles(prod.specifications?.windDirectionFiles || []);
@@ -586,7 +717,17 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       productName,
       productType,
       currentPrice: Number(currentPrice),
+      salePrice: Number(currentPrice),
       material: productMaterial,
+      unit: productUnit,
+      vatRate: Number(productVatRate),
+      supplierId: productSupplierId,
+      supplierName: suppliers.find(supplier => supplier.id === productSupplierId)?.supplierName || '',
+      purchasePrice: Number(productPurchasePrice),
+      discountType: productDiscountType,
+      discountRate: Number(productDiscountRate),
+      discountAmount: Number(productDiscountAmount),
+      leadTimeDays: Number(productLeadTimeDays),
       layoutUrl: productLayoutBase64,
       specifications: specs,
       priceHistory: newPriceHistory,
@@ -1051,6 +1192,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     setProductType('tem_trang_cuon');
     setCurrentPrice(0);
     setProductMaterial('');
+    setProductUnit('cái');
+    setProductVatRate(8);
+    setProductSupplierId('');
+    setProductPurchasePrice(0);
+    setProductDiscountType('percent');
+    setProductDiscountRate(0);
+    setProductDiscountAmount(0);
+    setProductLeadTimeDays(0);
     setSpecCustomRows([]);
     setProductLayoutBase64('');
     setSpecFields(loadSpecsToFields('tem_trang_cuon'));
@@ -1153,7 +1302,17 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       productName,
       productType,
       currentPrice: Number(currentPrice),
+      salePrice: Number(currentPrice),
       material: productMaterial,
+      unit: productUnit,
+      vatRate: Number(productVatRate),
+      supplierId: productSupplierId,
+      supplierName: suppliers.find(supplier => supplier.id === productSupplierId)?.supplierName || '',
+      purchasePrice: Number(productPurchasePrice),
+      discountType: productDiscountType,
+      discountRate: Number(productDiscountRate),
+      discountAmount: Number(productDiscountAmount),
+      leadTimeDays: Number(productLeadTimeDays),
       layoutUrl: productLayoutBase64,
       specifications: specs,
       priceHistory: [
@@ -1328,7 +1487,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   // Filter and search
   const today = new Date();
-  const filteredCustomers = customers.filter(c => {
+  const filteredCustomers = sortNewestFirst(customers.filter(c => {
     if (c.deleted === true) return false;
     // Filter by sales rep role: only see assigned customers
     if (currentUser.role === 'sale' && c.assignedSaleId && c.assignedSaleId !== currentUser.uid) {
@@ -1345,7 +1504,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       return matchesSearch && diffDays > 30; // 30+ days inactive
     }
     return matchesSearch;
-  });
+  }), customer => [customer.createdAt, customer.updatedAt, customer.customerCode]);
 
   // Top 5/15 customers by sales volume with time filters
   const topCustomerSales = customers
@@ -1379,8 +1538,86 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
   const chartData = topCustomerSales.slice(0, showTop15 ? 15 : 5);
 
+  const renderProductCommercialFields = () => (
+    <div className="product-commercial-fields">
+      <div className="form-group">
+        <label>{t('Đơn Vị Tính')}</label>
+        <input value={productUnit} onChange={event => setProductUnit(event.target.value)} placeholder={t('cái, cuộn, tờ...')} />
+      </div>
+      <div className="form-group">
+        <label>{t('Thuế VAT (%)')}</label>
+        <input type="number" min="0" max="100" value={productVatRate} onChange={event => setProductVatRate(Number(event.target.value))} />
+      </div>
+      <div className="form-group">
+        <label>{t('Nhà Cung Cấp Thường Dùng')}</label>
+        <select value={productSupplierId} onChange={event => setProductSupplierId(event.target.value)}>
+          <option value="">{t('-- Chọn nhà cung cấp --')}</option>
+          {suppliers.filter(supplier => !supplier.deleted).map(supplier => (
+            <option key={supplier.id} value={supplier.id}>{supplier.supplierName}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label>{t('Giá Mua Tham Khảo (đ)')}</label>
+        <input type="number" min="0" value={productPurchasePrice} onChange={event => setProductPurchasePrice(Number(event.target.value))} />
+      </div>
+      <div className="form-group">
+        <label>{t('Chiết Khấu Sản Phẩm')}</label>
+        <select value={productDiscountType} onChange={event => setProductDiscountType(event.target.value as PODiscountType)}>
+          <option value="percent">{t('Theo phần trăm (%)')}</option>
+          <option value="amount">{t('Theo tiền chênh (đ)')}</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>{productDiscountType === 'amount' ? t('Tiền Chênh (đ)') : t('Tỷ Lệ Chiết Khấu (%)')}</label>
+        {productDiscountType === 'amount' ? (
+          <input type="number" min="0" value={productDiscountAmount} onChange={event => setProductDiscountAmount(Number(event.target.value))} />
+        ) : (
+          <input type="number" min="0" max="100" value={productDiscountRate} onChange={event => setProductDiscountRate(Number(event.target.value))} />
+        )}
+      </div>
+      <div className="form-group">
+        <label>{t('Thời Gian Chuẩn Bị (ngày)')}</label>
+        <input type="number" min="0" value={productLeadTimeDays} onChange={event => setProductLeadTimeDays(Number(event.target.value))} />
+      </div>
+    </div>
+  );
+
+  const renderAdditionalContactsEditor = () => (
+    <div className="customer-contact-editor">
+      <div className="customer-contact-editor__header">
+        <div>
+          <strong>{t('Đầu mối liên hệ bổ sung')}</strong>
+          <span>{t('Lưu riêng người phụ trách mua hàng, kho, kế toán hoặc đầu mối khác.')}</span>
+        </div>
+        <button type="button" className="btn btn-sm btn-outline" onClick={addContactRow}>
+          <Plus size={14} /> {t('Thêm liên hệ')}
+        </button>
+      </div>
+      {additionalContacts.map(contact => (
+        <div key={contact.id} className="customer-contact-editor__row">
+          <select value={contact.role} onChange={event => updateContactRow(contact.id, 'role', event.target.value)}>
+            {Object.entries(CONTACT_ROLE_LABELS).filter(([role]) => role !== 'primary').map(([role, label]) => (
+              <option key={role} value={role}>{t(label)}</option>
+            ))}
+          </select>
+          <input value={contact.name} onChange={event => updateContactRow(contact.id, 'name', event.target.value)} placeholder={t('Họ tên')} />
+          <input value={contact.phone} onChange={event => updateContactRow(contact.id, 'phone', event.target.value)} placeholder={t('Số điện thoại')} />
+          <input value={contact.email} onChange={event => updateContactRow(contact.id, 'email', event.target.value)} placeholder="Email" />
+          <button
+            type="button"
+            className="btn btn-sm btn-danger btn-symbol-sm"
+            onClick={() => setAdditionalContacts(previous => previous.filter(item => item.id !== contact.id))}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="crm-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className={`crm-view ${selectedCustomer ? 'crm-view--detail' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('QUẢN LÝ KHÁCH HÀNG (CRM)')}</h1>
@@ -1459,6 +1696,25 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
       {crmActiveTab === 'cooperative' ? (
         <>
+          <div className="crm-summary-grid">
+            <div className="crm-summary-card">
+              <Building2 size={19} />
+              <div><strong>{customers.filter(customer => !customer.deleted).length}</strong><span>Khách hàng đang hợp tác</span></div>
+            </div>
+            <div className="crm-summary-card">
+              <Tag size={19} />
+              <div><strong>{customers.filter(customer => !customer.deleted && customer.customerRank).length}</strong><span>Hồ sơ đã xếp hạng</span></div>
+            </div>
+            <div className="crm-summary-card">
+              <ShoppingBag size={19} />
+              <div><strong>{customers.reduce((total, customer) => total + (customer.products || []).filter(product => !product.deleted).length, 0)}</strong><span>Mã hàng tiêu chuẩn</span></div>
+            </div>
+            <div className="crm-summary-card">
+              <Users size={19} />
+              <div><strong>{customers.reduce((total, customer) => total + (customer.contacts || []).length, 0)}</strong><span>Đầu mối liên hệ</span></div>
+            </div>
+          </div>
+
           {/* Top customer chart */}
           {topCustomerSales.length > 0 && (
             <div className="card">
@@ -1539,9 +1795,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <table>
             <thead>
               <tr>
+                <th>{t('Mã KH')}</th>
                 <th>{t('Tên Công Ty')}</th>
-                <th>{t('Người Liên Hệ')}</th>
-                <th>{t('Điện Thoại')}</th>
+                <th>{t('Hạng')}</th>
+                <th>{t('Sale Phụ Trách')}</th>
                 <th>{t('Chiết Khấu')}</th>
                 <th>{t('Hạn Mức Nợ')}</th>
                 <th>{t('Đơn Cuối Cùng')}</th>
@@ -1563,9 +1820,14 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
                 return (
                   <tr key={cust.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedCustomer(cust)}>
+                    <td><span className="customer-code-badge">{cust.customerCode || cust.id}</span></td>
                     <td style={{ fontWeight: 600 }}>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span>{cust.companyName}</span>
+                        <span className="crm-customer-contact-line">
+                          {cust.contactPerson || t('Chưa có người liên hệ')}
+                          {cust.phone ? ` · ${cust.phone}` : ''}
+                        </span>
                         {isInactive && (
                           <span style={{ fontSize: '10px', color: 'var(--color-danger)', fontWeight: 'bold' }}>
                             [{t('CẢNH BÁO: CHƯA PHÁT SINH ĐƠN MỚI > 30 NGÀY')}]
@@ -1573,9 +1835,17 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         )}
                       </div>
                     </td>
-                    <td>{cust.contactPerson}</td>
-                    <td>{cust.phone}</td>
-                    <td>{cust.discountRate}%</td>
+                    <td>
+                      <span className={`customer-rank-badge ${cust.customerRank ? 'has-rank' : ''}`}>
+                        {cust.customerRank || '—'}
+                      </span>
+                    </td>
+                    <td>{users.find(user => user.uid === cust.assignedSaleId)?.displayName || t('Chưa phân công')}</td>
+                    <td>
+                      {cust.discountType === 'amount'
+                        ? `${Number(cust.discountAmount || 0).toLocaleString('vi-VN')} đ`
+                        : `${Number(cust.discountRate || 0)}%`}
+                    </td>
                     <td>{cust.debtLimit.toLocaleString()} đ</td>
                     <td>{cust.lastOrderAt ? new Date(cust.lastOrderAt).toLocaleDateString('vi-VN') : t('Chưa có')}</td>
                     <td>
@@ -1598,7 +1868,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               })}
               {filteredCustomers.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy khách hàng nào.')}</td>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy khách hàng nào.')}</td>
                 </tr>
               )}
             </tbody>
@@ -1609,10 +1879,32 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       {/* SELECTED CUSTOMER DETAIL */}
        {selectedCustomer && (
         <div className="customer-details-grid">
+          <div className="customer-detail-header">
+            <button type="button" className="btn btn-outline customer-detail-back" onClick={() => setSelectedCustomer(null)}>
+              <ArrowLeft size={16} />
+              <span>{t('Quay lại danh sách')}</span>
+            </button>
+            <div className="customer-detail-heading">
+              <div className="customer-detail-heading__title">
+                <span className="customer-code-badge">{selectedCustomer.customerCode || selectedCustomer.id}</span>
+                <h1>{selectedCustomer.companyName}</h1>
+                <span className={`customer-rank-badge ${selectedCustomer.customerRank ? 'has-rank' : ''}`}>
+                  {selectedCustomer.customerRank ? `Hạng ${selectedCustomer.customerRank}` : t('Chưa xếp hạng')}
+                </span>
+              </div>
+              <p>{t('Hồ sơ khách hàng, mã hàng tiêu chuẩn, lịch sử giao dịch và tài liệu liên quan.')}</p>
+            </div>
+            {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+              <button type="button" className="btn btn-primary" onClick={() => openEditModal(selectedCustomer)}>
+                <Pencil size={15} />
+                <span>{t('Chỉnh sửa hồ sơ')}</span>
+              </button>
+            )}
+          </div>
+
           <div className="card">
             <div className="card-header">
-              <span className="card-title">{t('HỒ SƠ KHÁCH HÀNG:')} {selectedCustomer.companyName}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(null)}>{t('Đóng chi tiết')}</button>
+              <span className="card-title">{t('THÔNG TIN DOANH NGHIỆP')}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
@@ -1629,14 +1921,20 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <span>{users.find(u => u.uid === selectedCustomer.assignedSaleId)?.displayName || t('Chưa phân công')}</span>
 
                 {(selectedCustomer.customFields || [
-                  { id: 'discountRate', name: t('Chiết khấu mặc định (%)'), value: selectedCustomer.discountRate },
+                  {
+                    id: 'discount',
+                    name: t('Chiết khấu mặc định'),
+                    value: selectedCustomer.discountType === 'amount'
+                      ? `${Number(selectedCustomer.discountAmount || 0).toLocaleString('vi-VN')} đ`
+                      : `${Number(selectedCustomer.discountRate || 0)}%`
+                  },
                   { id: 'debtLimit', name: t('Hạn mức công nợ (đ)'), value: selectedCustomer.debtLimit },
                   { id: 'paymentTerms', name: t('Điều khoản thanh toán'), value: selectedCustomer.paymentTerms },
                   { id: 'note', name: t('Ghi chú yêu cầu riêng'), value: selectedCustomer.note }
                 ]).map((field: any) => (
                   <React.Fragment key={field.id}>
                     <span style={{ fontWeight: 600, color: 'var(--color-text-muted)' }}>{field.name}:</span>
-                    <span>{field.id === 'debtLimit' ? `${field.value?.toLocaleString()} đ` : field.id === 'discountRate' ? `${field.value}%` : (field.value || t('Không có'))}</span>
+                    <span>{field.id === 'debtLimit' ? `${field.value?.toLocaleString()} đ` : (field.value || t('Không có'))}</span>
                   </React.Fragment>
                 ))}
 
@@ -1650,6 +1948,25 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
 
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Cập nhật bởi:')}</span>
                 <span style={{ fontSize: '12px' }}>{selectedCustomer.updatedBy || t('Chưa cập nhật')} {selectedCustomer.updatedAt && `(${new Date(selectedCustomer.updatedAt).toLocaleString(t('vi-VN'))})`}</span>
+              </div>
+
+              <div className="customer-contact-panel">
+                <div className="customer-contact-panel__heading">
+                  <Users size={16} />
+                  <strong>{t('Đầu mối liên hệ')}</strong>
+                </div>
+                <div className="customer-contact-list">
+                  {(selectedCustomer.contacts || []).map((contact: CustomerContactRecord) => (
+                    <div key={contact.id} className="customer-contact-item">
+                      <span className="customer-contact-item__role">{CONTACT_ROLE_LABELS[contact.role]}</span>
+                      <strong>{contact.name || t('Chưa cập nhật tên')}</strong>
+                      <span>{[contact.phone, contact.email].filter(Boolean).join(' · ') || t('Chưa có thông tin liên hệ')}</span>
+                    </div>
+                  ))}
+                  {(selectedCustomer.contacts || []).length === 0 && (
+                    <span className="text-muted">{t('Chưa có đầu mối liên hệ.')}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1719,7 +2036,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     <th>{t('Mã Sản Phẩm')}</th>
                     <th>{t('Tên Sản Phẩm')}</th>
                     <th>{t('Loại')}</th>
+                    <th>{t('ĐVT / VAT')}</th>
                     <th>{t('Đơn Giá')}</th>
+                    <th>{t('Nhà Cung Cấp')}</th>
                     <th>{t('Mô Tả Kỹ Thuật')}</th>
                     <th>{t('Ảnh Layout')}</th>
                     <th>{t('Thao Tác')}</th>
@@ -1731,6 +2050,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       <td style={{ fontWeight: 600 }}>{prod.productCode}</td>
                       <td>{prod.productName}</td>
                       <td>{t(prod.productType)}</td>
+                      <td>
+                        <strong>{prod.unit || 'cái'}</strong>
+                        <div className="crm-table-secondary">VAT {Number(prod.vatRate ?? 8)}%</div>
+                      </td>
                       <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span>{prod.currentPrice.toLocaleString()} đ</span>
@@ -1743,6 +2066,13 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                             {t('Lịch sử')}
                           </button>
                         </div>
+                      </td>
+                      <td>
+                        <strong>{prod.supplierName || t('Chưa chọn')}</strong>
+                        <div className="crm-table-secondary">
+                          {prod.purchasePrice ? `${Number(prod.purchasePrice).toLocaleString('vi-VN')} đ mua` : t('Chưa có giá mua')}
+                        </div>
+                        {prod.leadTimeDays > 0 && <div className="crm-table-secondary">{prod.leadTimeDays} ngày chuẩn bị</div>}
                       </td>
                       <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {prod.specifications?.fields && Array.isArray(prod.specifications.fields) ? (
@@ -1828,7 +2158,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   ))}
                   {(selectedCustomer.products || []).filter((p: any) => !p.deleted).length === 0 && (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa thiết lập mã sản phẩm nào cho khách hàng này.')}</td>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa thiết lập mã sản phẩm nào cho khách hàng này.')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -2021,6 +2351,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                       style={{ fontSize: '12.5px' }}
                     />
                     <datalist id="customer-folders-list">
+                      {CUSTOMER_FILE_FOLDERS.map(folder => (
+                        <option key={`default-${folder}`} value={folder} />
+                      ))}
                       {Array.from(new Set((selectedCustomer.files || []).map((f: any) => f.folder))).map((folder: any) => (
                         <option key={folder} value={folder} />
                       ))}
@@ -2160,13 +2493,29 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       {/* CREATE MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '920px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM KHÁCH HÀNG MỚI')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowAddModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleAddCustomer}>
               <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Mã Khách Hàng *')}</label>
+                    <input type="text" value={customerCode} onChange={e => setCustomerCode(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hạng Khách Hàng')}</label>
+                    <select value={customerRank} onChange={e => setCustomerRank(e.target.value as CustomerRank)}>
+                      <option value="">{t('Chưa xếp hạng')}</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                    </select>
+                  </div>
+                </div>
                 <div className="form-group">
                   <label>{t('Tên Công Ty *')}</label>
                   <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
@@ -2211,9 +2560,22 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>{t('Chiết Khấu Mặc Định (%)')}</label>
-                    <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
+                    <label>{t('Hình Thức Chiết Khấu')}</label>
+                    <select value={discountType} onChange={e => setDiscountType(e.target.value as PODiscountType)}>
+                      <option value="percent">{t('Theo phần trăm (%)')}</option>
+                      <option value="amount">{t('Theo tiền chênh (đ)')}</option>
+                    </select>
                   </div>
+                  <div className="form-group">
+                    <label>{discountType === 'amount' ? t('Tiền Chênh Mặc Định (đ)') : t('Chiết Khấu Mặc Định (%)')}</label>
+                    {discountType === 'amount' ? (
+                      <input type="number" min="0" value={discountAmount} onChange={e => setDiscountAmount(Number(e.target.value))} />
+                    ) : (
+                      <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
+                    )}
+                  </div>
+                </div>
+                <div className="form-grid">
                   <div className="form-group">
                     <label>{t('Hạn Mức Công Nợ (đ)')}</label>
                     <input type="number" min="0" value={debtLimit} onChange={e => setDebtLimit(Number(e.target.value))} />
@@ -2243,6 +2605,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   <label>{t('Ghi Chú Yêu Cầu Riêng')}</label>
                   <textarea value={note} onChange={e => setNote(e.target.value)} />
                 </div>
+                {renderAdditionalContactsEditor()}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>{t('Hủy')}</button>
@@ -2256,13 +2619,29 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       {/* EDIT MODAL */}
       {showEditModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '920px' }}>
             <div className="modal-header">
               <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA HỒ SƠ KHÁCH HÀNG')}</span>
               <button className="btn btn-sm btn-outline" onClick={() => setShowEditModal(false)}>{t('Đóng')}</button>
             </div>
             <form onSubmit={handleEditCustomer}>
               <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>{t('Mã Khách Hàng *')}</label>
+                    <input type="text" value={customerCode} onChange={e => setCustomerCode(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Hạng Khách Hàng')}</label>
+                    <select value={customerRank} onChange={e => setCustomerRank(e.target.value as CustomerRank)}>
+                      <option value="">{t('Chưa xếp hạng')}</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                    </select>
+                  </div>
+                </div>
                 <div className="form-group">
                   <label>{t('Tên Công Ty *')}</label>
                   <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
@@ -2307,9 +2686,22 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>{t('Chiết Khấu Mặc Định (%)')}</label>
-                    <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
+                    <label>{t('Hình Thức Chiết Khấu')}</label>
+                    <select value={discountType} onChange={e => setDiscountType(e.target.value as PODiscountType)}>
+                      <option value="percent">{t('Theo phần trăm (%)')}</option>
+                      <option value="amount">{t('Theo tiền chênh (đ)')}</option>
+                    </select>
                   </div>
+                  <div className="form-group">
+                    <label>{discountType === 'amount' ? t('Tiền Chênh Mặc Định (đ)') : t('Chiết Khấu Mặc Định (%)')}</label>
+                    {discountType === 'amount' ? (
+                      <input type="number" min="0" value={discountAmount} onChange={e => setDiscountAmount(Number(e.target.value))} />
+                    ) : (
+                      <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
+                    )}
+                  </div>
+                </div>
+                <div className="form-grid">
                   <div className="form-group">
                     <label>{t('Hạn Mức Công Nợ (đ)')}</label>
                     <input type="number" min="0" value={debtLimit} onChange={e => setDebtLimit(Number(e.target.value))} />
@@ -2339,6 +2731,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   <label>{t('Ghi Chú Yêu Cầu Riêng')}</label>
                   <textarea value={note} onChange={e => setNote(e.target.value)} />
                 </div>
+                {renderAdditionalContactsEditor()}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowEditModal(false)}>{t('Hủy')}</button>
@@ -2417,6 +2810,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     )}
                   </div>
                 </div>
+
+                {renderProductCommercialFields()}
 
                 <span style={{ display: 'block', borderBottom: '1px solid var(--color-border-light)', margin: '16px 0' }}></span>
                 <h4 style={{ color: 'var(--color-primary)', marginBottom: '10px' }}>{t('MÔ TẢ THÔNG SỐ KỸ THUẬT')}</h4>
@@ -3004,6 +3399,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                     )}
                   </div>
                 </div>
+
+                {renderProductCommercialFields()}
 
                 <span style={{ display: 'block', borderBottom: '1px solid var(--color-border-light)', margin: '16px 0' }}></span>
                 <h4 style={{ color: 'var(--color-primary)', marginBottom: '10px' }}>{t('MÔ TẢ THÔNG SỐ KỸ THUẬT')}</h4>
