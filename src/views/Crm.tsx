@@ -1538,6 +1538,134 @@ export const Crm: React.FC<CrmProps> = ({
     </div>
   );
 
+  const renderCustomerOnboardingTables = () => (
+    <div className="customer-onboarding-tables">
+      <section className="customer-data-section">
+        <div className="customer-data-section__heading">
+          <Building2 size={16} />
+          <span>Hồ sơ doanh nghiệp</span>
+        </div>
+        <div className="customer-data-table-wrap">
+          <table className="customer-data-table customer-data-table--profile">
+            <thead>
+              <tr>
+                <th>Mã khách hàng *</th>
+                <th>Hạng khách hàng *</th>
+                <th>Tên công ty *</th>
+                <th>Mã số thuế</th>
+                <th>Sale phụ trách</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input aria-label="Mã khách hàng" type="text" value={customerCode} onChange={event => setCustomerCode(event.target.value)} required /></td>
+                <td>
+                  <select aria-label="Hạng khách hàng" value={customerRank} onChange={event => setCustomerRank(event.target.value as CustomerRank)} required>
+                    <option value="">Chọn hạng</option>
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                  </select>
+                </td>
+                <td><input aria-label="Tên công ty" type="text" value={companyName} onChange={event => setCompanyName(event.target.value)} placeholder="Nhập tên doanh nghiệp..." required /></td>
+                <td><input aria-label="Mã số thuế" type="text" value={taxCode} onChange={event => setTaxCode(event.target.value)} /></td>
+                <td>
+                  <select aria-label="Sale phụ trách" value={assignedSaleId} onChange={event => setAssignedSaleId(event.target.value)} disabled={currentUser.role === 'sale'}>
+                    {saleUsers.map(sale => <option key={sale.uid} value={sale.uid}>{sale.displayName}</option>)}
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="customer-data-section">
+        <div className="customer-data-section__heading">
+          <Users size={16} />
+          <span>Liên hệ và giao nhận</span>
+        </div>
+        <div className="customer-data-table-wrap">
+          <table className="customer-data-table customer-data-table--contact">
+            <thead>
+              <tr>
+                <th>Người liên hệ</th>
+                <th>Số điện thoại</th>
+                <th>SĐT thu mua</th>
+                <th>SĐT nhận hàng / kho</th>
+                <th>Email</th>
+                <th>Địa chỉ giao hàng</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input aria-label="Người liên hệ" value={contactPerson} onChange={event => setContactPerson(event.target.value)} /></td>
+                <td><input aria-label="Số điện thoại" value={phone} onChange={event => setPhone(event.target.value)} /></td>
+                <td><input aria-label="SĐT thu mua" value={procurementPhone} onChange={event => setProcurementPhone(event.target.value)} /></td>
+                <td><input aria-label="SĐT nhận hàng hoặc kho" value={warehousePhone} onChange={event => setWarehousePhone(event.target.value)} /></td>
+                <td><input aria-label="Email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></td>
+                <td><input aria-label="Địa chỉ giao hàng" value={address} onChange={event => setAddress(event.target.value)} /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="customer-data-section">
+        <div className="customer-data-section__heading">
+          <ShoppingBag size={16} />
+          <span>Điều khoản thương mại</span>
+        </div>
+        <div className="customer-data-table-wrap">
+          <table className="customer-data-table customer-data-table--commercial">
+            <thead>
+              <tr>
+                <th>Hình thức chiết khấu</th>
+                <th>{discountType === 'amount' ? 'Tiền chênh mặc định (đ)' : 'Chiết khấu mặc định (%)'}</th>
+                <th>Hạn mức công nợ (đ)</th>
+                <th>Điều khoản thanh toán</th>
+                <th>Tài khoản ngân hàng</th>
+                <th>Ghi chú yêu cầu riêng</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <select aria-label="Hình thức chiết khấu" value={discountType} onChange={event => setDiscountType(event.target.value as PODiscountType)}>
+                    <option value="percent">Theo phần trăm (%)</option>
+                    <option value="amount">Theo tiền chênh (đ)</option>
+                  </select>
+                </td>
+                <td>
+                  {discountType === 'amount' ? (
+                    <input aria-label="Tiền chênh mặc định" type="number" min="0" value={discountAmount} onChange={event => setDiscountAmount(Number(event.target.value))} />
+                  ) : (
+                    <input aria-label="Chiết khấu mặc định" type="number" min="0" max="100" value={discountRate} onChange={event => setDiscountRate(Number(event.target.value))} />
+                  )}
+                </td>
+                <td><input aria-label="Hạn mức công nợ" type="number" min="0" value={debtLimit} onChange={event => setDebtLimit(Number(event.target.value))} /></td>
+                <td>
+                  <select aria-label="Điều khoản thanh toán" value={paymentTerms} onChange={event => setPaymentTerms(event.target.value)}>
+                    <option value="Thanh toán trước">Thanh toán trước</option>
+                    <option value="Thanh toán khi nhận hàng">Thanh toán khi nhận hàng</option>
+                    <option value="30 ngày">30 ngày kể từ khi giao hàng</option>
+                    <option value="45 ngày">45 ngày kể từ khi giao hàng</option>
+                    <option value="60 ngày">60 ngày kể từ khi giao hàng</option>
+                  </select>
+                </td>
+                <td><input aria-label="Tài khoản ngân hàng" value={bankAccount} onChange={event => setBankAccount(event.target.value)} placeholder="Số tài khoản, ngân hàng, chi nhánh..." /></td>
+                <td><input aria-label="Ghi chú yêu cầu riêng" value={note} onChange={event => setNote(event.target.value)} /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {renderAdditionalContactsEditor()}
+    </div>
+  );
+
   return (
     <div className={`crm-view ${selectedCustomer ? 'crm-view--detail' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="page-header">
@@ -2311,116 +2439,7 @@ export const Crm: React.FC<CrmProps> = ({
             </div>
             <form className="customer-onboarding-form" onSubmit={handleAddCustomer}>
               <div className="modal-body customer-onboarding-body">
-                <div className="customer-onboarding-section-title">
-                  <Building2 size={18} />
-                  <span>Thông tin khách hàng</span>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Mã Khách Hàng *')}</label>
-                    <input type="text" value={customerCode} onChange={e => setCustomerCode(e.target.value)} required />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Hạng Khách Hàng')}</label>
-                    <select value={customerRank} onChange={e => setCustomerRank(e.target.value as CustomerRank)}>
-                      <option value="">{t('Chưa xếp hạng')}</option>
-                      <option value="A">A</option>
-                      <option value="B">B</option>
-                      <option value="C">C</option>
-                      <option value="D">D</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Tên Công Ty *')}</label>
-                  <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} required />
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Người Liên Hệ')}</label>
-                    <input type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Số Điện Thoại')}</label>
-                    <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('SĐT Thu Mua')}</label>
-                    <input type="text" value={procurementPhone} onChange={e => setProcurementPhone(e.target.value)} placeholder={t('SĐT người làm việc mua hàng...')} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('SĐT Nhận Hàng / Kho')}</label>
-                    <input type="text" value={warehousePhone} onChange={e => setWarehousePhone(e.target.value)} placeholder={t('SĐT liên hệ kho hàng...')} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Tài Khoản Ngân Hàng')}</label>
-                  <input type="text" value={bankAccount} onChange={e => setBankAccount(e.target.value)} placeholder={t('Số tài khoản, tên ngân hàng, chi nhánh...')} />
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Mã Số Thuế')}</label>
-                    <input type="text" value={taxCode} onChange={e => setTaxCode(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Email:')}</label>
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Địa Chỉ Giao Hàng')}</label>
-                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} />
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Hình Thức Chiết Khấu')}</label>
-                    <select value={discountType} onChange={e => setDiscountType(e.target.value as PODiscountType)}>
-                      <option value="percent">{t('Theo phần trăm (%)')}</option>
-                      <option value="amount">{t('Theo tiền chênh (đ)')}</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{discountType === 'amount' ? t('Tiền Chênh Mặc Định (đ)') : t('Chiết Khấu Mặc Định (%)')}</label>
-                    {discountType === 'amount' ? (
-                      <input type="number" min="0" value={discountAmount} onChange={e => setDiscountAmount(Number(e.target.value))} />
-                    ) : (
-                      <input type="number" min="0" max="100" value={discountRate} onChange={e => setDiscountRate(Number(e.target.value))} />
-                    )}
-                  </div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Hạn Mức Công Nợ (đ)')}</label>
-                    <input type="number" min="0" value={debtLimit} onChange={e => setDebtLimit(Number(e.target.value))} />
-                  </div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>{t('Điều Khoản Thanh Toán')}</label>
-                    <select value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)}>
-                      <option value="Thanh toán trước">{t('Thanh toán trước')}</option>
-                      <option value="Thanh toán khi nhận hàng">{t('Thanh toán khi nhận hàng')}</option>
-                      <option value="30 ngày">{t('30 ngày kể từ khi giao hàng')}</option>
-                      <option value="45 ngày">{t('45 ngày kể từ khi giao hàng')}</option>
-                      <option value="60 ngày">{t('60 ngày kể từ khi giao hàng')}</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Sale Phụ Trách')}</label>
-                    <select value={assignedSaleId} onChange={e => setAssignedSaleId(e.target.value)} disabled={currentUser.role === 'sale'}>
-                      {saleUsers.map(s => (
-                        <option key={s.uid} value={s.uid}>{s.displayName}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Ghi Chú Yêu Cầu Riêng')}</label>
-                  <textarea value={note} onChange={e => setNote(e.target.value)} />
-                </div>
-                {renderAdditionalContactsEditor()}
+                {renderCustomerOnboardingTables()}
               </div>
               <div className="modal-footer customer-onboarding-footer">
                 <div className="customer-onboarding-footer-note">
