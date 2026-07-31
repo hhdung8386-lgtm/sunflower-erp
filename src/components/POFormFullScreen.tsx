@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
 import { calculatePOItemFinancials, withCalculatedPOFinancials } from '../domain/poFinancials';
+import type { CustomerRecord } from '../domain/crmModels';
 import './CustomerHistory.css';
 
 const PO_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -28,7 +29,7 @@ interface POFormFullScreenProps {
   templatePo?: any | null; // source PO when creating a repeat order
   initialCustomerId?: string; // preselected CRM customer for a first PO
   onSave: (poData: any) => Promise<void>;
-  customers: any[];
+  customers: CustomerRecord[];
   suppliers: any[];
   users: any[];
   currentUser: any;

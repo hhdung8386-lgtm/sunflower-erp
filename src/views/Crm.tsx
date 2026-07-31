@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import type { CustomerRecord, LeadRecord } from '../domain/crmModels';
 import '../components/CustomerHistory.css';
 import { 
   Plus, 
@@ -26,7 +27,7 @@ import {
 } from 'lucide-react';
 
 interface CrmProps {
-  customers: any[];
+  customers: CustomerRecord[];
   pos: any[];
   users: any[];
   currentUser: any;
@@ -93,9 +94,11 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [crmActiveTab, setCrmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
 
   // Leads state & subscription
-  const [leads, setLeads] = useState<any[]>([]);
+  const [leads, setLeads] = useState<LeadRecord[]>([]);
   useEffect(() => {
-    const unsubLeads = dbService.subscribeCollection('leads', setLeads);
+    const unsubLeads = dbService.subscribeCollection('leads', (data) => {
+      setLeads(data as LeadRecord[]);
+    });
     return () => unsubLeads();
   }, []);
 

@@ -21,6 +21,7 @@ import {
   POQueueStatus
 } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import type { CustomerRecord } from '../domain/crmModels';
 import { 
   Plus, 
   Trash2, 
@@ -35,7 +36,7 @@ import {
 
 interface SalesProps {
   pos: any[];
-  customers: any[];
+  customers: CustomerRecord[];
   currentUser: UserProfile;
   onRefresh: () => void;
   initialSelectedPoId?: string;

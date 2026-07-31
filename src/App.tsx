@@ -17,6 +17,7 @@ import { RecycleBin } from './views/RecycleBin';
 import { isPOInQueue } from './domain/poWorkflow';
 import { DesignRequest } from './domain/designWorkflow';
 import { sortNewestFirst } from './domain/recordOrdering';
+import type { CustomerRecord } from './domain/crmModels';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -76,7 +77,7 @@ function App() {
   
   // Real-time synchronization states
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [pos, setPOs] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [productionCommands, setProductionCommands] = useState<any[]>([]);
@@ -121,7 +122,9 @@ function App() {
     if (!user) return;
 
     const unsubUsers = dbService.subscribeCollection('users', (data) => setUsers(data as UserProfile[]));
-    const unsubCustomers = dbService.subscribeCollection('customers', setCustomers);
+    const unsubCustomers = dbService.subscribeCollection('customers', (data) => {
+      setCustomers(data as CustomerRecord[]);
+    });
     const unsubPOs = dbService.subscribeCollection('pos', (data) => {
       setPOs(sortNewestFirst(data, po => [po.createdAt, po.orderDate]));
     });

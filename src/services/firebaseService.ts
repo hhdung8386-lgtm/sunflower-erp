@@ -17,6 +17,8 @@ import {
   query, 
   onSnapshot
 } from 'firebase/firestore';
+import { normalizeCustomerRecords, normalizeLeadRecords } from '../domain/crmModels';
+import { normalizeNotificationRecords } from '../domain/notificationModels';
 
 // Firebase Configuration from environment variables
 const firebaseConfig = {
@@ -639,7 +641,17 @@ const initLocalStorage = () => {
       customers.push(defCust);
     }
   });
-  localStorage.setItem('erp_customers', JSON.stringify(customers));
+  localStorage.setItem('erp_customers', JSON.stringify(normalizeCustomerRecords(customers)));
+
+  const leads = localStorage.getItem('erp_leads')
+    ? JSON.parse(localStorage.getItem('erp_leads')!)
+    : [];
+  localStorage.setItem('erp_leads', JSON.stringify(normalizeLeadRecords(leads)));
+
+  const notifications = localStorage.getItem('erp_notifications')
+    ? JSON.parse(localStorage.getItem('erp_notifications')!)
+    : [];
+  localStorage.setItem('erp_notifications', JSON.stringify(normalizeNotificationRecords(notifications)));
 
   let suppliers = localStorage.getItem('erp_suppliers') ? JSON.parse(localStorage.getItem('erp_suppliers')!) : [];
   DEFAULT_SUPPLIERS.forEach(defSup => {
@@ -731,10 +743,24 @@ type CollectionCallback = (data: any[]) => void;
 
 const subscribers: Record<string, CollectionCallback[]> = {};
 
+const normalizeCollectionRecords = <T,>(colName: string, data: T[]): T[] => {
+  if (colName === 'customers') {
+    return normalizeCustomerRecords(data) as T[];
+  }
+  if (colName === 'leads') {
+    return normalizeLeadRecords(data) as T[];
+  }
+  if (colName === 'notifications') {
+    return normalizeNotificationRecords(data) as T[];
+  }
+  return data;
+};
+
 const readLocalCollection = (colName: string): any[] => {
   try {
     const data = localStorage.getItem(`erp_${colName}`);
-    return data ? JSON.parse(data) : [];
+    const parsed = data ? JSON.parse(data) : [];
+    return Array.isArray(parsed) ? normalizeCollectionRecords(colName, parsed) : [];
   } catch (error) {
     console.warn(`[Local data] Could not read collection ${colName}.`, error);
     return [];
@@ -747,7 +773,8 @@ const triggerSubscribers = (colName: string) => {
 };
 
 const writeLocalCollection = (colName: string, data: any[], notify = true) => {
-  localStorage.setItem(`erp_${colName}`, JSON.stringify(data));
+  const normalizedData = normalizeCollectionRecords(colName, data);
+  localStorage.setItem(`erp_${colName}`, JSON.stringify(normalizedData));
   if (notify) triggerSubscribers(colName);
 };
 
@@ -793,7 +820,7 @@ export const dbService = {
         const snap = await getDocs(collection(realDb, colName));
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         writeLocalCollection(colName, data);
-        return data;
+        return normalizeCollectionRecords(colName, data);
       } catch (error) {
         reportFirebaseFailure(`reading collection ${colName}`, error);
       }
@@ -805,7 +832,8 @@ export const dbService = {
     if ((await ensureFirebaseReady()) && realDb) {
       try {
         const snap = await getDoc(doc(realDb, colName, docId));
-        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        if (!snap.exists()) return null;
+        return normalizeCollectionRecords(colName, [{ id: snap.id, ...snap.data() }])[0];
       } catch (error) {
         reportFirebaseFailure(`reading document ${colName}/${docId}`, error);
       }
@@ -816,11 +844,11 @@ export const dbService = {
 
   async addDocument(colName: string, docData: any): Promise<any> {
     const docId = docData.id || `${colName.substring(0, 3)}-${Math.random().toString(36).substr(2, 9)}`;
-    const finalDoc = {
+    const finalDoc = normalizeCollectionRecords(colName, [{
       ...docData,
       id: docId,
       createdAt: docData.createdAt || new Date().toISOString()
-    };
+    }])[0];
 
     if ((await ensureFirebaseReady()) && realDb) {
       try {
