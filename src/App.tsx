@@ -17,6 +17,7 @@ import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
 import { DesignRequest } from './domain/designWorkflow';
 import { sortNewestFirst } from './domain/recordOrdering';
+import { normalizePORecords } from './domain/poCompatibility';
 import type { CustomerRecord, LeadRecord } from './domain/crmModels';
 import {
   isUnreadNotificationForUser,
@@ -158,7 +159,7 @@ function App() {
       setLeads(sortNewestFirst(data as LeadRecord[], lead => [lead.createdAt, lead.updatedAt]));
     });
     const unsubPOs = dbService.subscribeCollection('pos', (data) => {
-      setPOs(sortNewestFirst(data, po => [po.createdAt, po.orderDate]));
+      setPOs(sortNewestFirst(normalizePORecords(data), po => [po.createdAt, po.orderDate]));
     });
     const unsubPurchases = dbService.subscribeCollection('purchase_orders', (data) => {
       setPurchaseOrders(sortNewestFirst(data, purchaseOrder => [purchaseOrder.createdAt]));

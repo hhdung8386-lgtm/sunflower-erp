@@ -13,6 +13,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { formatDateTime } from '../domain/dateFormatting';
 import {
   DESIGN_WORK_STATUSES,
   DesignPOItem,
@@ -735,7 +736,7 @@ export const Design: React.FC<DesignProps> = ({
                 <div key={`${entry.updatedAt || 'history'}-${index}`}>
                   <span className="design-history-dot" />
                   <strong>{entry.updatedBy || t('Hệ thống')}</strong>
-                  <time>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('vi-VN') : '—'}</time>
+                  <time>{formatDateTime(entry.updatedAt)}</time>
                   <p>{entry.note || t(getDesignWorkStatusDefinition(entry.workStatus).label)}</p>
                 </div>
               ))}

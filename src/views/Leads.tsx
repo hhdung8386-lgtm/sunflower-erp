@@ -401,6 +401,8 @@ export const Leads: React.FC<LeadsProps> = ({
       address: lead.address,
       taxCode: lead.taxCode,
       assignedSaleId: lead.assignedSaleId,
+      sourceLeadId: lead.id,
+      convertedAt: now,
       discountType: 'percent',
       discountRate: 0,
       discountAmount: 0,

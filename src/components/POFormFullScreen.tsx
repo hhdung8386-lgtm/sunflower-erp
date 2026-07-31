@@ -6,8 +6,14 @@ import {
 } from 'lucide-react';
 import { dbService } from '../services/firebaseService';
 import { calculatePOItemFinancials, withCalculatedPOFinancials } from '../domain/poFinancials';
-import type { CustomerRecord } from '../domain/crmModels';
+import {
+  createCustomerSnapshot,
+  type CustomerRank,
+  type CustomerRecord,
+  type CustomerSnapshot
+} from '../domain/crmModels';
 import './CustomerHistory.css';
+import { formatDate, toDateInputValue } from '../domain/dateFormatting';
 
 const PO_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -118,7 +124,7 @@ export default function POFormFullScreen({
       setCustomerId(po.customerId || '');
       setCustomerRank(po.customerRank || customers.find(customer => customer.id === po.customerId)?.customerRank || '');
       setCustomerPoCode(po.customerPoCode || '');
-      setExpectedDeliveryDate(po.expectedDeliveryDate ? po.expectedDeliveryDate.split('T')[0] : '');
+      setExpectedDeliveryDate(toDateInputValue(po.expectedDeliveryDate));
       setNotes(po.notes || '');
       
       // Load files
@@ -138,7 +144,7 @@ export default function POFormFullScreen({
         discountRate: item.discountRate !== undefined ? item.discountRate : 0,
         discountAmount: item.discountAmount !== undefined ? item.discountAmount : 0,
         vatRate: item.vatRate !== undefined ? item.vatRate : 8,
-        deliveryDate: item.deliveryDate ? item.deliveryDate.split('T')[0] : '',
+        deliveryDate: toDateInputValue(item.deliveryDate),
         previewImages: item.previewImages || (item.previewImage ? [item.previewImage] : []),
         unit: item.unit || 'cái',
         material: item.material || 'Decal Giấy Fasson AW0339F',
@@ -714,12 +720,25 @@ export default function POFormFullScreen({
     });
 
     const customerObj = customers.find(c => c.id === customerId);
+    if (!customerObj) {
+      alert(t('Không tìm thấy hồ sơ khách hàng. Vui lòng tải lại trang và chọn lại khách hàng.'));
+      return;
+    }
+
+    const normalizedCustomerRank = customerRank as CustomerRank;
+    const existingSnapshot = po?.customerId === customerId
+      ? po.customerSnapshot as CustomerSnapshot | undefined
+      : undefined;
+    const customerSnapshot: CustomerSnapshot = existingSnapshot
+      ? { ...existingSnapshot, customerRank: normalizedCustomerRank }
+      : createCustomerSnapshot(customerObj, normalizedCustomerRank);
 
     const poData = {
       id: po?.id || undefined,
       customerId,
-      customerName: customerObj?.companyName || '',
-      customerRank,
+      customerName: customerSnapshot.companyName,
+      customerRank: normalizedCustomerRank,
+      customerSnapshot,
       customerPoCode,
       expectedDeliveryDate: new Date(expectedDeliveryDate).toISOString(),
       notes,
@@ -1731,7 +1750,7 @@ export default function POFormFullScreen({
                             <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{prod.productCode}</div>
                             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{prod.productName}</div>
                             <div style={{ fontSize: '10px', color: 'var(--color-primary)', fontStyle: 'italic' }}>
-                              {t('Từ đơn:')} {prod.poCode} ({new Date(prod.orderDate).toLocaleDateString(t('vi-VN'))})
+                              {t('Từ đơn:')} {prod.poCode} ({formatDate(prod.orderDate, t('vi-VN'))})
                             </div>
                           </div>
                           <div style={{ textAlign: 'right', fontSize: '12px' }}>

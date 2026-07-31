@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { Plus, Trash2, Pencil } from 'lucide-react';
+import { formatDateTime } from '../domain/dateFormatting';
 
 interface UserManagementProps {
   users: UserProfile[];
@@ -502,7 +503,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                 <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border-light)', paddingTop: '8px' }}>
                   <div>{t('Tạo bởi:')} {selectedUser.createdBy || t('Không xác định')} {selectedUser.createdAt && `(${selectedUser.createdAt})`}</div>
                   {selectedUser.updatedBy && (
-                    <div>{t('Cập nhật bởi:')} {selectedUser.updatedBy} ({selectedUser.updatedAt ? new Date(selectedUser.updatedAt).toLocaleString(t('vi-VN')) : ''})</div>
+                    <div>{t('Cập nhật bởi:')} {selectedUser.updatedBy} ({formatDateTime(selectedUser.updatedAt, t('vi-VN'), '')})</div>
                   )}
                 </div>
               </div>

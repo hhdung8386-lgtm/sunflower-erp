@@ -5,6 +5,7 @@ import { BarChart } from '../components/VisualCharts';
 import { Plus, Trash2, Pencil } from 'lucide-react';
 import { getPOQueueLabel, getPOQueueStatus, getPOQueueUpdate } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDate, formatDateTime, toDateInputValue } from '../domain/dateFormatting';
 
 interface AccountingProps {
   pos: any[];
@@ -239,8 +240,8 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
           <div class="grid">
             <div>
               <strong>Khách Hàng:</strong> ${po.customerName}<br>
-              <strong>Ngày Đặt PO:</strong> ${new Date(po.orderDate).toLocaleDateString('vi-VN')}<br>
-              <strong>Ngày Giao Dự Kiến:</strong> ${new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN')}
+              <strong>Ngày Đặt PO:</strong> ${formatDate(po.orderDate)}<br>
+              <strong>Ngày Giao Dự Kiến:</strong> ${formatDate(po.expectedDeliveryDate)}
             </div>
             <div>
               <strong>Hàng đợi xử lý:</strong> ${getPOQueueLabel(po)}<br>
@@ -368,7 +369,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
     setEditType(inv.type);
     setEditAmount(inv.amount);
     setEditPaidAmount(inv.paidAmount || 0);
-    setEditDueDate(new Date(inv.dueDate).toISOString().split('T')[0]);
+    setEditDueDate(toDateInputValue(inv.dueDate));
     setEditAssignedAccountantId(inv.assignedAccountantId || '');
     setShowEditInvoiceModal(true);
   };
@@ -512,7 +513,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                       <td style={{ color: balance > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 700 }}>
                         {balance?.toLocaleString()} đ
                       </td>
-                      <td>{new Date(inv.dueDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{formatDate(inv.dueDate)}</td>
                       <td>
                         <span className={`badge ${
                           inv.status === 'paid' ? 'badge-success' :
@@ -857,7 +858,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 <span style={{ fontWeight: 600 }}>{t('Cần Thu / Cần Trả')}:</span>
                 <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>{(selectedInvoice.amount - (selectedInvoice.paidAmount || 0)).toLocaleString()} đ</span>
                 <span style={{ fontWeight: 600 }}>{t('Hạn Nợ')}:</span>
-                <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
+                <span>{formatDate(selectedInvoice.dueDate)}</span>
                 <span style={{ fontWeight: 600 }}>{t('Trạng Thái')}:</span>
                 <span>{t(selectedInvoice.status.toUpperCase())}</span>
                 <span style={{ fontWeight: 600 }}>{t('Kế toán phụ trách')}:</span>
@@ -866,9 +867,9 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
               
               {/* Audit trail */}
               <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                <div>{t('Tạo bởi:')} {selectedInvoice.createdBy || t('Không xác định')} {selectedInvoice.createdAt && `(${new Date(selectedInvoice.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                <div>{t('Tạo bởi:')} {selectedInvoice.createdBy || t('Không xác định')} {selectedInvoice.createdAt && `(${formatDateTime(selectedInvoice.createdAt, t('vi-VN'))})`}</div>
                 {selectedInvoice.updatedBy && (
-                  <div>{t('Cập nhật bởi:')} {selectedInvoice.updatedBy} ({new Date(selectedInvoice.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                  <div>{t('Cập nhật bởi:')} {selectedInvoice.updatedBy} ({formatDateTime(selectedInvoice.updatedAt, t('vi-VN'))})</div>
                 )}
               </div>
             </div>
@@ -897,7 +898,7 @@ export const Accounting: React.FC<AccountingProps> = ({ pos, currentUser, onRefr
                 <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px', fontSize: '13px', backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '4px' }}>
                   <strong>{t('Số Hóa Đơn')}:</strong> <span>{selectedInvoice.invoiceCode}</span>
                   <strong>{t('Loại')}:</strong> <span>{selectedInvoice.type === 'receivable' ? t('Thu Nợ từ Khách') : t('Chi Trả mua vật tư')}</span>
-                  <strong>{t('Hạn nợ thanh toán:')}</strong> <span>{new Date(selectedInvoice.dueDate).toLocaleDateString('vi-VN')}</span>
+                  <strong>{t('Hạn nợ thanh toán:')}</strong> <span>{formatDate(selectedInvoice.dueDate)}</span>
                   <strong>{t('Trị Giá')}:</strong> <span style={{ fontWeight: 700 }}>{selectedInvoice.amount?.toLocaleString()} đ</span>
                   <strong>{t('Đã Thanh Toán')}:</strong> <span style={{ color: 'var(--color-success)' }}>{(selectedInvoice.paidAmount || 0).toLocaleString()} đ</span>
                 </div>

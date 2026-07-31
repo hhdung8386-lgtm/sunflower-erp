@@ -78,6 +78,8 @@ export interface CustomerRecord extends UnknownRecord {
   warehousePhone: string;
   bankAccount: string;
   assignedSaleId: string;
+  sourceLeadId: string;
+  convertedAt: string;
   discountType: PODiscountType;
   discountRate: number;
   discountAmount: number;
@@ -100,6 +102,48 @@ export interface CustomerRecord extends UnknownRecord {
   updatedAt: string;
   updatedBy: string;
 }
+
+export interface CustomerSnapshot extends UnknownRecord {
+  customerId: string;
+  customerCode: string;
+  companyName: string;
+  customerRank: CustomerRank;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  address: string;
+  taxCode: string;
+  assignedSaleId: string;
+  discountType: PODiscountType;
+  discountRate: number;
+  discountAmount: number;
+  debtLimit: number;
+  paymentTerms: string;
+  capturedAt: string;
+}
+
+export const createCustomerSnapshot = (
+  customer: CustomerRecord,
+  customerRank: CustomerRank = customer.customerRank,
+  capturedAt = new Date().toISOString()
+): CustomerSnapshot => ({
+  customerId: customer.id,
+  customerCode: customer.customerCode || '',
+  companyName: customer.companyName || '',
+  customerRank,
+  contactPerson: customer.contactPerson || '',
+  phone: customer.phone || '',
+  email: customer.email || '',
+  address: customer.address || '',
+  taxCode: customer.taxCode || '',
+  assignedSaleId: customer.assignedSaleId || '',
+  discountType: customer.discountType === 'amount' ? 'amount' : 'percent',
+  discountRate: Number(customer.discountRate) || 0,
+  discountAmount: Number(customer.discountAmount) || 0,
+  debtLimit: Number(customer.debtLimit) || 0,
+  paymentTerms: customer.paymentTerms || '',
+  capturedAt
+});
 
 export interface LeadActivityRecord extends UnknownRecord {
   id: string;
@@ -335,6 +379,8 @@ export const normalizeCustomerRecord = (value: unknown): CustomerRecord => {
     warehousePhone: asText(source.warehousePhone),
     bankAccount: asText(source.bankAccount),
     assignedSaleId: asText(source.assignedSaleId),
+    sourceLeadId: asText(source.sourceLeadId),
+    convertedAt: asText(source.convertedAt),
     discountType: normalizeDiscountType(source.discountType),
     discountRate: clamp(asNumber(source.discountRate), 0, 100),
     discountAmount: Math.max(0, asNumber(source.discountAmount)),

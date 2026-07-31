@@ -21,6 +21,7 @@ import {
   POQueueStatus
 } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDate, formatDateTime, parseValidDate } from '../domain/dateFormatting';
 import type { CustomerRecord } from '../domain/crmModels';
 import { 
   Plus, 
@@ -372,7 +373,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       const netAmount = poData.netAmount;
 
       const updatedLogs = [
-        ...selectedPO.historyLogs,
+        ...(selectedPO.historyLogs || []),
         {
           status: selectedPO.status,
           updatedBy: currentUser.displayName,
@@ -386,6 +387,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         notes: poData.notes,
         customerPoCode: poData.customerPoCode,
         customerRank: poData.customerRank,
+        customerSnapshot: poData.customerSnapshot || selectedPO.customerSnapshot,
         items: poData.items,
         assignments: poData.assignments || [],
         totalAmount: subtotal,
@@ -483,6 +485,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         customerId: poData.customerId,
         customerName: poData.customerName,
         customerRank: poData.customerRank,
+        customerSnapshot: poData.customerSnapshot,
         saleId: currentUser.uid,
         orderDate: new Date().toISOString(),
         expectedDeliveryDate: poData.expectedDeliveryDate,
@@ -628,8 +631,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       po.poCode,
       po.customerPoCode || '',
       po.customerName,
-      po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : '',
-      po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : '',
+      formatDate(po.orderDate, 'vi-VN', ''),
+      formatDate(po.expectedDeliveryDate, 'vi-VN', ''),
       po.netAmount,
       t(getPOQueueLabel(po))
     ]);
@@ -804,7 +807,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
               </thead>
               <tbody>
                 {filteredPOs.map(po => {
-                  const item = po.items[0] || {};
+                  const item = po.items?.[0] || {};
                   return (
                     <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPO(po)}>
                       <td style={{ fontWeight: 600 }}>
@@ -819,7 +822,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       <td style={{ fontWeight: 500 }}>{item.productName}</td>
                       <td>{item.quantity?.toLocaleString()}</td>
                       <td>{po.netAmount?.toLocaleString()} đ</td>
-                      <td>{new Date(po.expectedDeliveryDate).toLocaleDateString(t('vi-VN'))}</td>
+                      <td>{formatDate(po.expectedDeliveryDate, t('vi-VN'))}</td>
                       <td>
                         <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
                       </td>
@@ -858,8 +861,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                       user.uid === customer.assignedSaleId || (user as any).id === customer.assignedSaleId
                     ));
                     const waitingDays = getWaitingDays(customer.createdAt);
-                    const createdDate = customer.createdAt ? new Date(customer.createdAt) : null;
-                    const hasValidCreatedDate = createdDate && !Number.isNaN(createdDate.getTime());
+                    const createdDate = parseValidDate(customer.createdAt);
+                    const hasValidCreatedDate = Boolean(createdDate);
 
                     return (
                       <tr key={customer.id}>
@@ -873,7 +876,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           {customer.email && <span className="waiting-customer-secondary">{customer.email}</span>}
                         </td>
                         <td>{assignedSale?.displayName || customer.createdBy || t('Chưa phân công')}</td>
-                        <td>{hasValidCreatedDate ? createdDate.toLocaleDateString(t('vi-VN')) : '—'}</td>
+                        <td>{hasValidCreatedDate ? formatDate(createdDate, t('vi-VN')) : '—'}</td>
                         <td>
                           {waitingDays === null
                             ? '—'
@@ -1426,12 +1429,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px' }}>
                   <h3 style={{ marginBottom: '12px', color: 'var(--color-primary)' }}>{t('LỊCH SỬ TRẠNG THÁI')}</h3>
                   <div className="timeline" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                    {selectedPO.historyLogs.map((log: any, idx: number) => (
+                    {(selectedPO.historyLogs || []).map((log: any, idx: number) => (
                       <div key={idx} className="timeline-item">
                         <div className="timeline-marker"></div>
                         <div className="timeline-content">
                           <span className="timeline-title">{t(getPOHistoryStatusLabel(log.status))}</span>
-                          <span className="timeline-date">{new Date(log.updatedAt).toLocaleString(t('vi-VN'))} - {t('Nhân Sự Thực Hiện')}: {log.updatedBy}</span>
+                          <span className="timeline-date">{formatDateTime(log.updatedAt, t('vi-VN'))} - {t('Nhân Sự Thực Hiện')}: {log.updatedBy}</span>
                           <span style={{ fontSize: '12px' }}>{log.note}</span>
                         </div>
                       </div>
@@ -1440,8 +1443,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                 </div>
 
                 <div style={{ border: '1px solid var(--color-border-light)', padding: '16px', borderRadius: '4px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div><strong>{t('Tạo bởi:')}</strong> {selectedPO.createdBy || t('Không xác định')} {selectedPO.createdAt && `(${new Date(selectedPO.createdAt).toLocaleString(t('vi-VN'))})`}</div>
-                  <div><strong>{t('Cập nhật bởi:')}</strong> {selectedPO.updatedBy || t('Chưa cập nhật')} {selectedPO.updatedAt && `(${new Date(selectedPO.updatedAt).toLocaleString(t('vi-VN'))})`}</div>
+                  <div><strong>{t('Tạo bởi:')}</strong> {selectedPO.createdBy || t('Không xác định')} {selectedPO.createdAt && `(${formatDateTime(selectedPO.createdAt, t('vi-VN'))})`}</div>
+                  <div><strong>{t('Cập nhật bởi:')}</strong> {selectedPO.updatedBy || t('Chưa cập nhật')} {selectedPO.updatedAt && `(${formatDateTime(selectedPO.updatedAt, t('vi-VN'))})`}</div>
                 </div>
               </div>
             </div>

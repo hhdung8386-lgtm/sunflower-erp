@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { getPODeliveryStage, getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDateTime } from '../domain/dateFormatting';
 import './Delivery.css';
 
 interface DeliveryProps {
@@ -1203,7 +1204,7 @@ export const Delivery: React.FC<DeliveryProps> = ({ pos, currentUser, onRefresh 
               </div>
 
               <div className="delivery-audit">
-                Tạo bởi {selectedTrip.createdBy || 'Không xác định'} {selectedTrip.createdAt && `· ${new Date(selectedTrip.createdAt).toLocaleString('vi-VN')}`}
+                Tạo bởi {selectedTrip.createdBy || 'Không xác định'} {selectedTrip.createdAt && `· ${formatDateTime(selectedTrip.createdAt)}`}
               </div>
             </div>
           )}

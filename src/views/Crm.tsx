@@ -4,12 +4,12 @@ import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDate, formatDateTime, parseValidDate } from '../domain/dateFormatting';
 import type {
   CustomerContactRecord,
   CustomerContactRole,
   CustomerRank,
-  CustomerRecord,
-  LeadRecord
+  CustomerRecord
 } from '../domain/crmModels';
 import type { PODiscountType } from '../domain/poFinancials';
 import '../components/CustomerHistory.css';
@@ -119,35 +119,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [chartMonth, setChartMonth] = useState<string>('all');
   const [chartYear, setChartYear] = useState<string>('2026');
   const [showTop15, setShowTop15] = useState<boolean>(false);
-  
-  // Tab state
-  const [crmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
-
-  // Leads state & subscription
-  const [leads, setLeads] = useState<LeadRecord[]>([]);
-  useEffect(() => {
-    const unsubLeads = dbService.subscribeCollection('leads', (data) => {
-      setLeads(data as LeadRecord[]);
-    });
-    return () => unsubLeads();
-  }, []);
-
-  // Lead Conversion state
-  const [convertingLead, setConvertingLead] = useState<any | null>(null);
-
-  // Lead modals state
-  const [showAddLeadModal, setShowAddLeadModal] = useState(false);
-  const [showEditLeadModal, setShowEditLeadModal] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<any | null>(null);
-
-  // Lead Form fields
-  const [leadName, setLeadName] = useState('');
-  const [leadPhone, setLeadPhone] = useState('');
-  const [leadEmail, setLeadEmail] = useState('');
-  const [leadStage, setLeadStage] = useState<'new' | 'contacted' | 'quoted' | 'negotiating' | 'lost'>('new');
-  const [leadNote, setLeadNote] = useState('');
-  const [leadReminderTime, setLeadReminderTime] = useState('');
-  const [leadFiles, setLeadFiles] = useState<any[]>([]);
   
   // File Repository states
   const [newFolderName, setNewFolderName] = useState('');
@@ -536,11 +507,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       updatedBy: '',
       updatedAt: ''
     });
-
-    if (convertingLead) {
-      await dbService.deleteDocument('leads', convertingLead.id);
-      setConvertingLead(null);
-    }
 
     setShowAddModal(false);
     onRefresh();
@@ -1044,147 +1010,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     alert(t('Đã xóa thư mục thành công.'));
   };
 
-  // Lead Helpers & Handlers
-  const openAddLeadModal = () => {
-    resetLeadForm();
-    setShowAddLeadModal(true);
-  };
-
-  const openEditLeadModal = (lead: any) => {
-    setSelectedLead(lead);
-    setLeadName(lead.name);
-    setLeadPhone(lead.phone || '');
-    setLeadEmail(lead.email || '');
-    setLeadStage(lead.stage || 'new');
-    setLeadNote(lead.note || '');
-    setLeadReminderTime(lead.reminderTime ? new Date(lead.reminderTime).toISOString().split('T')[0] : '');
-    setLeadFiles(lead.files || []);
-    setShowEditLeadModal(true);
-  };
-
-  const resetLeadForm = () => {
-    setLeadName('');
-    setLeadPhone('');
-    setLeadEmail('');
-    setLeadStage('new');
-    setLeadNote('');
-    setLeadReminderTime('');
-    setLeadFiles([]);
-  };
-
-  const handleAddLead = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!leadName) return;
-
-    const newLead = {
-      name: leadName,
-      phone: leadPhone,
-      email: leadEmail,
-      stage: leadStage,
-      note: leadNote,
-      reminderTime: leadReminderTime ? new Date(leadReminderTime).toISOString() : '',
-      files: leadFiles,
-      assignedSaleId: currentUser.role === 'sale' ? currentUser.uid : (saleUsers[0]?.uid || ''),
-      assignedSaleName: currentUser.role === 'sale' ? currentUser.displayName : (saleUsers[0]?.displayName || 'N/A'),
-      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      createdAt: new Date().toISOString()
-    };
-
-    await dbService.addDocument('leads', newLead);
-    setShowAddLeadModal(false);
-    resetLeadForm();
-  };
-
-  const handleEditLead = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLead || !leadName) return;
-
-    await dbService.updateDocument('leads', selectedLead.id, {
-      name: leadName,
-      phone: leadPhone,
-      email: leadEmail,
-      stage: leadStage,
-      note: leadNote,
-      reminderTime: leadReminderTime ? new Date(leadReminderTime).toISOString() : '',
-      files: leadFiles,
-      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      updatedAt: new Date().toISOString()
-    });
-
-    setShowEditLeadModal(false);
-    setSelectedLead(null);
-    resetLeadForm();
-  };
-
-  const handleDeleteLead = async (leadId: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa khách hàng tiềm năng này?'))) {
-      await dbService.deleteDocument('leads', leadId);
-    }
-  };
-
-  const handleConvertLeadToCustomer = (lead: any) => {
-    setConvertingLead(lead);
-    setCompanyName(lead.name);
-    setContactPerson(lead.name);
-    setPhone(lead.phone || '');
-    setEmail(lead.email || '');
-    setAddress('');
-    setTaxCode('');
-    setAssignedSaleId(lead.assignedSaleId || currentUser.uid);
-    setDiscountRate(0);
-    setDebtLimit(50000000);
-    setPaymentTerms('30 ngày');
-    setNote(`Chuyển đổi từ Lead. Ghi chú cũ: ${lead.note}`);
-    setShowAddModal(true);
-  };
-
-  const handleLeadFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList) return;
-    
-    const newFiles: any[] = [];
-    Array.from(fileList).forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        newFiles.push({
-          name: file.name,
-          data: reader.result as string
-        });
-        if (newFiles.length === fileList.length) {
-          setLeadFiles(prev => [...prev, ...newFiles]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const renderReminderAlert = (reminderTime: string) => {
-    if (!reminderTime) return null;
-    const remDate = new Date(reminderTime);
-    const now = new Date();
-    const diffMs = remDate.getTime() - now.getTime();
-    
-    if (diffMs < 0) {
-      return (
-        <span className="lead-reminder-alert danger" style={{ marginTop: '4px' }}>
-          ⌛ {t('Quá hạn chăm sóc!')} ({remDate.toLocaleDateString('vi-VN')} {remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
-        </span>
-      );
-    } else if (diffMs < 24 * 60 * 60 * 1000) {
-      return (
-        <span className="lead-reminder-alert warning" style={{ marginTop: '4px' }}>
-          ⌛ {t('Sắp đến hạn!')} ({remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
-        </span>
-      );
-    } else {
-      return (
-        <span className="lead-reminder-alert future" style={{ marginTop: '4px' }}>
-          ⌛ {remDate.toLocaleDateString('vi-VN')} {remDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-        </span>
-      );
-    }
-  };
-
   // Product Helpers
   const handleOpenAddProduct = () => {
     setProductCode('');
@@ -1468,7 +1293,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const getCustomerOrders = (custId: string) => {
     return pos
       .filter(po => po.customerId === custId && !po.deleted)
-      .sort((a, b) => new Date(b.orderDate || b.createdAt || 0).getTime() - new Date(a.orderDate || a.createdAt || 0).getTime());
+      .sort((a, b) => (
+        (parseValidDate(b.orderDate || b.createdAt)?.getTime() || 0)
+        - (parseValidDate(a.orderDate || a.createdAt)?.getTime() || 0)
+      ));
   };
 
   // Order frequency (orders per month)
@@ -1477,7 +1305,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     if (orders.length === 0) return `0 ${t('đơn/tháng')}`;
     
     // Calculate months between first order and now
-    const dates = orders.map(o => new Date(o.orderDate).getTime());
+    const dates = orders
+      .map(order => parseValidDate(order.orderDate || order.createdAt)?.getTime())
+      .filter((timestamp): timestamp is number => typeof timestamp === 'number');
+    if (dates.length === 0) return `0 ${t('đơn/tháng')}`;
     const minDate = new Date(Math.min(...dates));
     const now = new Date();
     const diffMonths = Math.max(1, (now.getFullYear() - minDate.getFullYear()) * 12 + (now.getMonth() - minDate.getMonth()));
@@ -1499,7 +1330,9 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
     
     if (filterType === 'needs_care') {
       if (!c.lastOrderAt) return matchesSearch;
-      const diffTime = Math.abs(today.getTime() - new Date(c.lastOrderAt).getTime());
+      const lastOrderDate = parseValidDate(c.lastOrderAt);
+      if (!lastOrderDate) return matchesSearch;
+      const diffTime = Math.abs(today.getTime() - lastOrderDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return matchesSearch && diffDays > 30; // 30+ days inactive
     }
@@ -1516,7 +1349,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         
         // Month and Year filter
         if (po.orderDate) {
-          const poDate = new Date(po.orderDate);
+          const poDate = parseValidDate(po.orderDate);
+          if (!poDate) return false;
           const y = String(poDate.getFullYear());
           const m = String(poDate.getMonth() + 1);
           
@@ -1662,7 +1496,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
               <div key={req.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '4px', backgroundColor: '#ffffff' }}>
                 <div>
                   <span style={{ fontWeight: 'bold', color: 'var(--color-warning)' }}>[${t('YÊU CẦU CHỈNH SỬA')}] </span>
-                  <strong>{req.fieldName}</strong> - {t('Yêu cầu bởi:')} {req.requestedBy} ({req.requestedAt ? new Date(req.requestedAt).toLocaleString('vi-VN') : ''})
+                  <strong>{req.fieldName}</strong> - {t('Yêu cầu bởi:')} {req.requestedBy} ({formatDateTime(req.requestedAt, 'vi-VN', '')})
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button type="button" className="btn btn-sm btn-primary" onClick={() => {
@@ -1678,7 +1512,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         </div>
       )}
 
-      {crmActiveTab === 'cooperative' ? (
         <>
           <div className="crm-summary-grid">
             <div className="crm-summary-card">
@@ -1795,7 +1628,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 // Check if inactive
                 let isInactive = false;
                 if (cust.lastOrderAt) {
-                  const diffTime = Math.abs(today.getTime() - new Date(cust.lastOrderAt).getTime());
+                  const lastOrderDate = parseValidDate(cust.lastOrderAt);
+                  const diffTime = lastOrderDate ? Math.abs(today.getTime() - lastOrderDate.getTime()) : 0;
                   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                   isInactive = diffDays > 30;
                 } else {
@@ -1831,7 +1665,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                         : `${Number(cust.discountRate || 0)}%`}
                     </td>
                     <td>{cust.debtLimit.toLocaleString()} đ</td>
-                    <td>{cust.lastOrderAt ? new Date(cust.lastOrderAt).toLocaleDateString('vi-VN') : t('Chưa có')}</td>
+                    <td>{formatDate(cust.lastOrderAt, 'vi-VN', t('Chưa có'))}</td>
                     <td>
                       <div className="btn-group" onClick={(e) => e.stopPropagation()}>
                         <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>{t('Chi Tiết')}</button>
@@ -1928,10 +1762,10 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                 <span style={{ gridColumn: '1 / -1', borderBottom: '1px dashed var(--color-border-light)', margin: '8px 0' }}></span>
 
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Tạo bởi:')}</span>
-                <span style={{ fontSize: '12px' }}>{selectedCustomer.createdBy || t('Không xác định')} {selectedCustomer.createdAt && `(${new Date(selectedCustomer.createdAt).toLocaleString(t('vi-VN'))})`}</span>
+                <span style={{ fontSize: '12px' }}>{selectedCustomer.createdBy || t('Không xác định')} {selectedCustomer.createdAt && `(${formatDateTime(selectedCustomer.createdAt, t('vi-VN'))})`}</span>
 
                 <span style={{ fontWeight: 600, color: 'var(--color-text-muted)', fontSize: '12px' }}>{t('Cập nhật bởi:')}</span>
-                <span style={{ fontSize: '12px' }}>{selectedCustomer.updatedBy || t('Chưa cập nhật')} {selectedCustomer.updatedAt && `(${new Date(selectedCustomer.updatedAt).toLocaleString(t('vi-VN'))})`}</span>
+                <span style={{ fontSize: '12px' }}>{selectedCustomer.updatedBy || t('Chưa cập nhật')} {selectedCustomer.updatedAt && `(${formatDateTime(selectedCustomer.updatedAt, t('vi-VN'))})`}</span>
               </div>
 
               <div className="customer-contact-panel">
@@ -1974,7 +1808,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   {getCustomerOrders(selectedCustomer.id).map(po => (
                     <tr key={po.id}>
                       <td style={{ fontWeight: 600 }}>{po.poCode}</td>
-                      <td>{new Date(po.orderDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{formatDate(po.orderDate)}</td>
                       <td>{po.netAmount.toLocaleString()} đ</td>
                       <td>
                         <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
@@ -2176,8 +2010,8 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                   {(selectedCustomer.contracts || []).map((contr: any) => (
                     <tr key={contr.id}>
                       <td style={{ fontWeight: 600 }}>{contr.contractNo}</td>
-                      <td>{new Date(contr.signDate).toLocaleDateString('vi-VN')}</td>
-                      <td>{new Date(contr.expiryDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{formatDate(contr.signDate)}</td>
+                      <td>{formatDate(contr.expiryDate)}</td>
                       <td>{contr.value?.toLocaleString()} đ</td>
                       <td>
                         {contr.fileUrl ? (
@@ -2285,7 +2119,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
                                   <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                    {t('Tải lên lúc')}: {file.createdAt ? new Date(file.createdAt).toLocaleString('vi-VN') : 'N/A'}
+                                    {t('Tải lên lúc')}: {formatDateTime(file.createdAt, 'vi-VN', 'N/A')}
                                   </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -2375,105 +2209,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
       )}
       
       </>
-      ) : (
-        /* Render Leads Kanban Board */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-primary)' }}>
-              {t('PHỄU THEO DÕI KHÁCH HÀNG TIỀM NĂNG')}
-            </span>
-            {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-              <button className="btn btn-primary" onClick={openAddLeadModal} style={{ fontWeight: 600 }}>
-                + {t('THÊM KHÁCH HÀNG TIỀM NĂNG MỚI')}
-              </button>
-            )}
-          </div>
-
-          <div className="kanban-board">
-            {/* Columns */}
-            {[
-              { stage: 'new', name: t('MỚI'), color: '#64748b' },
-              { stage: 'contacted', name: t('ĐÃ LIÊN HỆ'), color: '#0ea5e9' },
-              { stage: 'quoted', name: t('ĐÃ BÁO GIÁ'), color: '#f59e0b' },
-              { stage: 'negotiating', name: t('ĐANG ĐÀM PHÁN'), color: '#3b82f6' },
-              { stage: 'lost', name: t('THẤT BẠI / HỦY'), color: '#ef4444' }
-            ].map(col => {
-              const colLeads = leads.filter(l => {
-                if (currentUser.role === 'sale' && l.assignedSaleId !== currentUser.uid) {
-                  return false;
-                }
-                return l.stage === col.stage;
-              });
-
-              return (
-                <div key={col.stage} className="kanban-column">
-                  <div className="kanban-column-header">
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: col.color }}></span>
-                      {col.name}
-                    </span>
-                    <span className="kanban-column-count">{colLeads.length}</span>
-                  </div>
-
-                  <div className="kanban-cards-container">
-                    {colLeads.map(lead => (
-                      <div key={lead.id} className="kanban-card" onClick={() => openEditLeadModal(lead)}>
-                        <div className="kanban-card-title">{lead.name}</div>
-                        <div className="kanban-card-details">
-                          {lead.phone && <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Phone size={12} /><span>{lead.phone}</span></div>}
-                          {lead.email && <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: lead.phone ? '8px' : '0' }}><Mail size={12} /><span>{lead.email}</span></div>}
-                          {lead.note && <div style={{ fontStyle: 'italic', fontSize: '11px', marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MessageSquare size={12} /><span>{lead.note.substring(0, 50)}{lead.note.length > 50 ? '...' : ''}</span></div>}
-                          
-                          {/* Reminder Time alert indicator */}
-                          {lead.reminderTime && renderReminderAlert(lead.reminderTime)}
-                        </div>
-
-                        {/* Files list */}
-                        {lead.files && lead.files.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                            {lead.files.map((file: any, fIdx: number) => (
-                              <span key={fIdx} className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <Paperclip size={12} />
-                                <span>{file.name}</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="kanban-card-meta">
-                          <span style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <User size={12} />
-                            <span>{lead.assignedSaleName}</span>
-                          </span>
-                          <div className="btn-group" onClick={e => e.stopPropagation()}>
-                            <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditLeadModal(lead)} title={t('Sửa')}>
-                              <Pencil size={14} />
-                            </button>
-                            {col.stage !== 'lost' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                              <button className="btn btn-sm btn-success btn-symbol-sm" onClick={() => handleConvertLeadToCustomer(lead)} title={t('Chuyển thành khách hàng chính thức')}>
-                                <UserCheck size={14} />
-                              </button>
-                            )}
-                            <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteLead(lead.id)} title={t('Xóa')}>
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {colLeads.length === 0 && (
-                      <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
-                        {t('Trống')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* CREATE MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
@@ -3170,150 +2905,6 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
         </div>
       )}
 
-      {/* ADD LEAD MODAL */}
-      {showAddLeadModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM KHÁCH HÀNG TIỀM NĂNG (LEAD) MỚI')}</span>
-              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setShowAddLeadModal(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleAddLead}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Tên Công Ty / Tên Liên Hệ *')}</label>
-                  <input type="text" value={leadName} onChange={e => setLeadName(e.target.value)} required placeholder="VD: Công ty TNHH Nhựa ABC" />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Số Điện Thoại')}</label>
-                    <input type="text" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Email')}</label>
-                    <input type="email" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Giai Đoạn Chăm Sóc')}</label>
-                    <select value={leadStage} onChange={e => setLeadStage(e.target.value as any)}>
-                      <option value="new">{t('Mới tiếp cận')}</option>
-                      <option value="contacted">{t('Đã liên hệ')}</option>
-                      <option value="quoted">{t('Đã gửi báo giá')}</option>
-                      <option value="negotiating">{t('Đang đàm phán')}</option>
-                      <option value="lost">{t('Thất bại / Hủy')}</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Hẹn Ngày Giờ Chăm Sóc Lại (Reminder)')}</label>
-                    <input type="datetime-local" value={leadReminderTime} onChange={e => setLeadReminderTime(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>{t('Ghi Chú Yêu Cầu Khách Hàng')}</label>
-                  <textarea value={leadNote} onChange={e => setLeadNote(e.target.value)} rows={3} placeholder={t('Nhu cầu nhãn dán, quy cách, chất liệu decal yêu cầu...')} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px' }} />
-                </div>
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>{t('Đính Kèm Tài Liệu Cục Bộ (PDF, Hình ảnh...)')}</label>
-                  <input type="file" multiple onChange={handleLeadFilesChange} style={{ fontSize: '12px' }} />
-                  {leadFiles.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                      {leadFiles.map((f, idx) => (
-                        <span key={idx} className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <Paperclip size={12} />
-                          <span>{f.name}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddLeadModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Lead')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT LEAD MODAL */}
-      {showEditLeadModal && selectedLead && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CẬP NHẬT THÔNG TIN LEAD')}: {selectedLead.name}</span>
-              <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setShowEditLeadModal(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleEditLead}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Tên Công Ty / Tên Liên Hệ *')}</label>
-                  <input type="text" value={leadName} onChange={e => setLeadName(e.target.value)} required />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Số Điện Thoại')}</label>
-                    <input type="text" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Email')}</label>
-                    <input type="email" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Giai Đoạn Chăm Sóc')}</label>
-                    <select value={leadStage} onChange={e => setLeadStage(e.target.value as any)}>
-                      <option value="new">{t('Mới tiếp cận')}</option>
-                      <option value="contacted">{t('Đã liên hệ')}</option>
-                      <option value="quoted">{t('Đã gửi báo giá')}</option>
-                      <option value="negotiating">{t('Đang đàm phán')}</option>
-                      <option value="lost">{t('Thất bại / Hủy')}</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Hẹn Ngày Giờ Chăm Sóc Lại (Reminder)')}</label>
-                    <input type="datetime-local" value={leadReminderTime} onChange={e => setLeadReminderTime(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>{t('Ghi Chú Yêu Cầu Khách Hàng')}</label>
-                  <textarea value={leadNote} onChange={e => setLeadNote(e.target.value)} rows={3} style={{ width: '100%', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '4px' }} />
-                </div>
-                <div className="form-group" style={{ marginTop: '10px' }}>
-                  <label>{t('Đính Kèm Tài Liệu Cục Bộ')}</label>
-                  <input type="file" multiple onChange={handleLeadFilesChange} style={{ fontSize: '12px' }} />
-                  {leadFiles.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                      {leadFiles.map((f, idx) => (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span className="lead-file-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <Paperclip size={12} />
-                            <span>{f.name}</span>
-                          </span>
-                          <button type="button" style={{ border: 'none', background: 'transparent', color: 'red', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} onClick={() => setLeadFiles(prev => prev.filter((_, i) => i !== idx))}>
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditLeadModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {/* EDIT PRODUCT MODAL */}
       {showEditProductModal && selectedProduct && (
         <div className="modal-overlay">

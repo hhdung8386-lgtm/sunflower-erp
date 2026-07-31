@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { Plus, Trash2, Pencil, X, Download, FileSpreadsheet } from 'lucide-react';
 import { getPOQueueUpdate, isPOCompleted } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDate, formatDateTime, toDateInputValue } from '../domain/dateFormatting';
 
 interface PurchaseProps {
   pos: any[];
@@ -97,7 +98,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
       pur.totalPrice,
       pur.linkedPoCode || '',
       pur.assignedPurchaserName || '',
-      pur.expectedReceiveDate ? new Date(pur.expectedReceiveDate).toLocaleDateString('vi-VN') : '',
+      formatDate(pur.expectedReceiveDate, 'vi-VN', ''),
       pur.status === 'received' ? t('Đã nhận kho') : t(pur.status)
     ]);
 
@@ -184,7 +185,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
     setEditQuantity(item.quantity || 100);
     setEditUnit(item.unit || 'm²');
     setEditUnitPrice(item.unitPrice || 10000);
-    setEditExpectedReceiveDate(new Date(pur.expectedReceiveDate).toISOString().split('T')[0]);
+    setEditExpectedReceiveDate(toDateInputValue(pur.expectedReceiveDate));
     setEditAssignedPurchaserId(pur.assignedPurchaserId || '');
     setShowEditPurModal(true);
   };
@@ -650,7 +651,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                     <td style={{ color: remaining > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)', fontWeight: remaining > 0 ? 600 : 400 }}>
                       {remaining?.toLocaleString()} đ
                     </td>
-                    <td>{new Date(inv.dueDate).toLocaleDateString('vi-VN')}</td>
+                    <td>{formatDate(inv.dueDate)}</td>
                     <td>
                       <span className={`badge ${
                         inv.status === 'paid' ? 'badge-success' :
@@ -721,13 +722,13 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                 <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{selectedPur.totalPrice?.toLocaleString()} đ</span>
 
                 <span style={{ fontWeight: 600 }}>{t('Ngày Giao Dự Kiến')}:</span>
-                <span>{new Date(selectedPur.expectedReceiveDate).toLocaleDateString(t('vi-VN'))}</span>
+                <span>{formatDate(selectedPur.expectedReceiveDate, t('vi-VN'))}</span>
 
                 {selectedPur.actualReceiveDate && (
                   <>
                     <span style={{ fontWeight: 600 }}>{t('Ngày nhận kho thực tế')}:</span>
                     <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>
-                      {new Date(selectedPur.actualReceiveDate).toLocaleString(t('vi-VN'))}
+                      {formatDateTime(selectedPur.actualReceiveDate, t('vi-VN'))}
                     </span>
                   </>
                 )}
@@ -751,9 +752,9 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
 
               {/* Audit trail */}
               <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                <div>{t('Tạo bởi:')} {selectedPur.createdBy || t('Không xác định')} {selectedPur.createdAt && `(${new Date(selectedPur.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                <div>{t('Tạo bởi:')} {selectedPur.createdBy || t('Không xác định')} {selectedPur.createdAt && `(${formatDateTime(selectedPur.createdAt, t('vi-VN'))})`}</div>
                 {selectedPur.updatedBy && (
-                  <div>{t('Cập nhật bởi:')} {selectedPur.updatedBy} ({new Date(selectedPur.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                  <div>{t('Cập nhật bởi:')} {selectedPur.updatedBy} ({formatDateTime(selectedPur.updatedAt, t('vi-VN'))})</div>
                 )}
               </div>
             </div>
@@ -1054,7 +1055,7 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
 
                 <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '11px', color: 'var(--color-text-muted)' }}>
                   <div>{t('Tạo bởi:')} {selectedSupplier.createdBy || t('Không xác định')}</div>
-                  {selectedSupplier.createdAt && <div>{new Date(selectedSupplier.createdAt).toLocaleString('vi-VN')}</div>}
+                  {selectedSupplier.createdAt && <div>{formatDateTime(selectedSupplier.createdAt)}</div>}
                 </div>
               </div>
 
@@ -1084,8 +1085,8 @@ export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, current
                       {(selectedSupplier.contracts || []).map((contr: any) => (
                         <tr key={contr.id}>
                           <td style={{ fontWeight: 600 }}>{contr.contractNo}</td>
-                          <td>{new Date(contr.signDate).toLocaleDateString('vi-VN')}</td>
-                          <td>{new Date(contr.expiryDate).toLocaleDateString('vi-VN')}</td>
+                          <td>{formatDate(contr.signDate)}</td>
+                          <td>{formatDate(contr.expiryDate)}</td>
                           <td>{contr.value?.toLocaleString()} đ</td>
                           <td>
                             {contr.fileUrl ? (

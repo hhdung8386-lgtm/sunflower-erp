@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { X } from 'lucide-react';
+import { formatTime } from '../domain/dateFormatting';
 
 interface FloatingChatProps {
   currentUser: UserProfile;
@@ -188,7 +189,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({
                 <div className="chat-message-meta" style={{ fontSize: '10px', display: 'flex', gap: '6px', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'center' }}>
                   <span style={{ fontWeight: 600 }}>{msg.senderName}</span>
                   <span>•</span>
-                  <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>{formatTime(msg.createdAt)}</span>
                   {!msg.recalled && (
                     <>
                       <span>•</span>

@@ -5,6 +5,7 @@ import { BarChart, DonutChart } from '../components/VisualCharts';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { calculatePOItemFinancials } from '../domain/poFinancials';
 import { DesignRequest } from '../domain/designWorkflow';
+import { formatDate, formatDateTime } from '../domain/dateFormatting';
 import { 
   ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
   AlertCircle, Calendar, User, DollarSign, Sliders, 
@@ -295,8 +296,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </td>
                         <td style={{ fontWeight: 'bold', color: 'var(--color-primary-dark)' }}>{po.poCode}</td>
                         <td>{po.customerName}</td>
-                        <td>{po.orderDate ? new Date(po.orderDate).toLocaleDateString('vi-VN') : ''}</td>
-                        <td>{po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toLocaleDateString('vi-VN') : ''}</td>
+                        <td>{formatDate(po.orderDate, 'vi-VN', '')}</td>
+                        <td>{formatDate(po.expectedDeliveryDate, 'vi-VN', '')}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{(po.netAmount || po.totalAmount || 0).toLocaleString()} đ</td>
                         <td>
                           <span className={`badge ${getPOBadgeClass(po)}`}>
@@ -438,7 +439,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                           {rem.message}
                                         </span>
                                         <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                                          ({new Date(rem.date).toLocaleDateString('vi-VN')})
+                                          ({formatDate(rem.date)})
                                         </span>
                                         <button 
                                           type="button" 
@@ -497,7 +498,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                             {t(getPOHistoryStatusLabel(log.status))}
                                           </span>
                                           <span className="timeline-date" style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'block' }}>
-                                            {new Date(log.updatedAt).toLocaleString('vi-VN')} - {t('Nhân sự:')} {log.updatedBy}
+                                            {formatDateTime(log.updatedAt)} - {t('Nhân sự:')} {log.updatedBy}
                                           </span>
                                           {log.note && <span style={{ fontSize: '11.5px', display: 'block', color: 'var(--color-text-main)' }}>{log.note}</span>}
                                         </div>
@@ -776,7 +777,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <tr key={c.id}>
                           <td style={{ fontWeight: 600 }}>{c.companyName}</td>
                           <td>{c.contactPerson}</td>
-                          <td>{c.lastOrderAt ? new Date(c.lastOrderAt).toLocaleDateString('vi-VN') : t('Chưa từng đặt')}</td>
+                          <td>{formatDate(c.lastOrderAt, 'vi-VN', t('Chưa từng đặt'))}</td>
                           <td>
                             <span className="badge badge-danger">{t('Khóa')} / {t('Lâu Chưa Đặt')}</span>
                           </td>
@@ -813,7 +814,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <tr key={del.id}>
                           <td style={{ fontWeight: 600 }}>{del.delCode}</td>
                           <td>{del.region}</td>
-                          <td>{new Date(del.deliveryDate).toLocaleDateString('vi-VN')}</td>
+                          <td>{formatDate(del.deliveryDate)}</td>
                           <td>
                             <span className={`badge ${del.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
                               {del.status === 'completed' ? t('Hoàn thành') : t('Đang lập kế hoạch')}
@@ -890,7 +891,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <tr key={po.id}>
                       <td style={{ fontWeight: 600 }}>{po.poCode}</td>
                       <td>{po.customerName}</td>
-                      <td>{new Date(po.orderDate).toLocaleDateString('vi-VN')}</td>
+                      <td>{formatDate(po.orderDate)}</td>
                       <td>{po.netAmount.toLocaleString()} đ</td>
                       <td>
                         <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>

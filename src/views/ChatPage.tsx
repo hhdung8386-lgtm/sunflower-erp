@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { getPOQueueLabel } from '../domain/poWorkflow';
 import { Plus } from 'lucide-react';
+import { formatTime } from '../domain/dateFormatting';
 
 interface ChatPageProps {
   currentUser: UserProfile;
@@ -355,7 +356,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     <span style={{ fontWeight: 600 }}>{msg.senderName}</span>
                     <span style={{ fontSize: '10px', opacity: 0.8 }}>({msg.senderRole.toUpperCase()})</span>
                     <span>•</span>
-                    <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>{formatTime(msg.createdAt)}</span>
                     {!msg.recalled && (
                       <>
                         <span>•</span>

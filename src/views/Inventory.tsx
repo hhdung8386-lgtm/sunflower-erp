@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { Plus, Trash2, Pencil } from 'lucide-react';
+import { formatDateTime } from '../domain/dateFormatting';
 
 interface InventoryProps {
   currentUser: UserProfile;
@@ -401,7 +402,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
                   return (
                     <tr key={slip.id}>
                       <td style={{ fontWeight: 600 }}>{slip.pxkCode}</td>
-                      <td>{new Date(slip.exportDate).toLocaleString('vi-VN')}</td>
+                      <td>{formatDateTime(slip.exportDate)}</td>
                       <td style={{ fontWeight: 500 }}>{t(slip.reason)}</td>
                       <td>{slip.linkedCode}</td>
                       <td>{slipItem.materialName}</td>
@@ -666,9 +667,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, onRefresh }) 
               
               {/* Audit trail */}
               <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                <div>{t('Tạo bởi:')} {selectedItem.createdBy || t('Không xác định')} {selectedItem.createdAt && `(${new Date(selectedItem.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                <div>{t('Tạo bởi:')} {selectedItem.createdBy || t('Không xác định')} {selectedItem.createdAt && `(${formatDateTime(selectedItem.createdAt, t('vi-VN'))})`}</div>
                 {selectedItem.updatedBy && (
-                  <div>{t('Cập nhật bởi:')} {selectedItem.updatedBy} ({new Date(selectedItem.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                  <div>{t('Cập nhật bởi:')} {selectedItem.updatedBy} ({formatDateTime(selectedItem.updatedAt, t('vi-VN'))})</div>
                 )}
               </div>
             </div>

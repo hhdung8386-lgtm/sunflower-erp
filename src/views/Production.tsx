@@ -18,6 +18,7 @@ import {
 import { AlertTriangle, CalendarDays, FileSpreadsheet, Info, ListChecks, Pencil, Settings2, Trash2, X } from 'lucide-react';
 import { getPOQueueUpdate, isPOInQueue } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import { formatDate, formatDateTime, toDateInputValue } from '../domain/dateFormatting';
 import './Production.css';
 
 interface ProductionProps {
@@ -104,7 +105,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       const item = firstPo.items?.[0] || {};
       setQtyToProduce(item.quantity || 10000);
       setProductNameToBeCut(item.productName || '');
-      setDeliveryDeadline(firstPo.expectedDeliveryDate ? new Date(firstPo.expectedDeliveryDate).toISOString().split('T')[0] : '');
+      setDeliveryDeadline(toDateInputValue(firstPo.expectedDeliveryDate));
       
       if (item.specifications) {
         if (item.specifications.core) setPaperCore(item.specifications.core);
@@ -162,7 +163,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     const item = firstPo.items?.[0] || {};
     setQtyToProduce(item.quantity || 10000);
     setProductNameToBeCut(item.productName || '');
-    setDeliveryDeadline(firstPo.expectedDeliveryDate ? new Date(firstPo.expectedDeliveryDate).toISOString().split('T')[0] : '');
+    setDeliveryDeadline(toDateInputValue(firstPo.expectedDeliveryDate));
     const preferredMachine = getPreferredMachine(firstPo);
     if (preferredMachine) setMachineId(preferredMachine.name);
     setShowAddLsxModal(true);
@@ -235,7 +236,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
     setEditPaperCore(lsx.paperCore || '76mm');
     setEditPaperMaterialCode(lsx.paperMaterialCode || '');
     setEditPaperQuantity(lsx.paperQuantity || 1);
-    setEditDeliveryDeadline(lsx.deliveryDeadline ? new Date(lsx.deliveryDeadline).toISOString().split('T')[0] : '');
+    setEditDeliveryDeadline(toDateInputValue(lsx.deliveryDeadline));
     setSelectedLsx(lsx);
     setShowEditLsxModal(true);
   };
@@ -353,8 +354,8 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
       cmd.scrapQty || 0,
       cmd.status === 'completed' ? t('Đã hoàn thành') : cmd.status === 'transfer_pending' ? t('Bàn giao chờ duyệt') : t('Đang in'),
       cmd.operatorName || '',
-      cmd.startedAt ? new Date(cmd.startedAt).toLocaleDateString('vi-VN') : '',
-      cmd.completedAt ? new Date(cmd.completedAt).toLocaleDateString('vi-VN') : ''
+      formatDate(cmd.startedAt, 'vi-VN', ''),
+      formatDate(cmd.completedAt, 'vi-VN', '')
     ]);
 
     let csvContent = '\uFEFF'; // BOM
@@ -687,7 +688,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                         <div><strong>{t('Loại lõi giấy:')}</strong> {cmd.paperCore || '76mm'}</div>
                         <div><strong>{t('Giấy nguyên liệu:')}</strong> {cmd.paperMaterialCode}</div>
                         <div><strong>{t('Số lượng giấy cấp:')}</strong> {cmd.paperQuantity}</div>
-                        <div><strong>{t('Hạn giao hàng:')}</strong> {cmd.deliveryDeadline ? new Date(cmd.deliveryDeadline).toLocaleDateString('vi-VN') : 'N/A'}</div>
+                        <div><strong>{t('Hạn giao hàng:')}</strong> {formatDate(cmd.deliveryDeadline, 'vi-VN', 'N/A')}</div>
                         <div><strong>{t('Yêu cầu kỹ thuật:')}</strong> {cmd.notes || t('Không có')}</div>
                       </div>
 
@@ -883,7 +884,7 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                         const item = po.items?.[0] || {};
                         setQtyToProduce(item.quantity || 10000);
                         setProductNameToBeCut(item.productName || '');
-                        setDeliveryDeadline(po.expectedDeliveryDate ? new Date(po.expectedDeliveryDate).toISOString().split('T')[0] : '');
+                        setDeliveryDeadline(toDateInputValue(po.expectedDeliveryDate));
                         const preferredMachine = getPreferredMachine(po);
                         if (preferredMachine) setMachineId(preferredMachine.name);
                         if (item.specifications) {
@@ -1182,12 +1183,12 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
                   <div><span style={{ fontWeight: 600 }}>{t('Loại lõi giấy')}:</span> {selectedLsx.paperCore || '76mm'}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Mã nguyên liệu giấy')}:</span> {selectedLsx.paperMaterialCode}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Số lượng giấy cấp')}:</span> {selectedLsx.paperQuantity}</div>
-                  <div><span style={{ fontWeight: 600 }}>{t('Hạn giao hàng')}:</span> {selectedLsx.deliveryDeadline ? new Date(selectedLsx.deliveryDeadline).toLocaleDateString('vi-VN') : 'N/A'}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Hạn giao hàng')}:</span> {formatDate(selectedLsx.deliveryDeadline, 'vi-VN', 'N/A')}</div>
                   <div><span style={{ fontWeight: 600 }}>{t('Ghi chú')}:</span> {selectedLsx.notes || t('Không có')}</div>
-                  <div><span style={{ fontWeight: 600 }}>{t('Ngày Lập Lệnh')}:</span> {new Date(selectedLsx.startedAt).toLocaleString('vi-VN')}</div>
+                  <div><span style={{ fontWeight: 600 }}>{t('Ngày Lập Lệnh')}:</span> {formatDateTime(selectedLsx.startedAt)}</div>
                   {selectedLsx.completedAt && (
                     <div>
-                      <span style={{ fontWeight: 600 }}>{t('Ngày Hoàn Thành')}:</span> {new Date(selectedLsx.completedAt).toLocaleString('vi-VN')}
+                      <span style={{ fontWeight: 600 }}>{t('Ngày Hoàn Thành')}:</span> {formatDateTime(selectedLsx.completedAt)}
                     </div>
                   )}
                 </div>
@@ -1239,9 +1240,9 @@ export const Production: React.FC<ProductionProps> = ({ pos, productionCommands,
 
               {/* Audit trail */}
               <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                <div>{t('Tạo bởi:')} {selectedLsx.createdBy || t('Không xác định')} {selectedLsx.createdAt && `(${new Date(selectedLsx.createdAt).toLocaleString(t('vi-VN'))})`}</div>
+                <div>{t('Tạo bởi:')} {selectedLsx.createdBy || t('Không xác định')} {selectedLsx.createdAt && `(${formatDateTime(selectedLsx.createdAt, t('vi-VN'))})`}</div>
                 {selectedLsx.updatedBy && (
-                  <div>{t('Cập nhật bởi:')} {selectedLsx.updatedBy} ({new Date(selectedLsx.updatedAt).toLocaleString(t('vi-VN'))})</div>
+                  <div>{t('Cập nhật bởi:')} {selectedLsx.updatedBy} ({formatDateTime(selectedLsx.updatedAt, t('vi-VN'))})</div>
                 )}
               </div>
             </div>
