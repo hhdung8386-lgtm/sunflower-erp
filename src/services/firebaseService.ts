@@ -17,7 +17,7 @@ import {
   query, 
   onSnapshot
 } from 'firebase/firestore';
-import { normalizeCustomerRecords, normalizeLeadRecords } from '../domain/crmModels';
+import { normalizeCustomerRecords, normalizeLeadRecords, normalizeProspectRecords } from '../domain/crmModels';
 import { normalizeNotificationRecords } from '../domain/notificationModels';
 
 // Firebase Configuration from environment variables
@@ -648,6 +648,11 @@ const initLocalStorage = () => {
     : [];
   localStorage.setItem('erp_leads', JSON.stringify(normalizeLeadRecords(leads)));
 
+  const prospects = localStorage.getItem('erp_prospects')
+    ? JSON.parse(localStorage.getItem('erp_prospects')!)
+    : [];
+  localStorage.setItem('erp_prospects', JSON.stringify(normalizeProspectRecords(prospects)));
+
   const notifications = localStorage.getItem('erp_notifications')
     ? JSON.parse(localStorage.getItem('erp_notifications')!)
     : [];
@@ -749,6 +754,9 @@ const normalizeCollectionRecords = <T,>(colName: string, data: T[]): T[] => {
   }
   if (colName === 'leads') {
     return normalizeLeadRecords(data) as T[];
+  }
+  if (colName === 'prospects') {
+    return normalizeProspectRecords(data) as T[];
   }
   if (colName === 'notifications') {
     return normalizeNotificationRecords(data) as T[];

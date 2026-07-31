@@ -20,6 +20,231 @@
   gap: 12px;
 }
 
+.lead-workspace-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lead-workspace-tabs button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 5px;
+  color: #64748b;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lead-workspace-tabs button.is-active {
+  color: #fff;
+  background: #1e3a8a;
+}
+
+.lead-workspace-tabs button span {
+  display: inline-flex;
+  min-width: 21px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #1e40af;
+  background: #dbeafe;
+  font-size: 10px;
+}
+
+.lead-workspace-tabs button.is-active span {
+  color: #1e3a8a;
+  background: #fff;
+}
+
+.prospect-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prospect-composer {
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.prospect-composer.is-editing {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.prospect-composer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.prospect-composer__header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prospect-composer__header strong {
+  color: #172554;
+  font-size: 13px;
+}
+
+.prospect-composer__header span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.prospect-quick-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 9px;
+}
+
+.prospect-quick-entry textarea {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.prospect-quick-entry .btn {
+  min-width: 112px;
+}
+
+.prospect-extra-fields {
+  margin-top: 10px;
+  color: #475569;
+  font-size: 11px;
+}
+
+.prospect-extra-fields summary {
+  width: fit-content;
+  color: #1e40af;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.prospect-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #dbeafe;
+}
+
+.prospect-extra-grid input,
+.prospect-extra-grid select {
+  min-width: 0;
+  height: 36px;
+  font-size: 11.5px;
+}
+
+.prospect-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 190px auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.prospect-toolbar input,
+.prospect-toolbar select {
+  height: 36px;
+  font-size: 11.5px;
+}
+
+.prospect-toolbar > span {
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.prospect-table {
+  min-width: 1140px;
+}
+
+.prospect-table td > strong,
+.prospect-table td > span {
+  display: block;
+}
+
+.prospect-table td > span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 10.5px;
+}
+
+.prospect-content-cell {
+  width: 38%;
+  max-width: 540px;
+}
+
+.prospect-content-cell p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 4px 0;
+  color: #334155;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.prospect-content-cell > span {
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+}
+
+.prospect-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.prospect-tags span {
+  padding: 3px 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 9.5px;
+}
+
+.prospect-status-select {
+  min-width: 130px;
+  height: 32px;
+  font-size: 10.5px;
+}
+
+.prospect-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 .lead-summary-card {
   display: flex;
   min-height: 74px;
@@ -590,11 +815,16 @@
 
 @media (max-width: 980px) {
   .lead-summary-grid,
+  .prospect-summary-grid,
   .lead-detail-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .lead-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prospect-extra-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -609,8 +839,12 @@
 
 @media (max-width: 680px) {
   .lead-summary-grid,
+  .prospect-summary-grid,
   .lead-detail-layout,
   .lead-toolbar,
+  .prospect-toolbar,
+  .prospect-quick-entry,
+  .prospect-extra-grid,
   .lead-form-grid,
   .lead-activity-form__controls {
     grid-template-columns: 1fr;
@@ -619,5 +853,14 @@
   .lead-panel--wide,
   .lead-form-grid__wide {
     grid-column: auto;
+  }
+
+  .lead-workspace-tabs {
+    width: 100%;
+  }
+
+  .lead-workspace-tabs button {
+    flex: 1;
+    justify-content: center;
   }
 }

@@ -28,7 +28,9 @@ import type {
   LeadCompanySize,
   LeadFileRecord,
   LeadRecord,
-  LeadStage
+  LeadStage,
+  ProspectRecord,
+  ProspectStatus
 } from '../domain/crmModels';
 import { sortNewestFirst } from '../domain/recordOrdering';
 import { dbService, type UserProfile } from '../services/firebaseService';
@@ -58,6 +60,29 @@ interface LeadFormState {
   nextFollowUpAt: string;
   note: string;
 }
+
+interface ProspectDraft {
+  rawText: string;
+  companyName: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  province: string;
+  source: string;
+  tagsText: string;
+  status: ProspectStatus;
+  assignedSaleId: string;
+}
+
+type LeadWorkspaceTab = 'prospects' | 'leads';
+
+const PROSPECT_STATUS_OPTIONS: Array<{ value: ProspectStatus; label: string }> = [
+  { value: 'new', label: 'Mới ghi nhận' },
+  { value: 'researching', label: 'Đang tìm hiểu' },
+  { value: 'ready', label: 'Đủ thông tin' },
+  { value: 'converted', label: 'Đã chuyển Lead' },
+  { value: 'archived', label: 'Đã lưu trữ' }
+];
 
 const LEAD_STAGES: Array<{ id: LeadStage; label: string }> = [
   { id: 'new', label: 'Mới tiếp nhận' },
@@ -108,6 +133,39 @@ const getStageLabel = (stage: LeadStage) => (
   LEAD_STAGES.find(item => item.id === stage)?.label || stage
 );
 
+const getProspectStatusLabel = (status: ProspectStatus) => (
+  PROSPECT_STATUS_OPTIONS.find(item => item.value === status)?.label || status
+);
+
+const normalizeSearchText = (value: unknown) => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('vi-VN');
+
+const matchesEverySearchTerm = (searchTerm: string, values: unknown[]) => {
+  const terms = normalizeSearchText(searchTerm).trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = normalizeSearchText(values.filter(Boolean).join(' '));
+  return terms.every(term => haystack.includes(term));
+};
+
+const parseTags = (value: string) => Array.from(new Set(
+  value.split(/[,;\n]+/).map(tag => tag.trim()).filter(Boolean)
+));
+
+const createEmptyProspectDraft = (currentUser: UserProfile): ProspectDraft => ({
+  rawText: '',
+  companyName: '',
+  contactPerson: '',
+  phone: '',
+  email: '',
+  province: '',
+  source: '',
+  tagsText: '',
+  status: 'new',
+  assignedSaleId: currentUser.role === 'sale' ? currentUser.uid : ''
+});
+
 const createEmptyForm = (currentUser: UserProfile, saleUsers: UserProfile[]): LeadFormState => ({
   companyName: '',
   contactPerson: '',
@@ -134,7 +192,14 @@ export const Leads: React.FC<LeadsProps> = ({
 }) => {
   const { t } = useLanguage();
   const saleUsers = useMemo(() => users.filter(user => user.role === 'sale'), [users]);
+  const [workspaceTab, setWorkspaceTab] = useState<LeadWorkspaceTab>('prospects');
   const [leads, setLeads] = useState<LeadRecord[]>([]);
+  const [prospects, setProspects] = useState<ProspectRecord[]>([]);
+  const [prospectSearchTerm, setProspectSearchTerm] = useState('');
+  const [prospectStatusFilter, setProspectStatusFilter] = useState<'active' | 'all' | ProspectStatus>('active');
+  const [prospectDraft, setProspectDraft] = useState<ProspectDraft>(() => createEmptyProspectDraft(currentUser));
+  const [editingProspectId, setEditingProspectId] = useState('');
+  const [promotingProspectId, setPromotingProspectId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState<'all' | LeadStage>('all');
   const [saleFilter, setSaleFilter] = useState('all');
@@ -157,6 +222,41 @@ export const Leads: React.FC<LeadsProps> = ({
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = dbService.subscribeCollection('prospects', data => {
+      setProspects(sortNewestFirst(data as ProspectRecord[], prospect => [prospect.updatedAt, prospect.createdAt]));
+    });
+    return unsubscribe;
+  }, []);
+
+  const accessibleProspects = useMemo(() => prospects.filter(prospect => {
+    if (currentUser.role === 'admin') return true;
+    return prospect.assignedSaleId === currentUser.uid || prospect.createdById === currentUser.uid;
+  }), [currentUser.role, currentUser.uid, prospects]);
+
+  const filteredProspects = useMemo(() => accessibleProspects.filter(prospect => {
+    const matchesStatus = prospectStatusFilter === 'all'
+      || (prospectStatusFilter === 'active'
+        ? !['converted', 'archived'].includes(prospect.status)
+        : prospect.status === prospectStatusFilter);
+    const assignedSaleName = users.find(user => user.uid === prospect.assignedSaleId)?.displayName;
+    const matchesSearch = matchesEverySearchTerm(prospectSearchTerm, [
+      prospect.rawText,
+      prospect.companyName,
+      prospect.contactPerson,
+      prospect.phone,
+      prospect.email,
+      prospect.province,
+      prospect.source,
+      prospect.tags,
+      prospect.createdByName,
+      prospect.assignedSaleName,
+      assignedSaleName,
+      getProspectStatusLabel(prospect.status)
+    ]);
+    return matchesStatus && matchesSearch;
+  }), [accessibleProspects, prospectSearchTerm, prospectStatusFilter, users]);
 
   const accessibleLeads = useMemo(() => leads.filter(lead => {
     if (currentUser.role === 'admin') return true;
@@ -181,13 +281,20 @@ export const Leads: React.FC<LeadsProps> = ({
   const filteredLeads = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return accessibleLeads.filter(lead => {
-      const matchesSearch = !normalizedSearch || [
+      const matchesSearch = !normalizedSearch || matchesEverySearchTerm(normalizedSearch, [
         lead.companyName,
         lead.contactPerson,
         lead.phone,
         lead.email,
-        lead.taxCode
-      ].some(value => value.toLowerCase().includes(normalizedSearch));
+        lead.taxCode,
+        lead.address,
+        lead.province,
+        lead.source,
+        lead.expectedProducts,
+        lead.note,
+        lead.assignedSaleName,
+        (lead.activities || []).map(activity => activity.note)
+      ]);
       const matchesStage = stageFilter === 'all' || lead.stage === stageFilter;
       const matchesSale = saleFilter === 'all' || lead.assignedSaleId === saleFilter;
       const matchesSource = sourceFilter === 'all' || lead.source === sourceFilter;
@@ -220,7 +327,104 @@ export const Leads: React.FC<LeadsProps> = ({
     setForm(previous => ({ ...previous, [field]: value }));
   };
 
+  const updateProspectDraft = <K extends keyof ProspectDraft>(field: K, value: ProspectDraft[K]) => {
+    setProspectDraft(previous => ({ ...previous, [field]: value }));
+  };
+
+  const resetProspectDraft = () => {
+    setEditingProspectId('');
+    setProspectDraft(createEmptyProspectDraft(currentUser));
+  };
+
+  const focusProspectComposer = () => {
+    resetProspectDraft();
+    window.setTimeout(() => document.getElementById('prospect-quick-note')?.focus(), 0);
+  };
+
+  const handleSaveProspect = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!prospectDraft.rawText.trim() && !prospectDraft.companyName.trim()) return;
+
+    const now = new Date().toISOString();
+    const assignedSale = saleUsers.find(user => user.uid === prospectDraft.assignedSaleId);
+    const payload = {
+      rawText: prospectDraft.rawText.trim() || prospectDraft.companyName.trim(),
+      companyName: prospectDraft.companyName.trim(),
+      contactPerson: prospectDraft.contactPerson.trim(),
+      phone: prospectDraft.phone.trim(),
+      email: prospectDraft.email.trim(),
+      province: prospectDraft.province.trim(),
+      source: prospectDraft.source.trim(),
+      tags: parseTags(prospectDraft.tagsText),
+      status: prospectDraft.status,
+      assignedSaleId: prospectDraft.assignedSaleId,
+      assignedSaleName: assignedSale?.displayName || '',
+      updatedAt: now,
+      updatedBy: currentUser.displayName
+    };
+
+    if (editingProspectId) {
+      await dbService.updateDocument('prospects', editingProspectId, payload);
+    } else {
+      await dbService.addDocument('prospects', {
+        ...payload,
+        convertedLeadId: '',
+        convertedAt: '',
+        createdAt: now,
+        createdById: currentUser.uid,
+        createdByName: currentUser.displayName
+      });
+    }
+    resetProspectDraft();
+  };
+
+  const openEditProspect = (prospect: ProspectRecord) => {
+    setEditingProspectId(prospect.id);
+    setProspectDraft({
+      rawText: prospect.rawText,
+      companyName: prospect.companyName,
+      contactPerson: prospect.contactPerson,
+      phone: prospect.phone,
+      email: prospect.email,
+      province: prospect.province,
+      source: prospect.source,
+      tagsText: (prospect.tags || []).join(', '),
+      status: prospect.status,
+      assignedSaleId: prospect.assignedSaleId
+    });
+    window.setTimeout(() => document.getElementById('prospect-quick-note')?.focus(), 0);
+  };
+
+  const updateProspectStatus = async (prospect: ProspectRecord, status: ProspectStatus) => {
+    if (prospect.status === status) return;
+    await dbService.updateDocument('prospects', prospect.id, {
+      status,
+      updatedBy: currentUser.displayName
+    });
+  };
+
+  const openProspectAsLead = (prospect: ProspectRecord) => {
+    setPromotingProspectId(prospect.id);
+    setEditingLeadId('');
+    setUploadingFiles([]);
+    setForm({
+      ...createEmptyForm(currentUser, saleUsers),
+      companyName: prospect.companyName,
+      contactPerson: prospect.contactPerson,
+      phone: prospect.phone,
+      email: prospect.email,
+      province: prospect.province,
+      source: prospect.source,
+      assignedSaleId: prospect.assignedSaleId || (currentUser.role === 'sale' ? currentUser.uid : ''),
+      note: [prospect.rawText, prospect.tags?.length ? `Từ khóa: ${prospect.tags.join(', ')}` : '']
+        .filter(Boolean)
+        .join('\n')
+    });
+    setShowLeadForm(true);
+  };
+
   const openCreateForm = () => {
+    setPromotingProspectId('');
     setEditingLeadId('');
     setUploadingFiles([]);
     setForm(createEmptyForm(currentUser, saleUsers));
@@ -228,6 +432,7 @@ export const Leads: React.FC<LeadsProps> = ({
   };
 
   const openEditForm = (lead: LeadRecord) => {
+    setPromotingProspectId('');
     setEditingLeadId(lead.id);
     setUploadingFiles(lead.files || []);
     setForm({
@@ -299,8 +504,9 @@ export const Leads: React.FC<LeadsProps> = ({
     if (editingLeadId) {
       await dbService.updateDocument('leads', editingLeadId, payload);
     } else {
-      await dbService.addDocument('leads', {
+      const createdLead = await dbService.addDocument('leads', {
         ...payload,
+        sourceProspectId: promotingProspectId,
         activities: [{
           id: `activity-${now}`,
           type: 'created',
@@ -312,9 +518,20 @@ export const Leads: React.FC<LeadsProps> = ({
         createdAt: now,
         createdById: currentUser.uid
       });
+
+      if (promotingProspectId) {
+        await dbService.updateDocument('prospects', promotingProspectId, {
+          status: 'converted',
+          convertedLeadId: createdLead.id,
+          convertedAt: now,
+          updatedBy: currentUser.displayName
+        });
+        setWorkspaceTab('leads');
+      }
     }
 
     setShowLeadForm(false);
+    setPromotingProspectId('');
   };
 
   const handleAddActivity = async (event: React.FormEvent) => {
@@ -464,6 +681,154 @@ export const Leads: React.FC<LeadsProps> = ({
     setOnlyOverdue(false);
   };
 
+  function renderProspectWorkspace() {
+    const activeCount = accessibleProspects.filter(prospect => !['converted', 'archived'].includes(prospect.status)).length;
+    const readyCount = accessibleProspects.filter(prospect => prospect.status === 'ready').length;
+    const convertedCount = accessibleProspects.filter(prospect => prospect.status === 'converted').length;
+
+    return (
+      <>
+        <div className="prospect-summary-grid">
+          <div className="lead-summary-card"><div><strong>{accessibleProspects.length}</strong><span>Tổng dữ liệu tìm kiếm</span></div></div>
+          <div className="lead-summary-card"><div><strong>{activeCount}</strong><span>Đang tìm hiểu</span></div></div>
+          <div className="lead-summary-card"><div><strong>{readyCount}</strong><span>Đủ thông tin</span></div></div>
+          <div className="lead-summary-card"><div><strong>{convertedCount}</strong><span>Đã chuyển thành Lead</span></div></div>
+        </div>
+
+        <section className={`prospect-composer ${editingProspectId ? 'is-editing' : ''}`}>
+          <div className="prospect-composer__header">
+            <div>
+              <strong>{editingProspectId ? t('Chỉnh sửa thông tin tìm kiếm') : t('Ghi nhanh khách hàng vừa tìm thấy')}</strong>
+              <span>{t('Chỉ cần nhập một đoạn ghi chú. Các thông tin khác có thể bổ sung sau.')}</span>
+            </div>
+            {editingProspectId && <button type="button" className="btn btn-sm btn-outline" onClick={resetProspectDraft}>{t('Hủy chỉnh sửa')}</button>}
+          </div>
+          <form onSubmit={handleSaveProspect}>
+            <div className="prospect-quick-entry">
+              <textarea
+                id="prospect-quick-note"
+                rows={3}
+                value={prospectDraft.rawText}
+                onChange={event => updateProspectDraft('rawText', event.target.value)}
+                placeholder={t('Ví dụ: Công ty ABC tại KCN Yên Phong, anh Hùng 0988..., đang cần tem decal 4 màu khoảng 200.000 tem/tháng...')}
+              />
+              <button type="submit" className="btn btn-primary">
+                {editingProspectId ? t('Lưu thay đổi') : t('Lưu nhanh')}
+              </button>
+            </div>
+            <details className="prospect-extra-fields" open={Boolean(editingProspectId)}>
+              <summary>{t('Thông tin bổ sung (không bắt buộc)')}</summary>
+              <div className="prospect-extra-grid">
+                <input value={prospectDraft.companyName} onChange={event => updateProspectDraft('companyName', event.target.value)} placeholder={t('Tên doanh nghiệp')} />
+                <input value={prospectDraft.contactPerson} onChange={event => updateProspectDraft('contactPerson', event.target.value)} placeholder={t('Người liên hệ')} />
+                <input value={prospectDraft.phone} onChange={event => updateProspectDraft('phone', event.target.value)} placeholder={t('Số điện thoại')} />
+                <input type="email" value={prospectDraft.email} onChange={event => updateProspectDraft('email', event.target.value)} placeholder="Email" />
+                <input value={prospectDraft.province} onChange={event => updateProspectDraft('province', event.target.value)} placeholder={t('Tỉnh / thành')} />
+                <input value={prospectDraft.source} onChange={event => updateProspectDraft('source', event.target.value)} placeholder={t('Nguồn tìm thấy')} />
+                <input value={prospectDraft.tagsText} onChange={event => updateProspectDraft('tagsText', event.target.value)} placeholder={t('Từ khóa, cách nhau bằng dấu phẩy')} />
+                <select value={prospectDraft.status} onChange={event => updateProspectDraft('status', event.target.value as ProspectStatus)}>
+                  {PROSPECT_STATUS_OPTIONS.filter(option => option.value !== 'converted').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                {currentUser.role === 'admin' && (
+                  <select value={prospectDraft.assignedSaleId} onChange={event => updateProspectDraft('assignedSaleId', event.target.value)}>
+                    <option value="">{t('Chưa giao Sale')}</option>
+                    {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
+                  </select>
+                )}
+              </div>
+            </details>
+          </form>
+        </section>
+
+        <section className="prospect-toolbar">
+          <div className="lead-search">
+            <Search size={16} />
+            <input
+              value={prospectSearchTerm}
+              onChange={event => setProspectSearchTerm(event.target.value)}
+              placeholder={t('Tìm mọi nội dung, có thể nhập nhiều từ khóa và không cần dấu...')}
+            />
+          </div>
+          <select value={prospectStatusFilter} onChange={event => setProspectStatusFilter(event.target.value as 'active' | 'all' | ProspectStatus)}>
+            <option value="active">{t('Đang xử lý')}</option>
+            <option value="all">{t('Tất cả trạng thái')}</option>
+            {PROSPECT_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <span>{filteredProspects.length} {t('kết quả')}</span>
+        </section>
+
+        <section className="lead-table-card prospect-table-card">
+          <div className="table-container">
+            <table className="prospect-table">
+              <thead>
+                <tr>
+                  <th>{t('Nội dung tìm kiếm')}</th>
+                  <th>{t('Liên hệ')}</th>
+                  <th>{t('Nguồn / từ khóa')}</th>
+                  <th>{t('Người phụ trách')}</th>
+                  <th>{t('Trạng thái')}</th>
+                  <th>{t('Thao tác')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProspects.map(prospect => (
+                  <tr key={prospect.id}>
+                    <td className="prospect-content-cell">
+                      {prospect.companyName && <strong>{prospect.companyName}</strong>}
+                      <p>{prospect.rawText}</p>
+                      <span>{formatDateTime(prospect.updatedAt || prospect.createdAt)}</span>
+                    </td>
+                    <td>
+                      <strong>{prospect.contactPerson || '—'}</strong>
+                      <span>{prospect.phone || prospect.email || t('Chưa có liên hệ')}</span>
+                      {prospect.province && <span>{prospect.province}</span>}
+                    </td>
+                    <td>
+                      <strong>{prospect.source || '—'}</strong>
+                      <div className="prospect-tags">
+                        {(prospect.tags || []).map(tag => <span key={tag}>{tag}</span>)}
+                      </div>
+                    </td>
+                    <td>
+                      {users.find(user => user.uid === prospect.assignedSaleId)?.displayName
+                        || prospect.assignedSaleName
+                        || prospect.createdByName
+                        || t('Chưa phân công')}
+                    </td>
+                    <td>
+                      <select
+                        className="prospect-status-select"
+                        value={prospect.status}
+                        onChange={event => updateProspectStatus(prospect, event.target.value as ProspectStatus)}
+                        disabled={prospect.status === 'converted'}
+                      >
+                        {PROSPECT_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <div className="prospect-row-actions">
+                        {prospect.status !== 'converted' && (
+                          <button type="button" className="btn btn-sm btn-primary" onClick={() => openProspectAsLead(prospect)}>{t('Chuyển thành Lead')}</button>
+                        )}
+                        {prospect.status === 'converted' && prospect.convertedLeadId && (
+                          <button type="button" className="btn btn-sm btn-outline" onClick={() => { setWorkspaceTab('leads'); setSelectedLeadId(prospect.convertedLeadId); }}>{t('Mở Lead')}</button>
+                        )}
+                        <button type="button" className="btn btn-sm btn-outline" onClick={() => openEditProspect(prospect)}>{t('Sửa')}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredProspects.length === 0 && (
+                  <tr><td colSpan={6} className="lead-empty">{t('Chưa có dữ liệu phù hợp. Hãy ghi nhanh khách hàng đầu tiên ở phía trên.')}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    );
+  }
+
   if (selectedLead) {
     const assignedSale = users.find(user => user.uid === selectedLead.assignedSaleId);
     return (
@@ -590,8 +955,12 @@ export const Leads: React.FC<LeadsProps> = ({
       <div className="modal-overlay">
         <div className="modal-content lead-form-modal">
           <div className="modal-header">
-            <strong>{editingLeadId ? t('CHỈNH SỬA KHÁCH HÀNG TIỀM NĂNG') : t('THÊM KHÁCH HÀNG TIỀM NĂNG')}</strong>
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowLeadForm(false)}>{t('Đóng')}</button>
+            <strong>{editingLeadId
+              ? t('CHỈNH SỬA KHÁCH HÀNG TIỀM NĂNG')
+              : promotingProspectId
+                ? t('CHUẨN HÓA THÀNH LEAD')
+                : t('THÊM KHÁCH HÀNG TIỀM NĂNG')}</strong>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => { setShowLeadForm(false); setPromotingProspectId(''); }}>{t('Đóng')}</button>
           </div>
           <form onSubmit={handleSaveLead}>
             <div className="modal-body">
@@ -642,6 +1011,7 @@ export const Leads: React.FC<LeadsProps> = ({
                     <label>{t('Nguồn Lead')}</label>
                     <select value={form.source} onChange={event => updateForm('source', event.target.value)}>
                       <option value="">{t('-- Chọn nguồn --')}</option>
+                      {form.source && !LEAD_SOURCES.includes(form.source) && <option value={form.source}>{form.source}</option>}
                       {LEAD_SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
                     </select>
                   </div>
@@ -696,8 +1066,8 @@ export const Leads: React.FC<LeadsProps> = ({
               </div>
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>{t('Hủy')}</button>
-              <button type="submit" className="btn btn-primary">{editingLeadId ? t('Cập nhật Lead') : t('Lưu Lead')}</button>
+              <button type="button" className="btn btn-outline" onClick={() => { setShowLeadForm(false); setPromotingProspectId(''); }}>{t('Hủy')}</button>
+              <button type="submit" className="btn btn-primary">{editingLeadId ? t('Cập nhật Lead') : promotingProspectId ? t('Tạo Lead chính thức') : t('Lưu Lead')}</button>
             </div>
           </form>
         </div>
@@ -712,11 +1082,38 @@ export const Leads: React.FC<LeadsProps> = ({
           <h1 className="page-title">{t('KHÁCH HÀNG TIỀM NĂNG (LEAD)')}</h1>
           <p className="page-subtitle">{t('Quản lý cơ hội bán hàng, lịch chăm sóc và chuyển đổi Lead thành khách hàng chính thức.')}</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={openCreateForm}>
-          <Plus size={16} /> {t('Thêm Lead')}
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={workspaceTab === 'prospects' ? focusProspectComposer : openCreateForm}
+        >
+          <Plus size={16} /> {workspaceTab === 'prospects' ? t('Ghi nhanh') : t('Thêm Lead')}
         </button>
       </div>
 
+      <div className="lead-workspace-tabs" role="tablist" aria-label={t('Không gian khách hàng tiềm năng')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'prospects'}
+          className={workspaceTab === 'prospects' ? 'is-active' : ''}
+          onClick={() => setWorkspaceTab('prospects')}
+        >
+          {t('Kho tìm kiếm')} <span>{accessibleProspects.filter(prospect => !['converted', 'archived'].includes(prospect.status)).length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workspaceTab === 'leads'}
+          className={workspaceTab === 'leads' ? 'is-active' : ''}
+          onClick={() => setWorkspaceTab('leads')}
+        >
+          {t('Lead đang chăm sóc')} <span>{accessibleLeads.filter(lead => !['converted', 'lost'].includes(lead.stage)).length}</span>
+        </button>
+      </div>
+
+      {workspaceTab === 'prospects' ? renderProspectWorkspace() : (
+        <>
       <div className="lead-summary-grid">
         <div className="lead-summary-card"><Users size={18} /><div><strong>{accessibleLeads.length}</strong><span>Tổng Lead</span></div></div>
         <div className="lead-summary-card"><TrendingUp size={18} /><div><strong>{accessibleLeads.filter(lead => ['quoted', 'negotiating'].includes(lead.stage)).length}</strong><span>Đang theo đuổi</span></div></div>
@@ -828,6 +1225,8 @@ export const Leads: React.FC<LeadsProps> = ({
             );
           })}
         </section>
+      )}
+        </>
       )}
 
       {showLeadForm && renderLeadForm()}
