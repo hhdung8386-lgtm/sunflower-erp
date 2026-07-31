@@ -121,7 +121,7 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
   const [showTop15, setShowTop15] = useState<boolean>(false);
   
   // Tab state
-  const [crmActiveTab, setCrmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
+  const [crmActiveTab] = useState<'cooperative' | 'leads'>('cooperative');
 
   // Leads state & subscription
   const [leads, setLeads] = useState<LeadRecord[]>([]);
@@ -1623,27 +1623,11 @@ export const Crm: React.FC<CrmProps> = ({ customers, pos, users, currentUser, on
           <h1 className="page-title">{t('QUẢN LÝ KHÁCH HÀNG (CRM)')}</h1>
           <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
-        {crmActiveTab === 'cooperative' && (currentUser.role === 'admin' || currentUser.role === 'sale') && (
+        {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
           <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>
             <Plus size={18} />
           </button>
         )}
-      </div>
-
-      {/* Tab controls */}
-      <div className="leads-tabs">
-        <button 
-          className={`leads-tab-btn ${crmActiveTab === 'cooperative' ? 'active' : ''}`}
-          onClick={() => setCrmActiveTab('cooperative')}
-        >
-          {t('Khách Hàng Hợp Tác')}
-        </button>
-        <button 
-          className={`leads-tab-btn ${crmActiveTab === 'leads' ? 'active' : ''}`}
-          onClick={() => setCrmActiveTab('leads')}
-        >
-          {t('Khách Hàng Tiềm Năng (Leads)')}
-        </button>
       </div>
 
       {currentUser.role === 'admin' && (editRequests.some(r => r.status === 'pending') || customers.some(c => c.deleteRequested && !c.deleted)) && (

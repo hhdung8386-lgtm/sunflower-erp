@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { authService, dbService, UserProfile } from './services/firebaseService';
 import { Dashboard } from './views/Dashboard';
 import { Crm } from './views/Crm';
+import { Leads } from './views/Leads';
 import { Sales } from './views/Sales';
 import { Design } from './views/Design';
 import { DesignLibrary } from './views/DesignLibrary';
@@ -17,7 +18,7 @@ import { RecycleBin } from './views/RecycleBin';
 import { isPOInQueue } from './domain/poWorkflow';
 import { DesignRequest } from './domain/designWorkflow';
 import { sortNewestFirst } from './domain/recordOrdering';
-import type { CustomerRecord } from './domain/crmModels';
+import type { CustomerRecord, LeadRecord } from './domain/crmModels';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -33,10 +34,12 @@ import {
   Trash2, 
   UserCog, 
   LogOut,
-  Menu
+  Menu,
+  Target
 } from 'lucide-react';
 
 const logo = '/sunflower-logo-horizontal-transparent.png';
+const APP_REFERENCE_TIME = Date.now();
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -50,9 +53,9 @@ function App() {
   const getDefaultPagesForRole = (role: string): string[] => {
     switch (role) {
       case 'admin':
-        return ['dashboard', 'chat', 'crm', 'sales', 'design', 'purchase', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
+        return ['dashboard', 'chat', 'crm', 'leads', 'sales', 'design', 'purchase', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
       case 'sale':
-        return ['dashboard', 'chat', 'crm', 'sales'];
+        return ['dashboard', 'chat', 'crm', 'leads', 'sales'];
       case 'designer':
         return ['dashboard', 'chat', 'design'];
       case 'purchaser':
@@ -69,6 +72,9 @@ function App() {
   const isPageAllowed = (pageId: string): boolean => {
     if (!user) return false;
     const allowed = user.allowedPages || getDefaultPagesForRole(user.role);
+    if (pageId === 'leads') {
+      return allowed.includes('leads') || allowed.includes('crm');
+    }
     return allowed.includes(pageId);
   };
   
@@ -78,6 +84,7 @@ function App() {
   // Real-time synchronization states
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [pos, setPOs] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [productionCommands, setProductionCommands] = useState<any[]>([]);
@@ -125,6 +132,9 @@ function App() {
     const unsubCustomers = dbService.subscribeCollection('customers', (data) => {
       setCustomers(data as CustomerRecord[]);
     });
+    const unsubLeads = dbService.subscribeCollection('leads', (data) => {
+      setLeads(sortNewestFirst(data as LeadRecord[], lead => [lead.createdAt, lead.updatedAt]));
+    });
     const unsubPOs = dbService.subscribeCollection('pos', (data) => {
       setPOs(sortNewestFirst(data, po => [po.createdAt, po.orderDate]));
     });
@@ -153,6 +163,7 @@ function App() {
     return () => {
       unsubUsers();
       unsubCustomers();
+      unsubLeads();
       unsubPOs();
       unsubPurchases();
       unsubProduction();
@@ -235,7 +246,7 @@ function App() {
   const getCrmAlertCount = () => {
     if (!user) return 0;
     if (user.role !== 'admin' && user.role !== 'sale') return 0;
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const thirtyDaysAgo = APP_REFERENCE_TIME - 30 * 24 * 60 * 60 * 1000;
     return customers.filter(c => {
       if (!c.lastOrderAt) return false;
       return new Date(c.lastOrderAt).getTime() < thirtyDaysAgo;
@@ -246,6 +257,16 @@ function App() {
     if (!user) return 0;
     if (user.role !== 'admin' && user.role !== 'sale') return 0;
     return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
+  };
+
+  const getLeadAlertCount = () => {
+    if (!user || (user.role !== 'admin' && user.role !== 'sale')) return 0;
+    return leads.filter(lead => {
+      if (user.role === 'sale' && lead.assignedSaleId !== user.uid) return false;
+      if (!lead.nextFollowUpAt || ['won', 'lost', 'converted'].includes(lead.stage)) return false;
+      const followUpTime = new Date(lead.nextFollowUpAt).getTime();
+      return Number.isFinite(followUpTime) && followUpTime < APP_REFERENCE_TIME;
+    }).length;
   };
 
   const getDesignAlertCount = () => {
@@ -308,6 +329,16 @@ function App() {
       case 'crm':
         if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} />;
+      case 'leads':
+        if (!isPageAllowed('leads')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
+        return (
+          <Leads
+            customers={customers}
+            users={users}
+            currentUser={user}
+            onNavigateToCrm={() => setActivePage('crm')}
+          />
+        );
       case 'sales':
         if (!isPageAllowed('sales')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
@@ -610,6 +641,20 @@ function App() {
                 <span className="sidebar-item-label">{t('Khách Hàng (CRM)')}</span>
               </div>
               {getCrmAlertCount() > 0 && <span className="sidebar-badge">{getCrmAlertCount()}</span>}
+            </button>
+          )}
+
+          {isPageAllowed('leads') && (
+            <button
+              className={`sidebar-item ${activePage === 'leads' ? 'active' : ''}`}
+              onClick={() => { setActivePage('leads'); setIsSidebarOpen(false); }}
+              title={t('Khách Hàng Tiềm Năng (Lead)')}
+            >
+              <div className="sidebar-item-content">
+                <Target size={16} />
+                <span className="sidebar-item-label">{t('Khách Hàng Tiềm Năng')}</span>
+              </div>
+              {getLeadAlertCount() > 0 && <span className="sidebar-badge">{getLeadAlertCount()}</span>}
             </button>
           )}
 
