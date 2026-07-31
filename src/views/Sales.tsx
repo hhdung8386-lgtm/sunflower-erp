@@ -42,7 +42,9 @@ interface SalesProps {
   onRefresh: () => void;
   initialSelectedPoId?: string;
   initialRepeatPoId?: string;
+  initialPreparedCustomerId?: string;
   onRepeatOrderOpened?: () => void;
+  onPreparedOrderOpened?: () => void;
   messages: any[];
   users: UserProfile[];
 }
@@ -60,7 +62,7 @@ const getWaitingDays = (createdAt: unknown) => {
   return Math.max(0, Math.floor((Date.now() - createdTime) / (24 * 60 * 60 * 1000)));
 };
 
-export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, initialRepeatPoId, onRepeatOrderOpened, messages, users }) => {
+export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRefresh, initialSelectedPoId, initialRepeatPoId, initialPreparedCustomerId, onRepeatOrderOpened, onPreparedOrderOpened, messages, users }) => {
   const { t } = useLanguage();
   const isFull = currentUser.role === 'admin' || currentUser.role === 'accountant';
   const isSaleOnly = currentUser.role === 'sale' || currentUser.role === 'designer';
@@ -95,6 +97,20 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
     setShowAddModal(true);
     onRepeatOrderOpened?.();
   }, [initialRepeatPoId, onRepeatOrderOpened, pos]);
+
+  useEffect(() => {
+    if (!initialPreparedCustomerId) return;
+    if (!customers.some(customer => customer.id === initialPreparedCustomerId)) return;
+    const openPreparedOrderTimer = window.setTimeout(() => {
+      setSelectedPO(null);
+      setRepeatSourcePO(null);
+      setInitialCustomerId(initialPreparedCustomerId);
+      setShowEditModal(false);
+      setShowAddModal(true);
+      onPreparedOrderOpened?.();
+    }, 0);
+    return () => window.clearTimeout(openPreparedOrderTimer);
+  }, [customers, initialPreparedCustomerId, onPreparedOrderOpened]);
 
   // Load suppliers locally
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -561,7 +577,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       }
       await dbService.updateDocument('customers', poData.customerId, {
         lastOrderAt: new Date().toISOString(),
-        customerRank: poData.customerRank
+        customerRank: poData.customerRank,
+        pendingOrderDraft: null
       });
 
       setShowAddModal(false);
@@ -870,6 +887,9 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                         <td>
                           <strong className="waiting-customer-name">{customer.companyName || t('Chưa cung cấp')}</strong>
                           {customer.phone && <span className="waiting-customer-secondary">{customer.phone}</span>}
+                          {customer.pendingOrderDraft && (
+                            <span className="prepared-order-badge">Đã chuẩn bị thông tin đơn</span>
+                          )}
                         </td>
                         <td>
                           <span>{customer.contactPerson || t('Chưa cung cấp')}</span>
@@ -891,7 +911,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                           {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
                             <button className="btn btn-sm btn-primary waiting-customer-action" onClick={() => handleOpenCreatePO(customer.id)}>
                               <Plus size={14} />
-                              <span>{t('Tạo PO')}</span>
+                              <span>{customer.pendingOrderDraft ? 'Phân công & phát hành PO' : t('Tạo PO')}</span>
                             </button>
                           )}
                         </td>

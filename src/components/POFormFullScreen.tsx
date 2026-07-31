@@ -40,6 +40,7 @@ interface POFormFullScreenProps {
   users: any[];
   currentUser: any;
   t: (key: string) => string;
+  workflowMode?: 'standard' | 'customer_onboarding';
 }
 
 export default function POFormFullScreen({
@@ -53,7 +54,8 @@ export default function POFormFullScreen({
   suppliers,
   users,
   currentUser,
-  t
+  t,
+  workflowMode = 'standard'
 }: POFormFullScreenProps) {
   const [customerId, setCustomerId] = useState('');
   const [customerRank, setCustomerRank] = useState('');
@@ -97,7 +99,7 @@ export default function POFormFullScreen({
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftResetRevision, setDraftResetRevision] = useState(0);
   const initializedFormKeyRef = useRef('');
-  const draftKey = !po && currentUser?.uid
+  const draftKey = !po && workflowMode === 'standard' && currentUser?.uid
     ? `sunflower:po-draft:${currentUser.uid}:${templatePo?.id || initialCustomerId || 'new'}`
     : '';
 
@@ -209,19 +211,36 @@ export default function POFormFullScreen({
     } else {
       // Defaults for creation
       const initialCustomer = customers.find(customer => customer.id === initialCustomerId) || customers[0];
+      const preparedOrder = initialCustomer?.pendingOrderDraft;
       setCustomerId(initialCustomer?.id || '');
       setCustomerRank(initialCustomer?.customerRank || '');
-      setCustomerPoCode('');
-      setExpectedDeliveryDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-      setNotes('');
-      setPdfFile('');
-      setExcelFile('');
-      setAiFile('');
-      setCorelFile('');
-      setContractFile('');
-      setQuoteFile('');
-      setPoItems([]);
+      setCustomerPoCode(preparedOrder?.customerPoCode || '');
+      setExpectedDeliveryDate(
+        toDateInputValue(preparedOrder?.expectedDeliveryDate)
+        || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      );
+      setNotes(preparedOrder?.notes || '');
+      setPdfFile(getDraftSafeLink(preparedOrder?.links?.pdfLink));
+      setExcelFile(getDraftSafeLink(preparedOrder?.links?.excelLink));
+      setAiFile(getDraftSafeLink(preparedOrder?.links?.aiLink));
+      setCorelFile(getDraftSafeLink(preparedOrder?.links?.corelLink));
+      setContractFile(getDraftSafeLink(preparedOrder?.links?.contractLink));
+      setQuoteFile(getDraftSafeLink(preparedOrder?.links?.quoteLink));
+      setPoItems((preparedOrder?.items || []).map((item: any) => ({
+        ...item,
+        itemId: item.itemId || `item-${Math.random().toString(36).slice(2, 11)}`,
+        discountType: item.discountType === 'amount' ? 'amount' : 'percent',
+        discountRate: Number(item.discountRate) || 0,
+        discountAmount: Number(item.discountAmount) || 0,
+        vatRate: item.vatRate === undefined ? 8 : Number(item.vatRate),
+        deliveryDate: toDateInputValue(item.deliveryDate || preparedOrder?.expectedDeliveryDate),
+        previewImages: item.previewImages || (item.previewImage ? [item.previewImage] : []),
+        unit: item.unit || 'cái',
+        material: item.material || '',
+        size: item.size || ''
+      })));
       setAssignments([]);
+      setShowAssignments(Boolean(preparedOrder) && workflowMode === 'standard');
     }
 
     // Restore an unfinished create/repeat order. File data URLs are not stored
@@ -269,7 +288,7 @@ export default function POFormFullScreen({
     }
 
     setDraftReady(true);
-  }, [po, templatePo, initialCustomerId, isOpen, customers, draftKey, draftResetRevision]);
+  }, [po, templatePo, initialCustomerId, isOpen, customers, draftKey, draftResetRevision, workflowMode]);
 
   // Keep text, items and assignments safe when the modal is closed or the page
   // is refreshed. Large local file data is intentionally excluded.
@@ -802,6 +821,11 @@ export default function POFormFullScreen({
 
   // Catalog products + past history filter
   const currentCustomer = customers.find(c => c.id === customerId);
+  const isCustomerOnboarding = workflowMode === 'customer_onboarding';
+  const isPreparedAssignment = !po
+    && !templatePo
+    && !isCustomerOnboarding
+    && Boolean(currentCustomer?.pendingOrderDraft);
   const catalogProducts = currentCustomer?.products || [];
   
   const filteredCatalog = catalogProducts.filter((p: any) => 
@@ -850,14 +874,18 @@ export default function POFormFullScreen({
             </div>
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, letterSpacing: '0.5px' }}>
-                {po
+                {isCustomerOnboarding
+                  ? t('CHUẨN BỊ ĐƠN HÀNG ĐẦU TIÊN')
+                  : po
                   ? `${t('CHỈNH SỬA ĐƠN HÀNG PO')}: ${po.poCode}`
                   : templatePo
                     ? `TẠO ĐƠN ĐẶT LẠI TỪ ${templatePo.poCode}`
                     : t('TẠO MỚI ĐƠN HÀNG KHÁCH HÀNG (PO)')}
               </h2>
               <p style={{ fontSize: '12px', opacity: 0.8, margin: '2px 0 0 0' }}>
-                {po
+                {isCustomerOnboarding
+                  ? t('Nhập thông tin thương mại và mặt hàng; phân công sẽ thực hiện tại Sale PO.')
+                  : po
                   ? `${t('Mã PO nội bộ:')} ${po.poCode}`
                   : templatePo
                     ? 'Kế thừa thông số và mẫu đã duyệt; giá, ngày giao và phân công cần kiểm tra lại.'
@@ -891,7 +919,11 @@ export default function POFormFullScreen({
               }}
             >
               <Save size={16} />
-              <span>{isSaving ? t('Đang lưu...') : t('Lưu Đơn Hàng PO')}</span>
+              <span>{isSaving
+                ? t('Đang lưu...')
+                : isCustomerOnboarding
+                  ? t('Lưu khách hàng & chuẩn bị PO')
+                  : t('Lưu Đơn Hàng PO')}</span>
             </button>
           </div>
         </div>
@@ -930,7 +962,7 @@ export default function POFormFullScreen({
                   setCustomerRank(nextCustomer?.customerRank || '');
                   setPoItems([]); // Reset items on customer change
                 }}
-                disabled={!!po || !!templatePo} // Repeat orders must stay with the original customer
+                disabled={!!po || !!templatePo || Boolean(initialCustomerId)} // Linked onboarding/repeat orders must stay with the original customer
                 required
                 style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}
               >
@@ -1096,6 +1128,15 @@ export default function POFormFullScreen({
                 <div>
                   <strong>Đang tạo đơn đặt lại từ {templatePo.poCode}</strong>
                   <span>Hệ thống đã lấy lại mã hàng, quy cách và mẫu thiết kế. Đơn giá hiện hành, số lượng, ngày giao và người phụ trách phải được xác nhận lại trước khi lưu.</span>
+                </div>
+              </div>
+            )}
+            {isPreparedAssignment && (
+              <div className="prepared-order-banner" role="status">
+                <CheckSquare size={18} />
+                <div>
+                  <strong>{t('Thông tin đơn đầu tiên đã được chuẩn bị từ CRM')}</strong>
+                  <span>{t('Mặt hàng, giá, ngày giao và tệp liên quan đã được điền sẵn. Hãy bổ sung phân công phòng ban rồi lưu để phát hành PO.')}</span>
                 </div>
               </div>
             )}
@@ -1491,7 +1532,8 @@ export default function POFormFullScreen({
               borderRadius: '8px',
               backgroundColor: 'white',
               boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              display: isCustomerOnboarding ? 'none' : undefined
             }}>
               <div
                 className="po-assignment-header"

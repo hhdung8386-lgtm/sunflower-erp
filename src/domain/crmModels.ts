@@ -63,6 +63,20 @@ export interface CustomerProductRecord extends UnknownRecord {
   designLayouts: unknown[];
 }
 
+export interface CustomerPendingOrderDraft extends UnknownRecord {
+  customerPoCode: string;
+  expectedDeliveryDate: string;
+  notes: string;
+  items: UnknownRecord[];
+  links: UnknownRecord;
+  totalAmount: number;
+  discountAmount: number;
+  netAmount: number;
+  preparedAt: string;
+  preparedById: string;
+  preparedBy: string;
+}
+
 export interface CustomerRecord extends UnknownRecord {
   id: string;
   schemaVersion: number;
@@ -92,6 +106,7 @@ export interface CustomerRecord extends UnknownRecord {
   documents: CustomerDocumentRecord[];
   files: CustomerFileRecord[];
   contracts: unknown[];
+  pendingOrderDraft: CustomerPendingOrderDraft | null;
   deleted: boolean;
   deleteRequested: boolean;
   deleteRequestedAt: string;
@@ -288,6 +303,25 @@ const normalizeCustomerFile = (value: unknown, index = 0): CustomerFileRecord =>
   };
 };
 
+const normalizePendingOrderDraft = (value: unknown): CustomerPendingOrderDraft | null => {
+  if (!value || typeof value !== 'object') return null;
+  const source = asRecord(value);
+  return {
+    ...source,
+    customerPoCode: asText(source.customerPoCode),
+    expectedDeliveryDate: asText(source.expectedDeliveryDate),
+    notes: asText(source.notes),
+    items: asArray(source.items).map(asRecord),
+    links: asRecord(source.links),
+    totalAmount: Math.max(0, asNumber(source.totalAmount)),
+    discountAmount: Math.max(0, asNumber(source.discountAmount)),
+    netAmount: Math.max(0, asNumber(source.netAmount)),
+    preparedAt: asText(source.preparedAt),
+    preparedById: asText(source.preparedById),
+    preparedBy: asText(source.preparedBy)
+  };
+};
+
 export const normalizeCustomerProduct = (value: unknown, index = 0): CustomerProductRecord => {
   const source = asRecord(value);
   const specifications = asRecord(source.specifications);
@@ -395,6 +429,7 @@ export const normalizeCustomerRecord = (value: unknown): CustomerRecord => {
     documents,
     files: asArray(source.files).map(normalizeCustomerFile),
     contracts: asArray(source.contracts),
+    pendingOrderDraft: normalizePendingOrderDraft(source.pendingOrderDraft),
     deleted: source.deleted === true,
     deleteRequested: source.deleteRequested === true,
     deleteRequestedAt: asText(source.deleteRequestedAt),

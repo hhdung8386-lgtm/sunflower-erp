@@ -2204,6 +2204,160 @@ tr:hover td {
   overflow: hidden;
 }
 
+/* Customer onboarding shares the PO full-screen workspace so Sales can capture
+   the customer and the first commercial order without duplicate data entry. */
+.customer-onboarding-screen {
+  background: #f4f7fb;
+}
+
+.customer-onboarding-header {
+  min-height: 96px;
+  padding: 18px 28px;
+  color: #fff;
+  background: linear-gradient(135deg, #10265f 0%, #193d91 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.customer-onboarding-header h2 {
+  margin: 3px 0 4px;
+  color: #fff;
+  font-size: 22px;
+  letter-spacing: 0.01em;
+}
+
+.customer-onboarding-header p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+}
+
+.customer-onboarding-header .btn-outline {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.customer-onboarding-step {
+  color: #cbd9ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.customer-onboarding-form {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-onboarding-body {
+  width: min(1180px, calc(100% - 40px));
+  margin: 20px auto;
+  padding: 24px 28px;
+  overflow-y: auto;
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 43, 90, 0.06);
+}
+
+.customer-onboarding-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding-bottom: 12px;
+  color: var(--color-primary);
+  font-size: 16px;
+  font-weight: 800;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.customer-onboarding-footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 14px 28px;
+  background: #fff;
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -6px 18px rgba(20, 43, 90, 0.05);
+}
+
+.customer-onboarding-footer-note {
+  margin-right: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.prepared-order-banner {
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #173b7a;
+  background: #eef5ff;
+  border: 1px solid #bfd5fb;
+  border-left: 4px solid #2456b3;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.prepared-order-banner strong,
+.prepared-order-banner span {
+  display: block;
+}
+
+.prepared-order-banner span {
+  margin-top: 2px;
+  color: #49658d;
+}
+
+.prepared-order-badge {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 7px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .customer-onboarding-header {
+    min-height: auto;
+    padding: 14px 16px;
+    align-items: flex-start;
+  }
+
+  .customer-onboarding-header h2 {
+    font-size: 18px;
+  }
+
+  .customer-onboarding-header p,
+  .customer-onboarding-footer-note {
+    display: none;
+  }
+
+  .customer-onboarding-body {
+    width: calc(100% - 20px);
+    margin: 10px auto;
+    padding: 18px 14px;
+  }
+
+  .customer-onboarding-footer {
+    padding: 10px 12px;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

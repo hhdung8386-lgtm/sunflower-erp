@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { authService, dbService, UserProfile } from './services/firebaseService';
 import { Dashboard } from './views/Dashboard';
 import { Crm } from './views/Crm';
@@ -121,12 +121,24 @@ function App() {
   const [selectedPoId, setSelectedPoId] = useState<string>('');
   const [selectedLsxId, setSelectedLsxId] = useState<string>('');
   const [repeatSourcePoId, setRepeatSourcePoId] = useState<string>('');
+  const [preparedCustomerId, setPreparedCustomerId] = useState<string>('');
 
   const handleRepeatOrderRequest = (poId: string) => {
     setSelectedPoId('');
     setRepeatSourcePoId(poId);
     setActivePage('sales');
   };
+
+  const handlePreparedOrderCreated = (customerId: string) => {
+    setSelectedPoId('');
+    setRepeatSourcePoId('');
+    setPreparedCustomerId(customerId);
+    setActivePage('sales');
+  };
+
+  const handlePreparedOrderOpened = useCallback(() => {
+    setPreparedCustomerId('');
+  }, []);
 
   // Login form states
   const [username, setUsername] = useState(() => {
@@ -357,7 +369,7 @@ function App() {
     switch (activePage) {
       case 'crm':
         if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} />;
+        return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} onPreparedOrderCreated={handlePreparedOrderCreated} />;
       case 'leads':
         if (!isPageAllowed('leads')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
@@ -378,7 +390,9 @@ function App() {
             onRefresh={refreshData} 
             initialSelectedPoId={selectedPoId}
             initialRepeatPoId={repeatSourcePoId}
+            initialPreparedCustomerId={preparedCustomerId}
             onRepeatOrderOpened={() => setRepeatSourcePoId('')}
+            onPreparedOrderOpened={handlePreparedOrderOpened}
             messages={messages}
             users={users}
           />
