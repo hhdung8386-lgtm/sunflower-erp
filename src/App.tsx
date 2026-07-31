@@ -15,10 +15,18 @@ import { UserManagement } from './views/UserManagement';
 import { ChatPage } from './views/ChatPage';
 import { useLanguage } from './context/LanguageContext';
 import { RecycleBin } from './views/RecycleBin';
-import { isPOInQueue } from './domain/poWorkflow';
 import { DesignRequest } from './domain/designWorkflow';
 import { sortNewestFirst } from './domain/recordOrdering';
 import type { CustomerRecord, LeadRecord } from './domain/crmModels';
+import {
+  isUnreadNotificationForUser,
+  type NotificationModule,
+  type UserNotificationRecord
+} from './domain/notificationModels';
+import {
+  markModuleNotificationsRead,
+  synchronizeWorkflowNotifications
+} from './services/notificationService';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -39,7 +47,19 @@ import {
 } from 'lucide-react';
 
 const logo = '/sunflower-logo-horizontal-transparent.png';
-const APP_REFERENCE_TIME = Date.now();
+
+const PAGE_NOTIFICATION_MODULES: Partial<Record<string, NotificationModule>> = {
+  dashboard: 'dashboard',
+  crm: 'crm',
+  leads: 'leads',
+  sales: 'sales',
+  design: 'design',
+  purchase: 'purchase',
+  inventory: 'inventory',
+  production: 'production',
+  delivery: 'delivery',
+  accounting: 'accounting'
+};
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -93,6 +113,8 @@ function App() {
   const [inventory, setInventory] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [designRequests, setDesignRequests] = useState<DesignRequest[]>([]);
+  const [notifications, setNotifications] = useState<UserNotificationRecord[]>([]);
+  const [notificationsLoadedForUserId, setNotificationsLoadedForUserId] = useState('');
 
   // Navigation state links
   const [selectedPoId, setSelectedPoId] = useState<string>('');
@@ -159,6 +181,12 @@ function App() {
         request => [request.createdAt]
       ));
     });
+    const unsubNotifications = dbService.subscribeCollection('notifications', (data) => {
+      setNotifications(sortNewestFirst(
+        data as UserNotificationRecord[],
+        notification => [notification.createdAt]
+      ));
+    });
 
     return () => {
       unsubUsers();
@@ -173,8 +201,80 @@ function App() {
       unsubMessages();
       unsubChannels();
       unsubDesignRequests();
+      unsubNotifications();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    void dbService.getCollection('notifications').then(data => {
+      if (!active) return;
+      setNotifications(sortNewestFirst(
+        data as UserNotificationRecord[],
+        notification => [notification.createdAt]
+      ));
+      setNotificationsLoadedForUserId(user.uid);
+    }).catch(error => {
+      console.error('Unable to load notifications:', error);
+      if (active) setNotificationsLoadedForUserId(user.uid);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (
+      !user
+      || users.length === 0
+      || notificationsLoadedForUserId !== user.uid
+    ) return;
+    const syncTimer = window.setTimeout(() => {
+      void synchronizeWorkflowNotifications({
+        users,
+        customers,
+        leads,
+        pos,
+        designRequests,
+        inventory,
+        productionCommands,
+        deliveries,
+        invoices,
+        notifications
+      }).catch(error => {
+        console.error('Unable to synchronize workflow notifications:', error);
+      });
+    }, 80);
+    return () => window.clearTimeout(syncTimer);
+  }, [
+    user,
+    notificationsLoadedForUserId,
+    users,
+    customers,
+    leads,
+    pos,
+    designRequests,
+    inventory,
+    productionCommands,
+    deliveries,
+    invoices,
+    notifications
+  ]);
+
+  useEffect(() => {
+    if (!user) return;
+    const module = PAGE_NOTIFICATION_MODULES[activePage];
+    if (!module) return;
+    const hasUnread = notifications.some(notification => (
+      notification.module === module
+      && isUnreadNotificationForUser(notification, user.uid)
+    ));
+    if (!hasUnread) return;
+    void markModuleNotificationsRead(notifications, user.uid, module).catch(error => {
+      console.error(`Unable to mark ${module} notifications as read:`, error);
+    });
+  }, [activePage, notifications, user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,7 +324,7 @@ function App() {
     
     let total = 0;
     for (const ch of userChannels) {
-      const lastReadStr = localStorage.getItem(`erp_last_read_ch_${ch.id}`);
+      const lastReadStr = localStorage.getItem(`erp_last_read_ch_${user.uid}_${ch.id}`);
       if (!lastReadStr) {
         total += messages.filter(msg => msg.type === 'channel' && msg.targetId === ch.id && msg.senderId !== user.uid).length;
       } else {
@@ -237,84 +337,12 @@ function App() {
     return total;
   };
 
-  const getDashboardAlertCount = () => {
+  const getUnreadNotificationCount = (module: NotificationModule) => {
     if (!user) return 0;
-    if (user.role !== 'admin') return 0;
-    return productionCommands.filter(cmd => cmd.status === 'transfer_pending' && !cmd.deleted).length;
-  };
-
-  const getCrmAlertCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'sale') return 0;
-    const thirtyDaysAgo = APP_REFERENCE_TIME - 30 * 24 * 60 * 60 * 1000;
-    return customers.filter(c => {
-      if (!c.lastOrderAt) return false;
-      return new Date(c.lastOrderAt).getTime() < thirtyDaysAgo;
-    }).length;
-  };
-
-  const getSalesAlertCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'sale') return 0;
-    return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
-  };
-
-  const getLeadAlertCount = () => {
-    if (!user || (user.role !== 'admin' && user.role !== 'sale')) return 0;
-    return leads.filter(lead => {
-      if (user.role === 'sale' && lead.assignedSaleId !== user.uid) return false;
-      if (!lead.nextFollowUpAt || ['won', 'lost', 'converted'].includes(lead.stage)) return false;
-      const followUpTime = new Date(lead.nextFollowUpAt).getTime();
-      return Number.isFinite(followUpTime) && followUpTime < APP_REFERENCE_TIME;
-    }).length;
-  };
-
-  const getDesignAlertCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'designer') return 0;
-    if (designRequests.length > 0) {
-      return designRequests.filter(request => (
-        !request.archived
-        && request.workStatus !== 'completed'
-        && (user.role !== 'designer' || !request.assignedDesignerId || request.assignedDesignerId === user.uid)
-      )).length;
-    }
-    return pos.filter(p => isPOInQueue(p, 'waiting_design') && !p.deleted).length;
-  };
-
-  const getLowStockMaterialsCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'purchaser') return 0;
-    return inventory.filter(item => item.qtyInStock <= item.minQtyAlert).length;
-  };
-
-  const getProductionAlertCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'producer') return 0;
-    return productionCommands.filter(cmd => 
-      !cmd.deleted && 
-      (cmd.status === 'producing' || cmd.status === 'transfer_pending') &&
-      (user.role === 'admin' || cmd.operatorId === user.uid)
-    ).length;
-  };
-
-  const getUpcomingDeliveriesCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin') return 0;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const endOfWeek = today + 7 * 24 * 60 * 60 * 1000;
-    return deliveries.filter(d => {
-      if (d.status === 'completed') return false;
-      const dDate = new Date(d.deliveryDate).getTime();
-      return dDate >= today && dDate <= endOfWeek;
-    }).length;
-  };
-
-  const getUnpaidInvoicesCount = () => {
-    if (!user) return 0;
-    if (user.role !== 'admin' && user.role !== 'accountant') return 0;
-    return invoices.filter(i => i.status === 'unpaid').length;
+    return notifications.filter(notification => (
+      notification.module === module
+      && isUnreadNotificationForUser(notification, user.uid)
+    )).length;
   };
 
   const refreshData = () => {
@@ -612,7 +640,7 @@ function App() {
                 <LayoutDashboard size={16} />
                 <span className="sidebar-item-label">{t('Tổng Quan Dashboards')}</span>
               </div>
-              {getDashboardAlertCount() > 0 && <span className="sidebar-badge">{getDashboardAlertCount()}</span>}
+              {getUnreadNotificationCount('dashboard') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('dashboard')}</span>}
             </button>
           )}
 
@@ -640,7 +668,7 @@ function App() {
                 <Users size={16} />
                 <span className="sidebar-item-label">{t('Khách Hàng (CRM)')}</span>
               </div>
-              {getCrmAlertCount() > 0 && <span className="sidebar-badge">{getCrmAlertCount()}</span>}
+              {getUnreadNotificationCount('crm') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('crm')}</span>}
             </button>
           )}
 
@@ -654,7 +682,7 @@ function App() {
                 <Target size={16} />
                 <span className="sidebar-item-label">{t('Khách Hàng Tiềm Năng')}</span>
               </div>
-              {getLeadAlertCount() > 0 && <span className="sidebar-badge">{getLeadAlertCount()}</span>}
+              {getUnreadNotificationCount('leads') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('leads')}</span>}
             </button>
           )}
 
@@ -668,7 +696,7 @@ function App() {
                 <FileText size={16} />
                 <span className="sidebar-item-label">{t('Tiếp Nhận Đơn (Sale PO)')}</span>
               </div>
-              {getSalesAlertCount() > 0 && <span className="sidebar-badge">{getSalesAlertCount()}</span>}
+              {getUnreadNotificationCount('sales') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('sales')}</span>}
             </button>
           )}
 
@@ -683,7 +711,7 @@ function App() {
                   <Palette size={16} />
                   <span className="sidebar-item-label">{t('Yêu Cầu Thiết Kế')}</span>
                 </div>
-                {getDesignAlertCount() > 0 && <span className="sidebar-badge">{getDesignAlertCount()}</span>}
+                {getUnreadNotificationCount('design') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('design')}</span>}
               </button>
               <button
                 className={`sidebar-item ${activePage === 'design_library' ? 'active' : ''}`}
@@ -708,7 +736,7 @@ function App() {
                 <ShoppingBag size={16} />
                 <span className="sidebar-item-label">{t('Mua Hàng & NCC')}</span>
               </div>
-              {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
+              {getUnreadNotificationCount('purchase') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('purchase')}</span>}
             </button>
           )}
 
@@ -722,7 +750,7 @@ function App() {
                 <Archive size={16} />
                 <span className="sidebar-item-label">{t('Kho Nguyên Vật Tư')}</span>
               </div>
-              {getLowStockMaterialsCount() > 0 && <span className="sidebar-badge">{getLowStockMaterialsCount()}</span>}
+              {getUnreadNotificationCount('inventory') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('inventory')}</span>}
             </button>
           )}
 
@@ -736,7 +764,7 @@ function App() {
                 <Settings size={16} />
                 <span className="sidebar-item-label">{t('Lệnh Sản Xuất (LSX)')}</span>
               </div>
-              {getProductionAlertCount() > 0 && <span className="sidebar-badge">{getProductionAlertCount()}</span>}
+              {getUnreadNotificationCount('production') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('production')}</span>}
             </button>
           )}
 
@@ -750,7 +778,7 @@ function App() {
                 <Truck size={16} />
                 <span className="sidebar-item-label">{t('Kế Hoạch Giao Hàng')}</span>
               </div>
-              {getUpcomingDeliveriesCount() > 0 && <span className="sidebar-badge">{getUpcomingDeliveriesCount()}</span>}
+              {getUnreadNotificationCount('delivery') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('delivery')}</span>}
             </button>
           )}
 
@@ -764,7 +792,7 @@ function App() {
                 <DollarSign size={16} />
                 <span className="sidebar-item-label">{t('Kế Toán & Lãi Gộp')}</span>
               </div>
-              {getUnpaidInvoicesCount() > 0 && <span className="sidebar-badge">{getUnpaidInvoicesCount()}</span>}
+              {getUnreadNotificationCount('accounting') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('accounting')}</span>}
             </button>
           )}
 

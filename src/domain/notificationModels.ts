@@ -1,7 +1,9 @@
 export const NOTIFICATION_SCHEMA_VERSION = 1;
 
 export type NotificationModule =
+  | 'dashboard'
   | 'crm'
+  | 'leads'
   | 'sales'
   | 'design'
   | 'purchase'
@@ -26,6 +28,7 @@ export interface UserNotificationRecord extends UnknownRecord {
   message: string;
   createdAt: string;
   createdById: string;
+  source: 'workflow' | 'manual';
   readAt: string | null;
 }
 
@@ -45,7 +48,9 @@ const asArray = (value: unknown): unknown[] => (
 
 const normalizeModule = (value: unknown): NotificationModule => {
   const modules: NotificationModule[] = [
+    'dashboard',
     'crm',
+    'leads',
     'sales',
     'design',
     'purchase',
@@ -80,6 +85,7 @@ export const normalizeNotificationRecord = (value: unknown): UserNotificationRec
     message: asText(source.message),
     createdAt: asText(source.createdAt),
     createdById: asText(source.createdById),
+    source: source.source === 'manual' ? 'manual' : 'workflow',
     readAt: source.readAt ? asText(source.readAt) : null
   };
 };
@@ -93,4 +99,11 @@ export const isUnreadNotificationForUser = (
   userId: string
 ): boolean => (
   notification.recipientId === userId && notification.readAt === null
+);
+
+export const getNotificationDocumentId = (
+  recipientId: string,
+  eventKey: string
+): string => (
+  `notification-${encodeURIComponent(`${recipientId}|${eventKey}`)}`
 );

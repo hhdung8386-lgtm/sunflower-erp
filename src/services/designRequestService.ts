@@ -131,10 +131,14 @@ const synchronizePORequests = async (
         ? getHistoricalDesignCompletionAt(po, existing.completedAt || new Date().toISOString())
         : existing.completedAt;
       const shouldCorrectCompletedAt = historicalCompletedAt !== existing.completedAt;
-      if (hasFieldChanges(existing, requestFields) || shouldCorrectCompletedAt) {
+      const assignmentChanged = existing.assignedDesignerId !== requestFields.assignedDesignerId;
+      let assignmentUpdatedAt = existing.assignmentUpdatedAt || existing.createdAt;
+      if (hasFieldChanges(existing, requestFields) || shouldCorrectCompletedAt || assignmentChanged) {
         const now = new Date().toISOString();
+        if (assignmentChanged) assignmentUpdatedAt = now;
         await dbService.updateDocument('design_requests', existing.id, {
           ...requestFields,
+          ...(assignmentChanged ? { assignmentUpdatedAt } : {}),
           ...(shouldCorrectCompletedAt ? { completedAt: historicalCompletedAt } : {}),
           updatedBy: actor.displayName || 'Hệ thống',
           history: [
@@ -150,13 +154,18 @@ const synchronizePORequests = async (
           ]
         });
       }
-      syncedRequests.push({ ...existing, ...requestFields });
+      syncedRequests.push({
+        ...existing,
+        ...requestFields,
+        assignmentUpdatedAt
+      });
       continue;
     }
 
     const now = new Date().toISOString();
     const newRequest = {
       ...requestFields,
+      assignmentUpdatedAt: now,
       ...initialStatuses,
       statusNote: '',
       approvalNote: '',

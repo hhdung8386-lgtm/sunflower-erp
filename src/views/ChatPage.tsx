@@ -164,9 +164,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   // Mark active channel as read
   useEffect(() => {
-    localStorage.setItem(`erp_last_read_ch_${activeChannelId}`, new Date().toISOString());
+    localStorage.setItem(`erp_last_read_ch_${currentUser.uid}_${activeChannelId}`, new Date().toISOString());
     scrollToBottom();
-  }, [activeChannelId, messages]);
+  }, [activeChannelId, currentUser.uid, messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -196,7 +196,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     await dbService.addDocument('messages', newMessage);
     setMessageText('');
     setReplyingTo(null);
-    localStorage.setItem(`erp_last_read_ch_${activeChannelId}`, new Date().toISOString());
+    localStorage.setItem(`erp_last_read_ch_${currentUser.uid}_${activeChannelId}`, new Date().toISOString());
     setTimeout(scrollToBottom, 50);
   };
 
@@ -256,8 +256,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   // Get unread count for a channel
   const getUnreadCount = (channelId: string) => {
-    const lastReadStr = localStorage.getItem(`erp_last_read_ch_${channelId}`);
-    if (!lastReadStr) return 0;
+    const lastReadStr = localStorage.getItem(`erp_last_read_ch_${currentUser.uid}_${channelId}`);
+    if (!lastReadStr) {
+      return messages.filter(message => (
+        message.type === 'channel'
+        && message.targetId === channelId
+        && message.senderId !== currentUser.uid
+      )).length;
+    }
     const lastReadTime = new Date(lastReadStr).getTime();
 
     return messages.filter(

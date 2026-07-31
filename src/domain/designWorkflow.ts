@@ -89,6 +89,7 @@ export interface DesignRequest {
   designBrief: string;
   referenceImages: string[];
   assignedDesignerId: string;
+  assignmentUpdatedAt?: string;
   dueDate: string;
   priority: string;
   workStatus: DesignWorkStatus;
