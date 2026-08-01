@@ -7,7 +7,6 @@ export type CustomerContactRole = 'primary' | 'procurement' | 'warehouse' | 'acc
 export type CustomerDocumentCategory = 'contract' | 'acceptance' | 'qc' | 'qa' | 'artwork' | 'other';
 export type LeadStage = 'new' | 'contacted' | 'quoted' | 'negotiating' | 'won' | 'lost' | 'converted';
 export type LeadCompanySize = '' | 'large' | 'medium' | 'small';
-export type ProspectStatus = 'new' | 'researching' | 'ready' | 'converted' | 'archived';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -176,29 +175,6 @@ export interface LeadFileRecord extends UnknownRecord {
   data: string;
 }
 
-export interface ProspectRecord extends UnknownRecord {
-  id: string;
-  schemaVersion: number;
-  rawText: string;
-  companyName: string;
-  contactPerson: string;
-  phone: string;
-  email: string;
-  province: string;
-  source: string;
-  tags: string[];
-  status: ProspectStatus;
-  assignedSaleId: string;
-  assignedSaleName: string;
-  convertedLeadId: string;
-  convertedAt: string;
-  createdAt: string;
-  createdById: string;
-  createdByName: string;
-  updatedAt: string;
-  updatedBy: string;
-}
-
 export interface LeadRecord extends UnknownRecord {
   id: string;
   schemaVersion: number;
@@ -222,7 +198,6 @@ export interface LeadRecord extends UnknownRecord {
   nextFollowUpAt: string;
   convertedCustomerId: string;
   convertedAt: string;
-  sourceProspectId: string;
   activities: LeadActivityRecord[];
   files: LeadFileRecord[];
   createdAt: string;
@@ -285,11 +260,6 @@ const normalizeLeadStage = (value: unknown): LeadStage => {
 const normalizeLeadCompanySize = (value: unknown): LeadCompanySize => {
   const sizes: LeadCompanySize[] = ['', 'large', 'medium', 'small'];
   return sizes.includes(value as LeadCompanySize) ? value as LeadCompanySize : '';
-};
-
-const normalizeProspectStatus = (value: unknown): ProspectStatus => {
-  const statuses: ProspectStatus[] = ['new', 'researching', 'ready', 'converted', 'archived'];
-  return statuses.includes(value as ProspectStatus) ? value as ProspectStatus : 'new';
 };
 
 export const normalizeCustomerContact = (value: unknown, index = 0): CustomerContactRecord => {
@@ -528,7 +498,6 @@ export const normalizeLeadRecord = (value: unknown): LeadRecord => {
     nextFollowUpAt: reminderTime,
     convertedCustomerId: asText(source.convertedCustomerId),
     convertedAt: asText(source.convertedAt),
-    sourceProspectId: asText(source.sourceProspectId),
     activities: asArray(source.activities).map(normalizeLeadActivity),
     files: asArray(source.files).map(normalizeLeadFile),
     createdAt: asText(source.createdAt),
@@ -540,35 +509,4 @@ export const normalizeLeadRecord = (value: unknown): LeadRecord => {
 
 export const normalizeLeadRecords = (values: unknown): LeadRecord[] => (
   asArray(values).map(normalizeLeadRecord)
-);
-
-export const normalizeProspectRecord = (value: unknown): ProspectRecord => {
-  const source = asRecord(value);
-  return {
-    ...source,
-    id: asText(source.id),
-    schemaVersion: CRM_SCHEMA_VERSION,
-    rawText: asText(source.rawText ?? source.note),
-    companyName: asText(source.companyName ?? source.name),
-    contactPerson: asText(source.contactPerson),
-    phone: asText(source.phone),
-    email: asText(source.email),
-    province: asText(source.province),
-    source: asText(source.source),
-    tags: asArray(source.tags).map(tag => asText(tag)).filter(Boolean),
-    status: normalizeProspectStatus(source.status),
-    assignedSaleId: asText(source.assignedSaleId),
-    assignedSaleName: asText(source.assignedSaleName),
-    convertedLeadId: asText(source.convertedLeadId),
-    convertedAt: asText(source.convertedAt),
-    createdAt: asText(source.createdAt),
-    createdById: asText(source.createdById),
-    createdByName: asText(source.createdByName),
-    updatedAt: asText(source.updatedAt),
-    updatedBy: asText(source.updatedBy)
-  };
-};
-
-export const normalizeProspectRecords = (values: unknown): ProspectRecord[] => (
-  asArray(values).map(normalizeProspectRecord)
 );

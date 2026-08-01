@@ -646,7 +646,7 @@ function App() {
         </div>
         <nav className="sidebar-menu">
           {isPageAllowed('dashboard') && (
-            <button 
+            <button
               className={`sidebar-item ${activePage === 'dashboard' ? 'active' : ''}`}
               onClick={() => { setActivePage('dashboard'); setIsSidebarOpen(false); }}
               title={t('Tổng Quan Dashboards')}
@@ -673,20 +673,6 @@ function App() {
             </button>
           )}
           
-          {isPageAllowed('crm') && (
-            <button 
-              className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
-              onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
-              title={t('Khách Hàng (CRM)')}
-            >
-              <div className="sidebar-item-content">
-                <Users size={16} />
-                <span className="sidebar-item-label">{t('Khách Hàng (CRM)')}</span>
-              </div>
-              {getUnreadNotificationCount('crm') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('crm')}</span>}
-            </button>
-          )}
-
           {isPageAllowed('leads') && (
             <button
               className={`sidebar-item ${activePage === 'leads' ? 'active' : ''}`}
@@ -698,6 +684,20 @@ function App() {
                 <span className="sidebar-item-label">{t('Khách Hàng Tiềm Năng')}</span>
               </div>
               {getUnreadNotificationCount('leads') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('leads')}</span>}
+            </button>
+          )}
+
+          {isPageAllowed('crm') && (
+            <button
+              className={`sidebar-item ${activePage === 'crm' ? 'active' : ''}`}
+              onClick={() => { setActivePage('crm'); setIsSidebarOpen(false); }}
+              title={t('Khách Hàng (CRM)')}
+            >
+              <div className="sidebar-item-content">
+                <Users size={16} />
+                <span className="sidebar-item-label">{t('Khách Hàng (CRM)')}</span>
+              </div>
+              {getUnreadNotificationCount('crm') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('crm')}</span>}
             </button>
           )}
 
