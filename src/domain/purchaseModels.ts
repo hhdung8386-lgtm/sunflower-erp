@@ -322,7 +322,7 @@ export const buildSupplierRecommendations = (
   ]);
 
   const candidates = suppliers
-    .filter(supplier => !supplier.deleted && supplier.status !== 'blocked')
+    .filter(supplier => !supplier.deleted)
     .map(supplier => {
       const orders = purchaseOrders.filter(order => (
         asText(order.supplierId) === supplier.id && !asBoolean(order.deleted)

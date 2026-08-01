@@ -51,7 +51,6 @@ interface SupplierFormState {
   bankName: string;
   bankAccount: string;
   assignedPurchaserId: string;
-  status: SupplierRecord['status'];
   rating: number;
   note: string;
 }
@@ -71,7 +70,6 @@ const EMPTY_FORM: SupplierFormState = {
   bankName: '',
   bankAccount: '',
   assignedPurchaserId: '',
-  status: 'active',
   rating: 0,
   note: ''
 };
@@ -103,7 +101,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | SupplierRecord['status']>('all');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState('');
@@ -157,9 +154,8 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
     ]);
     const matchesCategory = categoryFilter === 'all' || supplier.categories.includes(categoryFilter);
     const matchesMonth = monthFilter === 'all' || orders.some(order => asText(order.createdAt).startsWith(monthFilter));
-    const matchesStatus = statusFilter === 'all' || supplier.status === statusFilter;
-    return matchesSearch && matchesCategory && matchesMonth && matchesStatus;
-  }), [categoryFilter, getSupplierOrders, monthFilter, searchTerm, statusFilter, suppliers]);
+    return matchesSearch && matchesCategory && matchesMonth;
+  }), [categoryFilter, getSupplierOrders, monthFilter, searchTerm, suppliers]);
 
   const openCreateForm = () => {
     setEditingSupplierId('');
@@ -187,7 +183,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
       bankName: supplier.bankName,
       bankAccount: supplier.bankAccount,
       assignedPurchaserId: supplier.assignedPurchaserId,
-      status: supplier.status,
       rating: supplier.rating,
       note: supplier.note
     });
@@ -233,7 +228,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
       bankAccount: form.bankAccount.trim(),
       assignedPurchaserId: form.assignedPurchaserId,
       assignedPurchaserName: assignedPurchaser?.displayName || '',
-      status: form.status,
+      status: current?.status || 'active',
       rating: Number(form.rating),
       note: form.note.trim(),
       contacts: [primaryContact, ...(current?.contacts || []).filter(contact => !contact.primary)],
@@ -322,7 +317,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
   };
 
   const totalSpend = purchaseOrders.reduce((sum, order) => sum + (order.deleted === true ? 0 : asNumber(order.totalPrice)), 0);
-  const activeSupplierCount = suppliers.filter(supplier => supplier.status === 'active').length;
   const supplierWithOrdersCount = suppliers.filter(supplier => getSupplierOrders(supplier.id).length > 0).length;
 
   if (selectedSupplier) {
@@ -339,7 +333,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
             ← {t('Quay lại danh sách')}
           </button>
           <div>
-            <span className={`supplier-status supplier-status--${selectedSupplier.status}`}>{selectedSupplier.status === 'active' ? t('Đang hợp tác') : t('Ngừng hợp tác')}</span>
             <h1>{selectedSupplier.supplierName}</h1>
             <p>{selectedSupplier.supplierCode || selectedSupplier.id} · {selectedSupplier.categories.join(', ') || t('Chưa phân loại')}</p>
           </div>
@@ -399,7 +392,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
           </div>
           <div className="table-container">
             <table className="purchase-table">
-              <thead><tr><th>{t('Mã đơn mua')}</th><th>{t('PO khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Giá trị')}</th><th>{t('Ngày đặt')}</th><th>{t('Trạng thái')}</th></tr></thead>
+              <thead><tr><th>{t('Mã đơn mua')}</th><th>{t('PO khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Giá trị')}</th><th>{t('Ngày đặt')}</th></tr></thead>
               <tbody>
                 {visibleOrders.map(order => <tr key={asText(order.id)}>
                   <td><strong>{asText(order.purCode)}</strong></td>
@@ -407,9 +400,8 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
                   <td>{asArray(order.items).map(item => asText(item.materialName ?? item.productName)).filter(Boolean).join(', ') || '—'}</td>
                   <td>{asNumber(order.totalPrice).toLocaleString('vi-VN')} đ</td>
                   <td>{formatDate(asText(order.createdAt))}</td>
-                  <td>{asText(order.status)}</td>
                 </tr>)}
-                {visibleOrders.length === 0 && <tr><td colSpan={6} className="purchase-empty">{t('Chưa có giao dịch trong khoảng thời gian này.')}</td></tr>}
+                {visibleOrders.length === 0 && <tr><td colSpan={5} className="purchase-empty">{t('Chưa có giao dịch trong khoảng thời gian này.')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -464,7 +456,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
               <div className="form-group"><label>{t('Ngân hàng')}</label><input value={form.bankName} onChange={event => updateForm('bankName', event.target.value)} /></div>
               <div className="form-group"><label>{t('Số tài khoản')}</label><input value={form.bankAccount} onChange={event => updateForm('bankAccount', event.target.value)} /></div>
               <div className="form-group"><label>{t('Mua hàng phụ trách')}</label><select value={form.assignedPurchaserId} onChange={event => updateForm('assignedPurchaserId', event.target.value)}><option value="">{t('Chưa phân công')}</option>{purchasers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
-              <div className="form-group"><label>{t('Trạng thái')}</label><select value={form.status} onChange={event => updateForm('status', event.target.value as SupplierRecord['status'])}><option value="active">{t('Đang hợp tác')}</option><option value="inactive">{t('Ngừng hợp tác')}</option><option value="blocked">{t('Tạm khóa')}</option></select></div>
               <div className="form-group"><label>{t('Đánh giá (0-5)')}</label><input type="number" min="0" max="5" step="0.5" value={form.rating} onChange={event => updateForm('rating', Number(event.target.value))} /></div>
               <div className="form-group supplier-form-wide"><label>{t('Ghi chú nội bộ')}</label><textarea rows={3} value={form.note} onChange={event => updateForm('note', event.target.value)} /></div>
             </div>
@@ -484,7 +475,6 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
 
       <div className="supplier-kpi-grid">
         <div><Building2 size={18} /><strong>{suppliers.length}</strong><span>{t('Tổng NCC')}</span></div>
-        <div><Star size={18} /><strong>{activeSupplierCount}</strong><span>{t('Đang hợp tác')}</span></div>
         <div><ReceiptText size={18} /><strong>{supplierWithOrdersCount}</strong><span>{t('Đã phát sinh đơn')}</span></div>
         <div><FileText size={18} /><strong>{totalSpend.toLocaleString('vi-VN')} đ</strong><span>{t('Tổng giá trị mua')}</span></div>
       </div>
@@ -493,13 +483,12 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
         <div className="purchase-search"><Search size={16} /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm NCC, MST, liên hệ, mặt hàng, mã PO hoặc đơn mua...')} /></div>
         <select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="all">{t('Tất cả nhóm hàng')}</option>{categories.map(category => <option key={category}>{category}</option>)}</select>
         <select value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">{t('Tất cả tháng')}</option>{months.map(month => <option key={month}>{month}</option>)}</select>
-        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}><option value="all">{t('Tất cả trạng thái')}</option><option value="active">{t('Đang hợp tác')}</option><option value="inactive">{t('Ngừng hợp tác')}</option><option value="blocked">{t('Tạm khóa')}</option></select>
       </section>
 
       <section className="purchase-panel">
         <div className="table-container">
           <table className="supplier-table">
-            <thead><tr><th>{t('Nhà cung cấp')}</th><th>{t('Liên hệ')}</th><th>{t('Nhóm hàng')}</th><th>{t('Số đơn')}</th><th>{t('Tổng mua')}</th><th>{t('Lần mua gần nhất')}</th><th>{t('Công nợ')}</th><th>{t('Đánh giá')}</th><th>{t('Trạng thái')}</th></tr></thead>
+            <thead><tr><th>{t('Nhà cung cấp')}</th><th>{t('Liên hệ')}</th><th>{t('Nhóm hàng')}</th><th>{t('Số đơn')}</th><th>{t('Tổng mua')}</th><th>{t('Lần mua gần nhất')}</th><th>{t('Công nợ')}</th><th>{t('Đánh giá')}</th></tr></thead>
             <tbody>
               {filteredSuppliers.map(supplier => {
                 const orders = getSupplierOrders(supplier.id);
@@ -513,10 +502,9 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
                   <td>{formatDate(asText(orders[0]?.createdAt), 'vi-VN', '—')}</td>
                   <td>{getSupplierDebt(supplier.id).toLocaleString('vi-VN')} đ</td>
                   <td>{supplier.rating ? `${supplier.rating}/5` : '—'}</td>
-                  <td><span className={`supplier-status supplier-status--${supplier.status}`}>{supplier.status === 'active' ? t('Đang hợp tác') : supplier.status === 'blocked' ? t('Tạm khóa') : t('Ngừng hợp tác')}</span></td>
                 </tr>;
               })}
-              {filteredSuppliers.length === 0 && <tr><td colSpan={9} className="purchase-empty">{t('Không tìm thấy nhà cung cấp phù hợp.')}</td></tr>}
+              {filteredSuppliers.length === 0 && <tr><td colSpan={8} className="purchase-empty">{t('Không tìm thấy nhà cung cấp phù hợp.')}</td></tr>}
             </tbody>
           </table>
         </div>

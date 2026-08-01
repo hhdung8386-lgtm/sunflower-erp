@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle,
-  CalendarClock,
-  ClipboardList,
-  PackageCheck,
   Search,
-  ShoppingBag,
   Sparkles,
   Truck,
   X
@@ -14,7 +9,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { formatDate } from '../domain/dateFormatting';
 import {
   buildSupplierRecommendations,
-  getProcurementStatusLabel,
   getSourcingTypeLabel,
   normalizeSupplierRecords,
   type ProcurementRequestRecord,
@@ -68,7 +62,6 @@ export const Purchase: React.FC<PurchaseProps> = ({
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
   const [invoices, setInvoices] = useState<UnknownRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | ProcurementStatus>('active');
   const [sourcingFilter, setSourcingFilter] = useState<'all' | SourcingType>('all');
   const [monthFilter, setMonthFilter] = useState('all');
   const [selectedRequestId, setSelectedRequestId] = useState('');
@@ -81,7 +74,7 @@ export const Purchase: React.FC<PurchaseProps> = ({
 
   useEffect(() => {
     const unsubscribeSuppliers = dbService.subscribeCollection('suppliers', data => {
-      setSuppliers(normalizeSupplierRecords(data).filter(supplier => !supplier.deleted && supplier.status !== 'blocked'));
+      setSuppliers(normalizeSupplierRecords(data).filter(supplier => !supplier.deleted));
     });
     const unsubscribeInvoices = dbService.subscribeCollection('invoices', data => setInvoices(data));
     return () => {
@@ -109,8 +102,6 @@ export const Purchase: React.FC<PurchaseProps> = ({
   }), [currentUser.role, currentUser.uid, procurementRequests]);
 
   const filteredRequests = useMemo(() => accessibleRequests.filter(request => {
-    const matchesStatus = statusFilter === 'all'
-      || (statusFilter === 'active' ? ACTIVE_STATUSES.includes(request.status) : request.status === statusFilter);
     const matchesSourcing = sourcingFilter === 'all' || request.sourcingType === sourcingFilter;
     const matchesMonth = monthFilter === 'all' || request.createdAt.startsWith(monthFilter);
     const matchesSearch = matchesEveryTerm(searchTerm, [
@@ -123,11 +114,10 @@ export const Purchase: React.FC<PurchaseProps> = ({
       request.size,
       request.selectedSupplierName,
       request.assignedPurchaserName,
-      getSourcingTypeLabel(request.sourcingType),
-      getProcurementStatusLabel(request.status)
+      getSourcingTypeLabel(request.sourcingType)
     ]);
-    return matchesStatus && matchesSourcing && matchesMonth && matchesSearch;
-  }), [accessibleRequests, monthFilter, searchTerm, sourcingFilter, statusFilter]);
+    return ACTIVE_STATUSES.includes(request.status) && matchesSourcing && matchesMonth && matchesSearch;
+  }), [accessibleRequests, monthFilter, searchTerm, sourcingFilter]);
 
   const selectedRequest = accessibleRequests.find(request => request.id === selectedRequestId) || null;
   const recommendations = useMemo(() => selectedRequest
@@ -322,35 +312,14 @@ export const Purchase: React.FC<PurchaseProps> = ({
     onRefresh();
   };
 
-  const activeCount = accessibleRequests.filter(request => ACTIVE_STATUSES.includes(request.status)).length;
-  const unassignedCount = accessibleRequests.filter(request => ACTIVE_STATUSES.includes(request.status) && !request.assignedPurchaserId).length;
-  const orderedCount = accessibleRequests.filter(request => request.status === 'ordered').length;
-  const overdueCount = accessibleRequests.filter(request => (
-    ['ordered', 'partially_received'].includes(request.status)
-    && request.requiredDate
-    && Date.parse(request.requiredDate) < PURCHASE_PAGE_REFERENCE_TIME
-  )).length;
-
   return (
     <div className="purchase-page">
       <div className="page-header">
         <div><h1 className="page-title">{t('MUA HÀNG')}</h1><p className="page-subtitle">{t('Tiếp nhận nhu cầu từ Sale PO, chọn phương án cung ứng, đề xuất nhà cung cấp và theo dõi đơn mua.')}</p></div>
       </div>
 
-      <div className="purchase-kpi-grid">
-        <div><ClipboardList size={18} /><strong>{activeCount}</strong><span>{t('Chờ xử lý')}</span></div>
-        <div><AlertTriangle size={18} /><strong>{unassignedCount}</strong><span>{t('Chưa phân công')}</span></div>
-        <div><ShoppingBag size={18} /><strong>{orderedCount}</strong><span>{t('Đã đặt hàng')}</span></div>
-        <div><CalendarClock size={18} /><strong>{overdueCount}</strong><span>{t('Có nguy cơ trễ')}</span></div>
-        <div><PackageCheck size={18} /><strong>{accessibleRequests.filter(request => request.status === 'received').length}</strong><span>{t('Đã nhận hàng')}</span></div>
-      </div>
-
       <section className="purchase-toolbar">
         <div className="purchase-search"><Search size={16} /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm mã PO, khách hàng, mã hàng, vật liệu hoặc NCC...')} /></div>
-        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}>
-          <option value="active">{t('Đang cần xử lý')}</option><option value="all">{t('Tất cả trạng thái')}</option>
-          {(['new', 'reviewing', 'quoting', 'supplier_selected', 'ordered', 'partially_received', 'received', 'cancelled'] as ProcurementStatus[]).map(status => <option key={status} value={status}>{getProcurementStatusLabel(status)}</option>)}
-        </select>
         <select value={sourcingFilter} onChange={event => setSourcingFilter(event.target.value as typeof sourcingFilter)}><option value="all">{t('Tất cả phương án')}</option>{(['finished_good', 'raw_material', 'subcontract'] as SourcingType[]).map(type => <option key={type} value={type}>{getSourcingTypeLabel(type)}</option>)}</select>
         <select value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">{t('Tất cả tháng')}</option>{months.map(month => <option key={month}>{month}</option>)}</select>
       </section>
@@ -359,10 +328,10 @@ export const Purchase: React.FC<PurchaseProps> = ({
         <div className="panel-heading-row"><h2>{t('Yêu cầu mua hàng từ Sale PO')}</h2><span>{filteredRequests.length} {t('yêu cầu')}</span></div>
         <div className="table-container">
           <table className="purchase-request-table">
-            <thead><tr><th>{t('Yêu cầu / PO')}</th><th>{t('Khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Phương án cung ứng')}</th><th>{t('Số lượng')}</th><th>{t('Ngày cần')}</th><th>{t('Mua hàng phụ trách')}</th><th>{t('NCC')}</th><th>{t('Trạng thái')}</th><th>{t('Thao tác')}</th></tr></thead>
+            <thead><tr><th>{t('Yêu cầu / PO')}</th><th>{t('Khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Phương án cung ứng')}</th><th>{t('Số lượng')}</th><th>{t('Ngày cần')}</th><th>{t('Mua hàng phụ trách')}</th><th>{t('NCC')}</th><th>{t('Thao tác')}</th></tr></thead>
             <tbody>
               {filteredRequests.map(request => <tr key={request.id}>
-                <td><strong>{request.requestCode}</strong><span>{request.poCode}</span></td>
+                <td><strong className="purchase-request-code">{request.requestCode}{request.status === 'new' && <span className="purchase-new-tag"><i />NEW</span>}</strong><span>{request.poCode}</span></td>
                 <td><strong>{request.customerName || '—'}</strong></td>
                 <td><strong>{request.productName}</strong><span>{[request.productCode, request.material, request.size].filter(Boolean).join(' · ')}</span></td>
                 <td><span className={`sourcing-badge sourcing-badge--${request.sourcingType}`}>{getSourcingTypeLabel(request.sourcingType)}</span></td>
@@ -370,14 +339,13 @@ export const Purchase: React.FC<PurchaseProps> = ({
                 <td><span className={request.requiredDate && Date.parse(request.requiredDate) < PURCHASE_PAGE_REFERENCE_TIME && request.status !== 'received' ? 'purchase-date-overdue' : ''}>{formatDate(request.requiredDate, 'vi-VN', '—')}</span></td>
                 <td>{request.assignedPurchaserName || t('Chưa phân công')}</td>
                 <td>{request.selectedSupplierName || '—'}</td>
-                <td><span className={`procurement-status procurement-status--${request.status}`}>{getProcurementStatusLabel(request.status)}</span></td>
                 <td><div className="purchase-row-actions">
                   {request.status === 'new' && <button type="button" className="btn btn-sm btn-outline" onClick={() => handleUpdateRequestStatus(request, 'reviewing')}>{t('Tiếp nhận')}</button>}
                   {ACTIVE_STATUSES.includes(request.status) && <button type="button" className="btn btn-sm btn-primary" onClick={() => openRequest(request)}>{t('Chọn NCC')}</button>}
                   {request.purchaseOrderCode && <span>{request.purchaseOrderCode}</span>}
                 </div></td>
               </tr>)}
-              {filteredRequests.length === 0 && <tr><td colSpan={10} className="purchase-empty">{t('Không có yêu cầu mua hàng phù hợp.')}</td></tr>}
+              {filteredRequests.length === 0 && <tr><td colSpan={9} className="purchase-empty">{t('Không có yêu cầu mua hàng phù hợp.')}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -387,16 +355,15 @@ export const Purchase: React.FC<PurchaseProps> = ({
         <div className="panel-heading-row"><h2>{t('Đơn mua đã phát hành')}</h2><span>{purchaseOrders.filter(order => order.deleted !== true).length} {t('đơn')}</span></div>
         <div className="table-container">
           <table className="purchase-table">
-            <thead><tr><th>{t('Mã đơn mua')}</th><th>{t('Nhà cung cấp')}</th><th>{t('PO khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Giá trị')}</th><th>{t('Ngày nhận dự kiến')}</th><th>{t('Trạng thái')}</th><th>{t('Thao tác')}</th></tr></thead>
+            <thead><tr><th>{t('Mã đơn mua')}</th><th>{t('Nhà cung cấp')}</th><th>{t('PO khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Giá trị')}</th><th>{t('Ngày nhận dự kiến')}</th><th>{t('Thao tác')}</th></tr></thead>
             <tbody>
               {purchaseOrders.filter(order => order.deleted !== true).map(order => <tr key={asText(order.id)}>
                 <td><strong>{asText(order.purCode)}</strong></td><td>{asText(order.supplierName)}</td><td>{asText(order.linkedPoCode) || '—'}</td>
                 <td>{asArray(order.items).map(item => `${asText(item.materialName ?? item.productName)} (${asNumber(item.quantity).toLocaleString('vi-VN')} ${asText(item.unit)})`).join(', ')}</td>
                 <td><strong>{asNumber(order.totalPrice).toLocaleString('vi-VN')} đ</strong></td><td>{formatDate(asText(order.expectedReceiveDate), 'vi-VN', '—')}</td>
-                <td><span className={`procurement-status procurement-status--${asText(order.status)}`}>{asText(order.status) === 'received' ? t('Đã nhận hàng') : t('Đã đặt hàng')}</span></td>
                 <td>{asText(order.status) !== 'received' && <button type="button" className="btn btn-sm btn-outline" onClick={() => handleReceiveOrder(order)}><Truck size={14} /> {t('Xác nhận nhận hàng')}</button>}</td>
               </tr>)}
-              {purchaseOrders.filter(order => order.deleted !== true).length === 0 && <tr><td colSpan={8} className="purchase-empty">{t('Chưa có đơn mua nào.')}</td></tr>}
+              {purchaseOrders.filter(order => order.deleted !== true).length === 0 && <tr><td colSpan={7} className="purchase-empty">{t('Chưa có đơn mua nào.')}</td></tr>}
             </tbody>
           </table>
         </div>
