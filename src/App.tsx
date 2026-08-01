@@ -386,7 +386,7 @@ function App() {
     switch (activePage) {
       case 'crm':
         if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Crm customers={customers} pos={pos} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} onPreparedOrderCreated={handlePreparedOrderCreated} />;
+        return <Crm customers={customers} pos={pos} invoices={invoices} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} onPreparedOrderCreated={handlePreparedOrderCreated} />;
       case 'leads':
         if (!isPageAllowed('leads')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (

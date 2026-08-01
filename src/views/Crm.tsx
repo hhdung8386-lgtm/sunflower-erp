@@ -36,10 +36,15 @@ import {
   AlertCircle,
   Copy,
   ArrowLeft,
+  BarChart3,
   Building2,
-  Tag,
+  CircleDollarSign,
+  ClipboardPlus,
+  Clock3,
+  Search,
+  ShoppingBag,
   Users,
-  ShoppingBag
+  WalletCards
 } from 'lucide-react';
 
 const CUSTOMER_FILE_FOLDERS = [
@@ -63,6 +68,7 @@ const CONTACT_ROLE_LABELS: Record<CustomerContactRole, string> = {
 interface CrmProps {
   customers: CustomerRecord[];
   pos: any[];
+  invoices: any[];
   users: any[];
   currentUser: any;
   onRefresh: () => void;
@@ -118,6 +124,7 @@ const loadSpecsToFields = (productType: string, specifications: any = {}) => {
 export const Crm: React.FC<CrmProps> = ({
   customers,
   pos,
+  invoices,
   users,
   currentUser,
   onRefresh,
@@ -126,11 +133,13 @@ export const Crm: React.FC<CrmProps> = ({
 }) => {
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'needs_care'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'needs_care' | 'no_orders' | 'has_debt' | 'analytics'>('all');
+  const [saleFilter, setSaleFilter] = useState('all');
+  const [rankFilter, setRankFilter] = useState<'all' | CustomerRank>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   
   const [chartMonth, setChartMonth] = useState<string>('all');
-  const [chartYear, setChartYear] = useState<string>('2026');
+  const [chartYear, setChartYear] = useState<string>(() => String(new Date().getFullYear()));
   const [showTop15, setShowTop15] = useState<boolean>(false);
   
   // File Repository states
@@ -1404,32 +1413,74 @@ export const Crm: React.FC<CrmProps> = ({
     return `${(orders.length / diffMonths).toFixed(1)} ${t('đơn/tháng')}`;
   };
 
-  // Filter and search
+  // Customer overview metrics and filters
   const today = new Date();
-  const filteredCustomers = sortNewestFirst(customers.filter(c => {
-    if (c.deleted === true) return false;
-    // Filter by sales rep role: only see assigned customers
-    if (currentUser.role === 'sale' && c.assignedSaleId && c.assignedSaleId !== currentUser.uid) {
-      return false;
-    }
-    const matchesSearch = c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          c.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          c.phone.includes(searchTerm);
-    
+  const accessibleCustomers = customers.filter(customer => (
+    customer.deleted !== true
+    && (currentUser.role !== 'sale' || !customer.assignedSaleId || customer.assignedSaleId === currentUser.uid)
+  ));
+  const accessibleCustomerIds = new Set(accessibleCustomers.map(customer => customer.id));
+
+  const getCustomerOrderValue = (customerId: string) => getCustomerOrders(customerId)
+    .reduce((total, order) => total + Number(order.netAmount || order.totalAmount || 0), 0);
+
+  const getCustomerOutstandingDebt = (customerId: string) => invoices
+    .filter(invoice => invoice.deleted !== true && invoice.type === 'receivable' && invoice.customerId === customerId)
+    .reduce((total, invoice) => total + Math.max(0, Number(invoice.amount || 0) - Number(invoice.paidAmount || 0)), 0);
+
+  const getDaysSinceLastOrder = (customer: CustomerRecord): number | null => {
+    const latestOrder = getCustomerOrders(customer.id)[0];
+    const lastOrderDate = parseValidDate(latestOrder?.orderDate || latestOrder?.createdAt || customer.lastOrderAt);
+    if (!lastOrderDate) return null;
+    return Math.max(0, Math.floor((today.getTime() - lastOrderDate.getTime()) / 86_400_000));
+  };
+
+  const needsCareCustomers = accessibleCustomers.filter(customer => {
+    const daysSinceLastOrder = getDaysSinceLastOrder(customer);
+    return daysSinceLastOrder === null || daysSinceLastOrder > 30;
+  });
+  const customersWithoutOrders = accessibleCustomers.filter(customer => getCustomerOrders(customer.id).length === 0);
+  const customersWithDebt = accessibleCustomers.filter(customer => getCustomerOutstandingDebt(customer.id) > 0);
+  const currentYear = String(today.getFullYear());
+  const yearlyOrderValue = pos
+    .filter(order => {
+      if (order.deleted === true || !accessibleCustomerIds.has(order.customerId)) return false;
+      const orderDate = parseValidDate(order.orderDate || order.createdAt);
+      return orderDate?.getFullYear() === today.getFullYear();
+    })
+    .reduce((total, order) => total + Number(order.netAmount || order.totalAmount || 0), 0);
+  const totalOutstandingDebt = invoices
+    .filter(invoice => invoice.deleted !== true && invoice.type === 'receivable' && accessibleCustomerIds.has(invoice.customerId))
+    .reduce((total, invoice) => total + Math.max(0, Number(invoice.amount || 0) - Number(invoice.paidAmount || 0)), 0);
+
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('vi-VN');
+  const filteredCustomers = sortNewestFirst(accessibleCustomers.filter(customer => {
+    const customerOrders = getCustomerOrders(customer.id);
+    const matchesSearch = !normalizedSearch || [
+      customer.customerCode,
+      customer.companyName,
+      customer.contactPerson,
+      customer.phone,
+      customer.email,
+      customer.taxCode
+    ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(normalizedSearch));
+    const matchesSale = saleFilter === 'all'
+      || (saleFilter === 'unassigned' ? !customer.assignedSaleId : customer.assignedSaleId === saleFilter);
+    const matchesRank = rankFilter === 'all'
+      || (rankFilter === '' ? !customer.customerRank : customer.customerRank === rankFilter);
+    if (!matchesSearch || !matchesSale || !matchesRank) return false;
+
     if (filterType === 'needs_care') {
-      if (!c.lastOrderAt) return matchesSearch;
-      const lastOrderDate = parseValidDate(c.lastOrderAt);
-      if (!lastOrderDate) return matchesSearch;
-      const diffTime = Math.abs(today.getTime() - lastOrderDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return matchesSearch && diffDays > 30; // 30+ days inactive
+      const daysSinceLastOrder = getDaysSinceLastOrder(customer);
+      return daysSinceLastOrder === null || daysSinceLastOrder > 30;
     }
-    return matchesSearch;
+    if (filterType === 'no_orders') return customerOrders.length === 0;
+    if (filterType === 'has_debt') return getCustomerOutstandingDebt(customer.id) > 0;
+    return true;
   }), customer => [customer.createdAt, customer.updatedAt, customer.customerCode]);
 
   // Top 5/15 customers by sales volume with time filters
-  const topCustomerSales = customers
-    .filter(c => !c.deleted)
+  const topCustomerSales = accessibleCustomers
     .map(c => {
       const customerPOs = pos.filter(po => {
         if (po.deleted === true) return false;
@@ -1674,8 +1725,9 @@ export const Crm: React.FC<CrmProps> = ({
           <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary btn-symbol" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>
+          <button className="btn btn-primary crm-add-customer" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>
             <Plus size={18} />
+            <span>{t('Thêm khách hàng')}</span>
           </button>
         )}
       </div>
@@ -1732,183 +1784,109 @@ export const Crm: React.FC<CrmProps> = ({
           <div className="crm-summary-grid">
             <div className="crm-summary-card">
               <Building2 size={19} />
-              <div><strong>{customers.filter(customer => !customer.deleted).length}</strong><span>Khách hàng đang hợp tác</span></div>
+              <div><strong>{accessibleCustomers.length}</strong><span>{t('Khách hàng đang quản lý')}</span><small>{t('Hồ sơ đang hoạt động')}</small></div>
             </div>
-            <div className="crm-summary-card">
-              <Tag size={19} />
-              <div><strong>{customers.filter(customer => !customer.deleted && customer.customerRank).length}</strong><span>Hồ sơ đã xếp hạng</span></div>
+            <div className={`crm-summary-card ${needsCareCustomers.length > 0 ? 'is-warning' : ''}`}>
+              <Clock3 size={19} />
+              <div><strong>{needsCareCustomers.length}</strong><span>{t('Cần chăm sóc')}</span><small>{t('Trên 30 ngày chưa đặt')}</small></div>
             </div>
             <div className="crm-summary-card">
               <ShoppingBag size={19} />
-              <div><strong>{customers.reduce((total, customer) => total + (customer.products || []).filter(product => !product.deleted).length, 0)}</strong><span>Mã hàng tiêu chuẩn</span></div>
+              <div><strong>{yearlyOrderValue.toLocaleString('vi-VN')} đ</strong><span>{t(`Giá trị PO năm ${currentYear}`)}</span><small>{t('Theo đơn hàng đã tạo')}</small></div>
             </div>
-            <div className="crm-summary-card">
-              <Users size={19} />
-              <div><strong>{customers.reduce((total, customer) => total + (customer.contacts || []).length, 0)}</strong><span>Đầu mối liên hệ</span></div>
+            <div className={`crm-summary-card ${totalOutstandingDebt > 0 ? 'is-danger' : ''}`}>
+              <WalletCards size={19} />
+              <div><strong>{totalOutstandingDebt.toLocaleString('vi-VN')} đ</strong><span>{t('Công nợ phải thu')}</span><small>{customersWithDebt.length} {t('khách hàng còn nợ')}</small></div>
             </div>
           </div>
 
-          {/* Top customer chart */}
-          {topCustomerSales.length > 0 && (
-            <div className="card">
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <span className="card-title">
-                  {t('Sản Lượng Đơn Hàng Theo Khách Hàng')} ({showTop15 ? t('Top 15') : t('Top 5')})
-                </span>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <select 
-                    value={chartYear} 
-                    onChange={(e) => setChartYear(e.target.value)}
-                    style={{ padding: '4px 8px', fontSize: '12px', width: '90px' }}
-                  >
-                    <option value="all">{t('Tất cả năm')}</option>
-                    <option value="2026">2026</option>
-                    <option value="2025">2025</option>
-                  </select>
-                  <select 
-                    value={chartMonth} 
-                    onChange={(e) => setChartMonth(e.target.value)}
-                    style={{ padding: '4px 8px', fontSize: '12px', width: '110px' }}
-                  >
-                    <option value="all">{t('Tất cả tháng')}</option>
-                    {Array.from({ length: 12 }, (_, i) => String(i + 1)).map(m => (
-                      <option key={m} value={m}>{t('Tháng')} {m}</option>
-                    ))}
-                  </select>
-                  <button 
-                    type="button"
-                    className="btn btn-sm btn-outline" 
-                    onClick={() => setShowTop15(!showTop15)}
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
-                  >
-                    {showTop15 ? t('Thu gọn (Top 5)') : t('Xem thêm (Top 15)')}
-                  </button>
+          <div className="card crm-command-center">
+            <div className="crm-list-tabs" role="tablist" aria-label={t('Chọn nhóm khách hàng')}>
+              <button type="button" className={`crm-list-tab ${filterType === 'all' ? 'is-active' : ''}`} onClick={() => setFilterType('all')} role="tab" aria-selected={filterType === 'all'}>
+                <Building2 size={15} /><span>{t('Tất cả')}</span><span className="crm-list-tab__count">{accessibleCustomers.length}</span>
+              </button>
+              <button type="button" className={`crm-list-tab ${filterType === 'needs_care' ? 'is-active is-alert' : ''}`} onClick={() => setFilterType('needs_care')} role="tab" aria-selected={filterType === 'needs_care'}>
+                <Clock3 size={15} /><span>{t('Cần chăm sóc')}</span><span className="crm-list-tab__count">{needsCareCustomers.length}</span>
+              </button>
+              <button type="button" className={`crm-list-tab ${filterType === 'no_orders' ? 'is-active' : ''}`} onClick={() => setFilterType('no_orders')} role="tab" aria-selected={filterType === 'no_orders'}>
+                <ClipboardPlus size={15} /><span>{t('Chưa có đơn')}</span><span className="crm-list-tab__count">{customersWithoutOrders.length}</span>
+              </button>
+              <button type="button" className={`crm-list-tab ${filterType === 'has_debt' ? 'is-active' : ''}`} onClick={() => setFilterType('has_debt')} role="tab" aria-selected={filterType === 'has_debt'}>
+                <CircleDollarSign size={15} /><span>{t('Có công nợ')}</span><span className="crm-list-tab__count">{customersWithDebt.length}</span>
+              </button>
+              <button type="button" className={`crm-list-tab ${filterType === 'analytics' ? 'is-active' : ''}`} onClick={() => setFilterType('analytics')} role="tab" aria-selected={filterType === 'analytics'}>
+                <BarChart3 size={15} /><span>{t('Phân tích')}</span>
+              </button>
+            </div>
+
+            {filterType === 'analytics' ? (
+              <div className="crm-analytics-panel">
+                <div className="crm-analytics-header">
+                  <div><strong>{t('Sản lượng đơn hàng theo khách hàng')}</strong><span>{t('So sánh số PO đã phát sinh theo khoảng thời gian.')}</span></div>
+                  <div>
+                    <select value={chartYear} onChange={(event) => setChartYear(event.target.value)}>
+                      <option value="all">{t('Tất cả năm')}</option>
+                      {[currentYear, String(Number(currentYear) - 1)].map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                    <select value={chartMonth} onChange={(event) => setChartMonth(event.target.value)}>
+                      <option value="all">{t('Tất cả tháng')}</option>
+                      {Array.from({ length: 12 }, (_, index) => String(index + 1)).map(month => <option key={month} value={month}>{t('Tháng')} {month}</option>)}
+                    </select>
+                    <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowTop15(!showTop15)}>{showTop15 ? t('Thu gọn Top 5') : t('Xem Top 15')}</button>
+                  </div>
                 </div>
+                {chartData.length > 0 ? <HorizontalBarChart data={chartData} valueSuffix={` ${t('đơn')}`} /> : <div className="crm-empty-state">{t('Chưa có đơn hàng trong khoảng thời gian đã chọn.')}</div>}
               </div>
-              <div style={{ width: '100%', padding: '10px 0' }}>
-                <div style={{ maxWidth: '700px', width: '100%' }}>
-                  <HorizontalBarChart data={chartData} valueSuffix={` ${t('đơn')}`} />
+            ) : (
+              <>
+                <div className="crm-list-toolbar">
+                  <div className="crm-list-search"><Search size={16} /><input type="text" placeholder={t('Tìm công ty, mã KH, liên hệ, SĐT, MST...')} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} /></div>
+                  <select value={saleFilter} onChange={(event) => setSaleFilter(event.target.value)}>
+                    <option value="all">{t('Tất cả Sale')}</option>
+                    <option value="unassigned">{t('Chưa phân công')}</option>
+                    {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
+                  </select>
+                  <select value={rankFilter} onChange={(event) => setRankFilter(event.target.value as 'all' | CustomerRank)}>
+                    <option value="all">{t('Tất cả hạng')}</option>
+                    {(['A', 'B', 'C', 'D'] as CustomerRank[]).map(rank => <option key={rank} value={rank}>{t('Hạng')} {rank}</option>)}
+                    <option value="">{t('Chưa xếp hạng')}</option>
+                  </select>
+                  {(searchTerm || saleFilter !== 'all' || rankFilter !== 'all') && <button type="button" className="btn btn-outline crm-reset-filters" onClick={() => { setSearchTerm(''); setSaleFilter('all'); setRankFilter('all'); }}><X size={14} /> {t('Đặt lại')}</button>}
                 </div>
-              </div>
-            </div>
-          )}
 
-      <div className="card">
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input 
-              type="text" 
-              placeholder={t('Tìm tên công ty, liên hệ, SĐT...')} 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ maxWidth: '300px' }}
-            />
-             <button className="btn btn-outline btn-symbol" onClick={() => setSearchTerm('')} title={t('Xóa Tìm Kiếm')}>
-                <X size={16} />
-             </button>
+                <div className="table-container crm-customer-table-wrap">
+                  <table className="crm-customer-table">
+                    <thead><tr><th>{t('Khách hàng')}</th><th>{t('Phân loại')}</th><th>{t('Sale phụ trách')}</th><th>{t('Kết quả kinh doanh')}</th><th>{t('Công nợ / hạn mức')}</th><th>{t('Chăm sóc gần nhất')}</th><th>{t('Thao tác')}</th></tr></thead>
+                    <tbody>
+                      {filteredCustomers.map(customer => {
+                        const customerOrders = getCustomerOrders(customer.id);
+                        const orderValue = getCustomerOrderValue(customer.id);
+                        const outstandingDebt = getCustomerOutstandingDebt(customer.id);
+                        const daysSinceLastOrder = getDaysSinceLastOrder(customer);
+                        const needsCare = daysSinceLastOrder === null || daysSinceLastOrder > 30;
+                        const lastOrder = customerOrders[0];
+                        const saleName = users.find(user => user.uid === customer.assignedSaleId)?.displayName || t('Chưa phân công');
+                        return <tr key={customer.id} className={needsCare ? 'needs-care' : ''} onClick={() => setSelectedCustomer(customer)}>
+                          <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span></div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
+                          <td><div className="crm-customer-segment"><span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>{customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}</span><small>{customer.discountType === 'amount' ? `${t('CK')} ${Number(customer.discountAmount || 0).toLocaleString('vi-VN')} đ` : `${t('Chiết khấu')} ${Number(customer.discountRate || 0)}%`}</small></div></td>
+                          <td><strong className={customer.assignedSaleId ? '' : 'crm-text-muted'}>{saleName}</strong></td>
+                          <td><div className="crm-business-result"><strong>{customerOrders.length} {t('đơn')}</strong><span>{orderValue.toLocaleString('vi-VN')} đ</span></div></td>
+                          <td><div className="crm-debt-cell"><strong className={outstandingDebt > 0 ? 'has-debt' : ''}>{outstandingDebt.toLocaleString('vi-VN')} đ</strong><span>{t('Hạn mức')} {Number(customer.debtLimit || 0).toLocaleString('vi-VN')} đ</span></div></td>
+                          <td><div className={`crm-care-cell ${needsCare ? 'is-overdue' : ''}`}><strong>{daysSinceLastOrder === null ? t('Chưa có đơn') : daysSinceLastOrder === 0 ? t('Hôm nay') : `${daysSinceLastOrder} ${t('ngày trước')}`}</strong><span>{lastOrder ? formatDate(lastOrder.orderDate || lastOrder.createdAt, 'vi-VN', '') : t('Cần tạo đơn đầu tiên')}</span></div></td>
+                          <td><div className="crm-row-actions" onClick={(event) => event.stopPropagation()}>
+                            {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-primary" onClick={() => onPreparedOrderCreated?.(customer.id)}><ClipboardPlus size={13} /> {t('Tạo PO')}</button>}
+                            <button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(customer)}>{t('Chi tiết')}</button>
+                            {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(customer)} title={t('Sửa')}><Pencil size={14} /></button>}
+                          </div></td>
+                        </tr>;
+                      })}
+                      {filteredCustomers.length === 0 && <tr><td colSpan={7} className="crm-empty-state">{t('Không tìm thấy khách hàng phù hợp với bộ lọc.')}</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
-          <div className="tab-container" style={{ borderBottom: 'none' }}>
-            <button 
-              className={`tab-btn ${filterType === 'all' ? 'active' : ''}`}
-              onClick={() => setFilterType('all')}
-            >
-              {t('Tất Cả Khách Hàng')} ({customers.length})
-            </button>
-            <button 
-              className={`tab-btn ${filterType === 'needs_care' ? 'active' : ''}`}
-              onClick={() => setFilterType('needs_care')}
-              style={{ color: 'var(--color-danger)' }}
-            >
-              {t('Cần Chăm Sóc (>30 ngày chưa đặt)')}
-            </button>
-          </div>
-        </div>
-
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Mã KH')}</th>
-                <th>{t('Tên Công Ty')}</th>
-                <th>{t('Hạng')}</th>
-                <th>{t('Sale Phụ Trách')}</th>
-                <th>{t('Chiết Khấu')}</th>
-                <th>{t('Hạn Mức Nợ')}</th>
-                <th>{t('Đơn Cuối Cùng')}</th>
-                <th>{t('Thao Tác')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCustomers.map(cust => {
-                const customerOrders = getCustomerOrders(cust.id);
-                // Check if inactive
-                let isInactive = false;
-                if (cust.lastOrderAt) {
-                  const lastOrderDate = parseValidDate(cust.lastOrderAt);
-                  const diffTime = lastOrderDate ? Math.abs(today.getTime() - lastOrderDate.getTime()) : 0;
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  isInactive = diffDays > 30;
-                } else {
-                  isInactive = true;
-                }
-
-                return (
-                  <tr key={cust.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedCustomer(cust)}>
-                    <td><span className="customer-code-badge">{cust.customerCode || cust.id}</span></td>
-                    <td style={{ fontWeight: 600 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span>{cust.companyName}</span>
-                        <span className="crm-customer-contact-line">
-                          {cust.contactPerson || t('Chưa có người liên hệ')}
-                          {cust.phone ? ` · ${cust.phone}` : ''}
-                        </span>
-                        {isInactive && (
-                          <span style={{ fontSize: '10px', color: 'var(--color-danger)', fontWeight: 'bold' }}>
-                            [{t('CẢNH BÁO: CHƯA PHÁT SINH ĐƠN MỚI > 30 NGÀY')}]
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`customer-rank-badge ${cust.customerRank ? 'has-rank' : ''}`}>
-                        {cust.customerRank || '—'}
-                      </span>
-                    </td>
-                    <td>{users.find(user => user.uid === cust.assignedSaleId)?.displayName || t('Chưa phân công')}</td>
-                    <td>
-                      {cust.discountType === 'amount'
-                        ? `${Number(cust.discountAmount || 0).toLocaleString('vi-VN')} đ`
-                        : `${Number(cust.discountRate || 0)}%`}
-                    </td>
-                    <td>{cust.debtLimit.toLocaleString()} đ</td>
-                    <td>{formatDate(cust.lastOrderAt, 'vi-VN', t('Chưa có'))}</td>
-                    <td>
-                      <div className="btn-group" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(cust)}>{t('Chi Tiết')}</button>
-                        {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                          <>
-                             <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(cust)} title={t('Sửa')}>
-                               <Pencil size={14} />
-                             </button>
-                             <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteCustomer(cust.id)} title={t('Xóa')}>
-                               <Trash2 size={14} />
-                             </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredCustomers.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '24px' }}>{t('Không tìm thấy khách hàng nào.')}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* SELECTED CUSTOMER DETAIL */}
        {selectedCustomer && (
@@ -1929,10 +1907,10 @@ export const Crm: React.FC<CrmProps> = ({
               <p>{t('Hồ sơ khách hàng, mã hàng tiêu chuẩn, lịch sử giao dịch và tài liệu liên quan.')}</p>
             </div>
             {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-              <button type="button" className="btn btn-primary" onClick={() => openEditModal(selectedCustomer)}>
-                <Pencil size={15} />
-                <span>{t('Chỉnh sửa hồ sơ')}</span>
-              </button>
+              <div className="crm-detail-actions">
+                <button type="button" className="btn btn-primary" onClick={() => openEditModal(selectedCustomer)}><Pencil size={15} /><span>{t('Chỉnh sửa hồ sơ')}</span></button>
+                <button type="button" className="btn btn-outline btn-symbol-sm crm-detail-delete" onClick={() => handleDeleteCustomer(selectedCustomer.id)} title={t('Xóa khách hàng')}><Trash2 size={15} /></button>
+              </div>
             )}
           </div>
 
