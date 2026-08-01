@@ -1,1219 +1,439 @@
-import React, { useState, useEffect } from 'react';
-import { dbService, UserProfile } from '../services/firebaseService';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  CalendarClock,
+  ClipboardList,
+  PackageCheck,
+  Search,
+  ShoppingBag,
+  Sparkles,
+  Truck,
+  X
+} from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
-import { Plus, Trash2, Pencil, X, Download, FileSpreadsheet } from 'lucide-react';
-import { getPOQueueUpdate, isPOCompleted } from '../domain/poWorkflow';
-import { sortNewestFirst } from '../domain/recordOrdering';
-import { formatDate, formatDateTime, toDateInputValue } from '../domain/dateFormatting';
+import { formatDate } from '../domain/dateFormatting';
+import {
+  buildSupplierRecommendations,
+  getProcurementStatusLabel,
+  getSourcingTypeLabel,
+  normalizeSupplierRecords,
+  type ProcurementRequestRecord,
+  type ProcurementStatus,
+  type SourcingType,
+  type SupplierRecord
+} from '../domain/purchaseModels';
+import { backfillProcurementRequests } from '../services/procurementService';
+import { dbService, type UserProfile } from '../services/firebaseService';
+import './Purchase.css';
+
+type UnknownRecord = Record<string, unknown>;
 
 interface PurchaseProps {
-  pos: any[];
-  purchaseOrders: any[];
+  pos: UnknownRecord[];
+  purchaseOrders: UnknownRecord[];
+  procurementRequests: ProcurementRequestRecord[];
   currentUser: UserProfile;
   onRefresh: () => void;
   users: UserProfile[];
 }
 
-export const Purchase: React.FC<PurchaseProps> = ({ pos, purchaseOrders, currentUser, onRefresh, users }) => {
+const asText = (value: unknown): string => typeof value === 'string' ? value : '';
+const asNumber = (value: unknown): number => Number.isFinite(Number(value)) ? Number(value) : 0;
+const asArray = (value: unknown): UnknownRecord[] => Array.isArray(value) ? value as UnknownRecord[] : [];
+
+const normalizeSearchText = (value: unknown): string => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('vi-VN')
+  .replace(/đ/g, 'd');
+
+const matchesEveryTerm = (search: string, values: unknown[]): boolean => {
+  const terms = normalizeSearchText(search).trim().split(/\s+/).filter(Boolean);
+  const haystack = normalizeSearchText(values.filter(Boolean).join(' '));
+  return terms.every(term => haystack.includes(term));
+};
+
+const ACTIVE_STATUSES: ProcurementStatus[] = ['new', 'reviewing', 'quoting', 'supplier_selected'];
+const PURCHASE_PAGE_REFERENCE_TIME = Date.now();
+
+export const Purchase: React.FC<PurchaseProps> = ({
+  pos,
+  purchaseOrders,
+  procurementRequests,
+  currentUser,
+  onRefresh,
+  users
+}) => {
   const { t } = useLanguage();
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
-  
-  // Modal states
-  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
-  const [showEditSupplierModal, setShowEditSupplierModal] = useState(false);
-  const [showAddPurModal, setShowAddPurModal] = useState(false);
-  const [showEditPurModal, setShowEditPurModal] = useState(false);
-  const [selectedPur, setSelectedPur] = useState<any | null>(null);
-  const [selectedSupplier, setSelectedSupplier] = useState<any | null>(null);
-
-  // Supplier Contracts States
-  const [showAddContractModal, setShowAddContractModal] = useState(false);
-  const [contractNo, setContractNo] = useState('');
-  const [contractSignDate, setContractSignDate] = useState('');
-  const [contractExpiryDate, setContractExpiryDate] = useState('');
-  const [contractValue, setContractValue] = useState(0);
-  const [contractFile, setContractFile] = useState('');
-
-  // Supplier Debt States
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
-  const [payAmount, setPayAmount] = useState(0);
-  const [payNote, setPayNote] = useState('');
-
-  // Form states - Supplier
-  const [supplierName, setSupplierName] = useState('');
-  const [contactPerson, setContactPerson] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
-
-  // Form states - Edit Supplier
-  const [editSupplierName, setEditSupplierName] = useState('');
-  const [editContactPerson, setEditContactPerson] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editAddress, setEditAddress] = useState('');
-
-  // Form states - Purchase Order (PUR)
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
+  const [invoices, setInvoices] = useState<UnknownRecord[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | ProcurementStatus>('active');
+  const [sourcingFilter, setSourcingFilter] = useState<'all' | SourcingType>('all');
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [selectedRequestId, setSelectedRequestId] = useState('');
   const [supplierId, setSupplierId] = useState('');
-  const [linkedPoId, setLinkedPoId] = useState('');
-  const [materialName, setMaterialName] = useState('');
-  const [quantity, setQuantity] = useState(100);
-  const [unit, setUnit] = useState('m²');
-  const [unitPrice, setUnitPrice] = useState(10000);
+  const [unitPrice, setUnitPrice] = useState(0);
   const [expectedReceiveDate, setExpectedReceiveDate] = useState('');
-
-  // Form states - Edit PUR
-  const [editSupplierId, setEditSupplierId] = useState('');
-  const [editLinkedPoId, setEditLinkedPoId] = useState('');
-  const [editMaterialName, setEditMaterialName] = useState('');
-  const [editQuantity, setEditQuantity] = useState(100);
-  const [editUnit, setEditUnit] = useState('m²');
-  const [editUnitPrice, setEditUnitPrice] = useState(10000);
-  const [editExpectedReceiveDate, setEditExpectedReceiveDate] = useState('');
-
-  const [addAssignedPurchaserId, setAddAssignedPurchaserId] = useState('');
-  const [editAssignedPurchaserId, setEditAssignedPurchaserId] = useState('');
-
-  const purchasers = (users || []).filter(u => u.role === 'purchaser');
-
-  const handleExportCSV = () => {
-    const headers = [
-      t('Mã Đơn Mua'),
-      t('Nhà Cung Cấp'),
-      t('Chi Tiết Vật Tư'),
-      t('Giá Trị'),
-      t('PO Liên Kết'),
-      t('Người Phụ Trách'),
-      t('Ngày Nhận Dự Kiến'),
-      t('Trạng Thái')
-    ];
-
-    const rows = filteredPurchaseOrders.map(pur => [
-      pur.purCode,
-      pur.supplierName,
-      pur.items?.map((i: any) => `${i.materialName} (${i.quantity} ${i.unit})`).join('; ') || '',
-      pur.totalPrice,
-      pur.linkedPoCode || '',
-      pur.assignedPurchaserName || '',
-      formatDate(pur.expectedReceiveDate, 'vi-VN', ''),
-      pur.status === 'received' ? t('Đã nhận kho') : t(pur.status)
-    ]);
-
-    let csvContent = '\uFEFF'; // BOM
-    csvContent += headers.join(',') + '\n';
-    rows.forEach(row => {
-      const escapedRow = row.map(val => {
-        const strVal = String(val ?? '');
-        return `"${strVal.replace(/"/g, '""')}"`;
-      });
-      csvContent += escapedRow.join(',') + '\n';
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `ERP_DanhSach_MuaHang_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const filteredPurchaseOrders = sortNewestFirst((purchaseOrders || [])
-    .filter(pur => !pur.deleted)
-    .filter(pur => {
-      if (currentUser.role === 'admin' || currentUser.role === 'accountant') return true;
-      return pur.assignedPurchaserId === currentUser.uid || 
-             (!pur.assignedPurchaserId && (pur.createdBy || '').includes(currentUser.displayName));
-    }), purchaseOrder => [purchaseOrder.createdAt]);
-
-  const handleOpenEditSupplier = (sup: any) => {
-    setSelectedSupplier(sup);
-    setEditSupplierName(sup.supplierName);
-    setEditContactPerson(sup.contactPerson || '');
-    setEditPhone(sup.phone || '');
-    setEditEmail(sup.email || '');
-    setEditAddress(sup.address || '');
-    setShowEditSupplierModal(true);
-  };
-
-  const handleEditSupplierSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedSupplier || !editSupplierName) return;
-
-    await dbService.updateDocument('suppliers', selectedSupplier.id, {
-      supplierName: editSupplierName,
-      contactPerson: editContactPerson,
-      phone: editPhone,
-      email: editEmail,
-      address: editAddress,
-      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      updatedAt: new Date().toISOString()
-    });
-
-    setShowEditSupplierModal(false);
-    setSelectedSupplier(null);
-    const updated = await dbService.getCollection('suppliers');
-    setSuppliers(updated);
-  };
-
-  const handleDeleteSupplier = async (supId: string) => {
-    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
-    if (password === 'admin123' || password === '123456') {
-      await dbService.updateDocument('suppliers', supId, {
-        deleted: true,
-        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-        updatedAt: new Date().toISOString()
-      });
-      const updated = await dbService.getCollection('suppliers');
-      setSuppliers(updated);
-      alert(t('Đã chuyển nhà cung cấp vào Kho Rác.'));
-    } else if (password !== null) {
-      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
-    }
-  };
-
-  const handleOpenEditPur = (pur: any) => {
-    setSelectedPur(pur);
-    setEditSupplierId(pur.supplierId);
-    setEditLinkedPoId(pur.linkedPoId || '');
-    const item = pur.items?.[0] || {};
-    setEditMaterialName(item.materialName || '');
-    setEditQuantity(item.quantity || 100);
-    setEditUnit(item.unit || 'm²');
-    setEditUnitPrice(item.unitPrice || 10000);
-    setEditExpectedReceiveDate(toDateInputValue(pur.expectedReceiveDate));
-    setEditAssignedPurchaserId(pur.assignedPurchaserId || '');
-    setShowEditPurModal(true);
-  };
-
-  const handleEditPurSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPur || !editSupplierId || !editMaterialName) return;
-
-    const supplier = suppliers.find(s => s.id === editSupplierId);
-    const linkedPo = pos.find(p => p.id === editLinkedPoId);
-    const subtotal = Number(editQuantity) * Number(editUnitPrice);
-
-    const finalPurchaserName = purchasers.find(u => u.uid === editAssignedPurchaserId)?.displayName || '';
-
-    await dbService.updateDocument('purchase_orders', selectedPur.id, {
-      supplierId: editSupplierId,
-      supplierName: supplier?.supplierName || '',
-      linkedPoId: editLinkedPoId || '',
-      linkedPoCode: linkedPo?.poCode || 'Không có',
-      items: [
-        {
-          materialName: editMaterialName,
-          quantity: Number(editQuantity),
-          unit: editUnit,
-          unitPrice: Number(editUnitPrice),
-          totalPrice: subtotal
-        }
-      ],
-      totalPrice: subtotal,
-      expectedReceiveDate: new Date(editExpectedReceiveDate).toISOString(),
-      assignedPurchaserId: editAssignedPurchaserId,
-      assignedPurchaserName: finalPurchaserName,
-      updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      updatedAt: new Date().toISOString()
-    });
-
-    setShowEditPurModal(false);
-    setSelectedPur(null);
-    setEditAssignedPurchaserId('');
-    onRefresh();
-  };
-
-  const handleDeletePur = async (purId: string) => {
-    const password = window.prompt(t('Nhập mật khẩu xác nhận xóa (Giám Đốc/Admin):'));
-    if (password === 'admin123' || password === '123456') {
-      await dbService.updateDocument('purchase_orders', purId, {
-        deleted: true,
-        updatedBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-        updatedAt: new Date().toISOString()
-      });
-      setSelectedPur(null);
-      onRefresh();
-      alert(t('Đã chuyển đơn mua hàng NCC vào Kho Rác.'));
-    } else if (password !== null) {
-      alert(t('Mật khẩu không chính xác. Xóa thất bại.'));
-    }
-  };
-
-  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setContractFile(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleAddContractSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedSupplier || !contractNo) return;
-
-    const newContract = {
-      id: `contr-${Math.random().toString(36).substr(2, 9)}`,
-      contractNo,
-      signDate: contractSignDate,
-      expiryDate: contractExpiryDate,
-      value: Number(contractValue),
-      fileUrl: contractFile,
-      status: new Date(contractExpiryDate).getTime() > Date.now() ? 'active' : 'expired',
-      createdAt: new Date().toISOString()
-    };
-
-    const updatedContracts = [...(selectedSupplier.contracts || []), newContract];
-
-    await dbService.updateDocument('suppliers', selectedSupplier.id, {
-      contracts: updatedContracts
-    });
-
-    setSelectedSupplier({ ...selectedSupplier, contracts: updatedContracts });
-    const updated = await dbService.getCollection('suppliers');
-    setSuppliers(updated);
-
-    setShowAddContractModal(false);
-    setContractNo('');
-    setContractFile('');
-  };
-
-  const handleDeleteContract = async (contractId: string) => {
-    if (window.confirm(t('Bạn có chắc chắn muốn xóa hợp đồng này?'))) {
-      const updatedContracts = (selectedSupplier.contracts || []).filter((c: any) => c.id !== contractId);
-      
-      await dbService.updateDocument('suppliers', selectedSupplier.id, {
-        contracts: updatedContracts
-      });
-
-      setSelectedSupplier({ ...selectedSupplier, contracts: updatedContracts });
-      const updated = await dbService.getCollection('suppliers');
-      setSuppliers(updated);
-    }
-  };
-
-  const handleOpenPayment = (inv: any) => {
-    setSelectedInvoice(inv);
-    setPayAmount(inv.amount - inv.paidAmount);
-    setPayNote('');
-    setShowPaymentModal(true);
-  };
-
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedInvoice || payAmount <= 0) return;
-
-    const newPaidAmount = selectedInvoice.paidAmount + Number(payAmount);
-    const newStatus = newPaidAmount >= selectedInvoice.amount ? 'paid' : 'partially_paid';
-
-    await dbService.updateDocument('invoices', selectedInvoice.id, {
-      paidAmount: newPaidAmount,
-      status: newStatus,
-      paymentNote: payNote,
-      updatedAt: new Date().toISOString()
-    });
-
-    setShowPaymentModal(false);
-    setSelectedInvoice(null);
-
-    const invInvoices = await dbService.getCollection('invoices');
-    setInvoices(invInvoices);
-    onRefresh();
-  };
+  const [assignedPurchaserId, setAssignedPurchaserId] = useState('');
+  const [sourcingType, setSourcingType] = useState<SourcingType>('subcontract');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const supList = await dbService.getCollection('suppliers');
-      const invList = await dbService.getCollection('inventory');
-      const invInvoices = await dbService.getCollection('invoices');
-      setSuppliers(supList);
-      setInventory(invList);
-      setInvoices(invInvoices);
-      if (supList.length > 0) setSupplierId(supList[0].id);
-      if (pos.length > 0) setLinkedPoId(pos[0].id);
-    };
-    fetchData();
-  }, [pos]);
-
-  const handleAddSupplier = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supplierName) return;
-
-    await dbService.addDocument('suppliers', {
-      supplierName,
-      contactPerson,
-      phone,
-      email,
-      address,
-      contracts: [],
-      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      createdAt: new Date().toISOString()
+    const unsubscribeSuppliers = dbService.subscribeCollection('suppliers', data => {
+      setSuppliers(normalizeSupplierRecords(data).filter(supplier => !supplier.deleted && supplier.status !== 'blocked'));
     });
-
-    setShowAddSupplierModal(false);
-    setSupplierName('');
-    setContactPerson('');
-    setPhone('');
-    setEmail('');
-    setAddress('');
-    
-    const updated = await dbService.getCollection('suppliers');
-    setSuppliers(updated);
-  };
-
-  const handleCreatePur = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supplierId || !materialName || !quantity || !unitPrice) return;
-
-    const supplier = suppliers.find(s => s.id === supplierId);
-    const linkedPo = pos.find(p => p.id === linkedPoId);
-
-    const subtotal = quantity * unitPrice;
-    const purCode = `PUR-${new Date().toISOString().substring(2,7).replace('-','')}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const finalPurchaserId = addAssignedPurchaserId || (currentUser.role === 'purchaser' ? currentUser.uid : '');
-    const finalPurchaserName = purchasers.find(u => u.uid === finalPurchaserId)?.displayName || (currentUser.role === 'purchaser' ? currentUser.displayName : '');
-
-    const newPur = {
-      purCode,
-      supplierId,
-      supplierName: supplier?.supplierName || '',
-      linkedPoId: linkedPoId || '',
-      linkedPoCode: linkedPo?.poCode || 'Không có',
-      items: [
-        {
-          materialName,
-          quantity: Number(quantity),
-          unit,
-          unitPrice: Number(unitPrice),
-          totalPrice: subtotal
-        }
-      ],
-      totalPrice: subtotal,
-      status: 'ordered',
-      expectedReceiveDate: new Date(expectedReceiveDate).toISOString(),
-      actualReceiveDate: '',
-      assignedPurchaserId: finalPurchaserId,
-      assignedPurchaserName: finalPurchaserName,
-      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      createdAt: new Date().toISOString()
+    const unsubscribeInvoices = dbService.subscribeCollection('invoices', data => setInvoices(data));
+    return () => {
+      unsubscribeSuppliers();
+      unsubscribeInvoices();
     };
+  }, []);
 
-    await dbService.addDocument('purchase_orders', newPur);
+  useEffect(() => {
+    if (pos.length === 0) return;
+    void backfillProcurementRequests(pos, currentUser).catch(error => {
+      console.error('Unable to synchronize procurement requests:', error);
+    });
+  }, [currentUser, pos]);
 
-    // If purchase links to a PO, update PO timeline and log
-    if (linkedPoId) {
-      const updatedLogs = [
-        ...linkedPo.historyLogs,
-        {
-          status: 'waiting_delivery',
-          updatedBy: currentUser.displayName,
-          updatedAt: new Date().toISOString(),
-          note: `Đã đặt mua vật tư (${materialName} x ${quantity} ${unit}) của nhà cung cấp: ${supplier?.supplierName}`
-        }
-      ];
-      await dbService.updateDocument('pos', linkedPo.id, {
-        ...getPOQueueUpdate('waiting_delivery', {
-          deliveryStage: 'supplier_inbound',
-          purchaseProgress: 'supplier_ordered'
-        }),
-        historyLogs: updatedLogs
-      });
-    }
+  const purchasers = useMemo(() => users.filter(user => user.role === 'purchaser'), [users]);
+  const months = useMemo(() => Array.from(new Set(
+    procurementRequests.map(request => request.createdAt.slice(0, 7)).filter(Boolean)
+  )).sort().reverse(), [procurementRequests]);
 
-    setShowAddPurModal(false);
-    setMaterialName('');
-    setQuantity(100);
-    setUnitPrice(10000);
-    setAddAssignedPurchaserId('');
-    onRefresh();
+  const accessibleRequests = useMemo(() => procurementRequests.filter(request => {
+    if (request.deleted) return false;
+    if (currentUser.role === 'admin' || currentUser.role === 'accountant') return true;
+    return !request.assignedPurchaserId || request.assignedPurchaserId === currentUser.uid;
+  }), [currentUser.role, currentUser.uid, procurementRequests]);
+
+  const filteredRequests = useMemo(() => accessibleRequests.filter(request => {
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === 'active' ? ACTIVE_STATUSES.includes(request.status) : request.status === statusFilter);
+    const matchesSourcing = sourcingFilter === 'all' || request.sourcingType === sourcingFilter;
+    const matchesMonth = monthFilter === 'all' || request.createdAt.startsWith(monthFilter);
+    const matchesSearch = matchesEveryTerm(searchTerm, [
+      request.requestCode,
+      request.poCode,
+      request.customerName,
+      request.productCode,
+      request.productName,
+      request.material,
+      request.size,
+      request.selectedSupplierName,
+      request.assignedPurchaserName,
+      getSourcingTypeLabel(request.sourcingType),
+      getProcurementStatusLabel(request.status)
+    ]);
+    return matchesStatus && matchesSourcing && matchesMonth && matchesSearch;
+  }), [accessibleRequests, monthFilter, searchTerm, sourcingFilter, statusFilter]);
+
+  const selectedRequest = accessibleRequests.find(request => request.id === selectedRequestId) || null;
+  const recommendations = useMemo(() => selectedRequest
+    ? buildSupplierRecommendations(selectedRequest, suppliers, purchaseOrders)
+    : [], [purchaseOrders, selectedRequest, suppliers]);
+
+  const openRequest = (request: ProcurementRequestRecord) => {
+    const recommended = buildSupplierRecommendations(request, suppliers, purchaseOrders)[0];
+    setSelectedRequestId(request.id);
+    setSupplierId(request.selectedSupplierId || recommended?.supplier.id || '');
+    setUnitPrice(request.selectedUnitPrice || recommended?.lastUnitPrice || 0);
+    setExpectedReceiveDate(request.requiredDate?.slice(0, 10) || '');
+    setAssignedPurchaserId(
+      request.assignedPurchaserId
+      || (currentUser.role === 'purchaser' ? currentUser.uid : purchasers[0]?.uid || '')
+    );
+    setSourcingType(request.sourcingType);
   };
 
-  const updatePurStatus = async (purId: string, newStatus: string) => {
-    const pur = purchaseOrders.find(p => p.id === purId);
-    if (!pur) return;
+  const handleUpdateRequestStatus = async (request: ProcurementRequestRecord, status: ProcurementStatus) => {
+    const purchaser = purchasers.find(user => user.uid === (request.assignedPurchaserId || assignedPurchaserId));
+    await dbService.updateDocument('procurement_requests', request.id, {
+      status,
+      assignedPurchaserId: request.assignedPurchaserId || assignedPurchaserId,
+      assignedPurchaserName: request.assignedPurchaserName || purchaser?.displayName || '',
+      updatedBy: currentUser.displayName
+    });
+  };
 
-    const updates: any = { status: newStatus };
-    
-    if (newStatus === 'received') {
-      updates.actualReceiveDate = new Date().toISOString();
-      
-      // AUTO INCREMENT WAREHOUSE INVENTORY QUANTITY
-      const invList = await dbService.getCollection('inventory');
-      for (const purItem of pur.items) {
-        const matchItem = invList.find((item: any) => item.materialName.toLowerCase() === purItem.materialName.toLowerCase());
-        if (matchItem) {
-          const newQty = Number(matchItem.qtyInStock) + Number(purItem.quantity);
-          await dbService.updateDocument('inventory', matchItem.id, {
-            qtyInStock: newQty,
-            updatedAt: new Date().toISOString()
+  const handleCreatePurchaseOrder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedRequest || !supplierId || unitPrice <= 0 || !expectedReceiveDate) return;
+    const supplier = suppliers.find(candidate => candidate.id === supplierId);
+    if (!supplier) return;
+    setIsSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const purchaser = purchasers.find(user => user.uid === assignedPurchaserId);
+      const purCode = `PUR-${now.slice(2, 7).replace('-', '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const totalPrice = selectedRequest.quantity * unitPrice;
+      const createdOrder = await dbService.addDocument('purchase_orders', {
+        purCode,
+        procurementRequestId: selectedRequest.id,
+        supplierId: supplier.id,
+        supplierName: supplier.supplierName,
+        linkedPoId: selectedRequest.poId,
+        linkedPoCode: selectedRequest.poCode,
+        sourcingType,
+        items: [{
+          poItemId: selectedRequest.poItemId,
+          productCode: selectedRequest.productCode,
+          productName: selectedRequest.productName,
+          materialName: selectedRequest.material || selectedRequest.productName,
+          size: selectedRequest.size,
+          quantity: selectedRequest.quantity,
+          unit: selectedRequest.unit,
+          unitPrice,
+          totalPrice
+        }],
+        totalPrice,
+        status: 'ordered',
+        expectedReceiveDate: new Date(`${expectedReceiveDate}T00:00:00`).toISOString(),
+        actualReceiveDate: '',
+        assignedPurchaserId,
+        assignedPurchaserName: purchaser?.displayName || '',
+        createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+        createdAt: now
+      });
+
+      await dbService.updateDocument('procurement_requests', selectedRequest.id, {
+        sourcingType,
+        status: 'ordered',
+        selectedSupplierId: supplier.id,
+        selectedSupplierName: supplier.supplierName,
+        selectedUnitPrice: unitPrice,
+        assignedPurchaserId,
+        assignedPurchaserName: purchaser?.displayName || '',
+        purchaseOrderId: createdOrder.id,
+        purchaseOrderCode: purCode,
+        updatedBy: currentUser.displayName
+      });
+
+      const po = pos.find(candidate => asText(candidate.id) === selectedRequest.poId);
+      if (po) {
+        const updatedItems = asArray(po.items).map((item, index) => (
+          asText(item.itemId) === selectedRequest.poItemId || index === selectedRequest.poItemIndex
+            ? {
+                ...item,
+                sourcingType,
+                supplierId: supplier.id,
+                supplierName: supplier.supplierName,
+                purchasePrice: unitPrice,
+                purchaseNeedsReview: false
+              }
+            : item
+        ));
+        await dbService.updateDocument('pos', selectedRequest.poId, {
+          items: updatedItems,
+          purchaseProgress: 'supplier_ordered',
+          historyLogs: [
+            ...asArray(po.historyLogs),
+            {
+              status: asText(po.status),
+              updatedBy: currentUser.displayName,
+              updatedAt: now,
+              note: `Mua hàng đã chọn ${supplier.supplierName} cho ${selectedRequest.productName}; đơn mua ${purCode}, giá ${unitPrice.toLocaleString('vi-VN')} đ/${selectedRequest.unit}.`
+            }
+          ]
+        });
+      }
+
+      setSelectedRequestId('');
+      onRefresh();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReceiveOrder = async (order: UnknownRecord) => {
+    if (!window.confirm(`${t('Xác nhận đã nhận đủ hàng cho')} ${asText(order.purCode)}?`)) return;
+    const now = new Date().toISOString();
+    const request = procurementRequests.find(candidate => candidate.id === asText(order.procurementRequestId));
+    const orderItems = asArray(order.items);
+
+    if (asText(order.sourcingType) === 'raw_material') {
+      const inventory = await dbService.getCollection('inventory');
+      for (const item of orderItems) {
+        const materialName = asText(item.materialName ?? item.productName);
+        const match = inventory.find(candidate => normalizeSearchText(candidate.materialName) === normalizeSearchText(materialName));
+        if (match) {
+          await dbService.updateDocument('inventory', match.id, {
+            qtyInStock: asNumber(match.qtyInStock) + asNumber(item.quantity),
+            updatedAt: now
           });
         } else {
           await dbService.addDocument('inventory', {
-            materialName: purItem.materialName,
-            category: purItem.materialName.toLowerCase().includes('mực') ? 'ink' : 
-                      purItem.materialName.toLowerCase().includes('màng') ? 'film' : 'paper',
-            qtyInStock: Number(purItem.quantity),
+            materialName,
+            category: normalizeSearchText(materialName).includes('muc') ? 'ink' : normalizeSearchText(materialName).includes('mang') ? 'film' : 'paper',
+            qtyInStock: asNumber(item.quantity),
             qtyReserved: 0,
             minQtyAlert: 50,
-            unit: purItem.unit,
-            defaultSupplierId: pur.supplierId
-          });
-        }
-      }
-
-      // Also automatically create a payable invoice in invoices collection
-      const invoiceCode = `INV-${pur.purCode.replace('PUR-','')}`;
-      await dbService.addDocument('invoices', {
-        invoiceCode,
-        poId: pur.id,
-        poCode: pur.purCode,
-        customerId: pur.supplierId,
-        customerName: pur.supplierName,
-        type: 'payable',
-        amount: pur.totalPrice,
-        paidAmount: 0,
-        status: 'unpaid',
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        createdAt: new Date().toISOString()
-      });
-
-      // If linked to customer PO, update customer PO status to NCC confirmed / production pending
-      if (pur.linkedPoId) {
-        const po = pos.find(p => p.id === pur.linkedPoId);
-        if (po) {
-          const updatedLogs = [
-            ...po.historyLogs,
-            {
-              status: 'waiting_production',
-              updatedBy: currentUser.displayName,
-              updatedAt: new Date().toISOString(),
-              note: `Nguyên vật liệu đã về kho (${pur.items.map((i: any) => i.materialName).join(', ')}). Sẵn sàng chuyển lệnh in.`
-            }
-          ];
-          await dbService.updateDocument('pos', po.id, {
-            ...getPOQueueUpdate('waiting_production', {
-              deliveryStage: '',
-              purchaseProgress: 'materials_received',
-              productionProgress: 'pending'
-            }),
-            historyLogs: updatedLogs
+            unit: asText(item.unit),
+            defaultSupplierId: asText(order.supplierId),
+            createdAt: now
           });
         }
       }
     }
 
-    await dbService.updateDocument('purchase_orders', purId, updates);
-    setSelectedPur((prev: any) => prev ? { ...prev, ...updates } : null);
+    const invoiceExists = invoices.some(invoice => (
+      invoice.type === 'payable' && asText(invoice.poId) === asText(order.id)
+    ));
+    if (!invoiceExists) {
+      await dbService.addDocument('invoices', {
+        invoiceCode: `INV-${asText(order.purCode).replace('PUR-', '')}`,
+        poId: asText(order.id),
+        poCode: asText(order.purCode),
+        customerId: asText(order.supplierId),
+        customerName: asText(order.supplierName),
+        type: 'payable',
+        amount: asNumber(order.totalPrice),
+        paidAmount: 0,
+        status: 'unpaid',
+        dueDate: new Date(Date.parse(now) + 30 * 86_400_000).toISOString(),
+        createdAt: now
+      });
+    }
 
-    const invInvoices = await dbService.getCollection('invoices');
-    setInvoices(invInvoices);
+    await dbService.updateDocument('purchase_orders', asText(order.id), {
+      status: 'received',
+      actualReceiveDate: now,
+      updatedBy: currentUser.displayName
+    });
+    if (request) {
+      await dbService.updateDocument('procurement_requests', request.id, {
+        status: 'received',
+        updatedBy: currentUser.displayName
+      });
+      const po = pos.find(candidate => asText(candidate.id) === request.poId);
+      if (po) {
+        await dbService.updateDocument('pos', request.poId, {
+          purchaseProgress: 'materials_received',
+          historyLogs: [...asArray(po.historyLogs), {
+            status: asText(po.status),
+            updatedBy: currentUser.displayName,
+            updatedAt: now,
+            note: `Đã nhận hàng từ ${asText(order.supplierName)} theo đơn ${asText(order.purCode)}.`
+          }]
+        });
+      }
+    }
     onRefresh();
   };
 
-  const payableInvoices = invoices.filter(inv => inv.type === 'payable');
+  const activeCount = accessibleRequests.filter(request => ACTIVE_STATUSES.includes(request.status)).length;
+  const unassignedCount = accessibleRequests.filter(request => ACTIVE_STATUSES.includes(request.status) && !request.assignedPurchaserId).length;
+  const orderedCount = accessibleRequests.filter(request => request.status === 'ordered').length;
+  const overdueCount = accessibleRequests.filter(request => (
+    ['ordered', 'partially_received'].includes(request.status)
+    && request.requiredDate
+    && Date.parse(request.requiredDate) < PURCHASE_PAGE_REFERENCE_TIME
+  )).length;
 
   return (
-    <div className="purchase-view" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="purchase-page">
       <div className="page-header">
-        <div>
-          <h1 className="page-title">{t('MUA HÀNG VÀ ĐẶT HÀNG NCC')}</h1>
-          <p className="page-subtitle">{t('Tạo yêu cầu mua decal, mực in, màng từ NCC, đối chiếu BOM và theo dõi tiến độ giao hàng của NCC.')}</p>
-        </div>
-        {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn btn-outline btn-symbol" onClick={() => setShowAddSupplierModal(true)} title={t('Thêm Nhà Cung Cấp')}>
-              <Plus size={18} />
-            </button>
-            <button className="btn btn-primary btn-symbol" onClick={() => setShowAddPurModal(true)} title={t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}>
-              <Plus size={18} />
-            </button>
-          </div>
-        )}
+        <div><h1 className="page-title">{t('MUA HÀNG')}</h1><p className="page-subtitle">{t('Tiếp nhận nhu cầu từ Sale PO, chọn phương án cung ứng, đề xuất nhà cung cấp và theo dõi đơn mua.')}</p></div>
       </div>
 
-      <div className="details-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span className="card-title" style={{ margin: 0 }}>{t('Đơn Đặt Mua Vật Tư Nhà Cung Cấp')}</span>
-            <button className="btn btn-sm btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }} onClick={handleExportCSV}>
-              <FileSpreadsheet size={16} />
-              <span>{t('Xuất Excel')}</span>
-            </button>
-          </div>
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('Mã Đơn Mua')}</th>
-                  <th>{t('Nhà Cung Cấp')}</th>
-                  <th>{t('Chi tiết vật tư cần mua')}</th>
-                  <th>{t('Giá Trị')}</th>
-                  <th>{t('PO Liên Kết')}</th>
-                  <th>{t('Trạng Thái')}</th>
-                  <th>{t('Thao Tác')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPurchaseOrders.map(pur => (
-                  <tr key={pur.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPur(pur)}>
-                    <td style={{ fontWeight: 600 }}>{pur.purCode}</td>
-                    <td>{pur.supplierName}</td>
-                    <td style={{ fontWeight: 500 }}>{pur.items?.map((i: any) => `${i.materialName} (${i.quantity} ${i.unit})`).join(', ')}</td>
-                    <td>{pur.totalPrice?.toLocaleString()} đ</td>
-                    <td>{pur.linkedPoCode || t('Không')}</td>
-                    <td>
-                      <span className={`badge ${
-                        pur.status === 'received' ? 'badge-success' : 'badge-warning'
-                      }`}>{pur.status === 'received' ? t('Đã nhận kho') : t(pur.status)}</span>
-                    </td>
-                    <td>
-                      <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(pur)}>{t('Chi Tiết')}</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="card">
-          <span className="card-title">{t('Danh Sách Nhà Cung Cấp')}</span>
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('Tên Nhà Cung Cấp')}</th>
-                  <th>{t('Liên Hệ')}</th>
-                  <th>{t('Thao Tác')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {suppliers.filter(s => !s.deleted).map(sup => (
-                  <tr key={sup.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedSupplier(sup)}>
-                    <td style={{ fontWeight: 600 }}>{sup.supplierName}</td>
-                    <td>
-                      <div>{sup.contactPerson || t('Chưa cung cấp')}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sup.phone}</div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                        <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditSupplier(sup)} title={t('Sửa')}>
-                          <Pencil size={14} />
-                        </button>
-                        <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteSupplier(sup.id)} title={t('Xóa')}>
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <div className="purchase-kpi-grid">
+        <div><ClipboardList size={18} /><strong>{activeCount}</strong><span>{t('Chờ xử lý')}</span></div>
+        <div><AlertTriangle size={18} /><strong>{unassignedCount}</strong><span>{t('Chưa phân công')}</span></div>
+        <div><ShoppingBag size={18} /><strong>{orderedCount}</strong><span>{t('Đã đặt hàng')}</span></div>
+        <div><CalendarClock size={18} /><strong>{overdueCount}</strong><span>{t('Có nguy cơ trễ')}</span></div>
+        <div><PackageCheck size={18} /><strong>{accessibleRequests.filter(request => request.status === 'received').length}</strong><span>{t('Đã nhận hàng')}</span></div>
       </div>
 
-      {/* SUPPLIER DEBT TRACKING (PAYABLE INVOICES) */}
-      <div className="card" style={{ marginTop: '10px' }}>
-        <span className="card-title">{t('Theo Dõi Công Nợ Phải Trả Nhà Cung Cấp')}</span>
+      <section className="purchase-toolbar">
+        <div className="purchase-search"><Search size={16} /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm mã PO, khách hàng, mã hàng, vật liệu hoặc NCC...')} /></div>
+        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}>
+          <option value="active">{t('Đang cần xử lý')}</option><option value="all">{t('Tất cả trạng thái')}</option>
+          {(['new', 'reviewing', 'quoting', 'supplier_selected', 'ordered', 'partially_received', 'received', 'cancelled'] as ProcurementStatus[]).map(status => <option key={status} value={status}>{getProcurementStatusLabel(status)}</option>)}
+        </select>
+        <select value={sourcingFilter} onChange={event => setSourcingFilter(event.target.value as typeof sourcingFilter)}><option value="all">{t('Tất cả phương án')}</option>{(['finished_good', 'raw_material', 'subcontract'] as SourcingType[]).map(type => <option key={type} value={type}>{getSourcingTypeLabel(type)}</option>)}</select>
+        <select value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">{t('Tất cả tháng')}</option>{months.map(month => <option key={month}>{month}</option>)}</select>
+      </section>
+
+      <section className="purchase-panel">
+        <div className="panel-heading-row"><h2>{t('Yêu cầu mua hàng từ Sale PO')}</h2><span>{filteredRequests.length} {t('yêu cầu')}</span></div>
         <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Mã Công Nợ')}</th>
-                <th>{t('Đơn Mua Hàng')}</th>
-                <th>{t('Nhà Cung Cấp')}</th>
-                <th>{t('Phải Trả (đ)')}</th>
-                <th>{t('Đã Trả (đ)')}</th>
-                <th>{t('Còn Nợ (đ)')}</th>
-                <th>{t('Hạn Thanh Toán')}</th>
-                <th>{t('Trạng Thái')}</th>
-                <th>{t('Thao Tác')}</th>
-              </tr>
-            </thead>
+          <table className="purchase-request-table">
+            <thead><tr><th>{t('Yêu cầu / PO')}</th><th>{t('Khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Phương án cung ứng')}</th><th>{t('Số lượng')}</th><th>{t('Ngày cần')}</th><th>{t('Mua hàng phụ trách')}</th><th>{t('NCC')}</th><th>{t('Trạng thái')}</th><th>{t('Thao tác')}</th></tr></thead>
             <tbody>
-              {payableInvoices.map(inv => {
-                const remaining = inv.amount - inv.paidAmount;
-                return (
-                  <tr key={inv.id}>
-                    <td style={{ fontWeight: 600 }}>{inv.invoiceCode}</td>
-                    <td style={{ fontWeight: 500 }}>{inv.poCode}</td>
-                    <td>{inv.customerName}</td>
-                    <td>{inv.amount?.toLocaleString()} đ</td>
-                    <td style={{ color: 'var(--color-success)' }}>{inv.paidAmount?.toLocaleString()} đ</td>
-                    <td style={{ color: remaining > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)', fontWeight: remaining > 0 ? 600 : 400 }}>
-                      {remaining?.toLocaleString()} đ
-                    </td>
-                    <td>{formatDate(inv.dueDate)}</td>
-                    <td>
-                      <span className={`badge ${
-                        inv.status === 'paid' ? 'badge-success' :
-                        inv.status === 'partially_paid' ? 'badge-info' : 'badge-warning'
-                      }`}>
-                        {inv.status === 'paid' ? t('Đã thanh toán') :
-                         inv.status === 'partially_paid' ? t('Thanh toán một phần') : t('Chưa thanh toán')}
-                      </span>
-                    </td>
-                    <td>
-                      {inv.status !== 'paid' && (currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                        <button className="btn btn-sm btn-primary" onClick={() => handleOpenPayment(inv)}>
-                          {t('Thanh Toán')}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {payableInvoices.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                    {t('Không có công nợ nhà cung cấp nào.')}
-                  </td>
-                </tr>
-              )}
+              {filteredRequests.map(request => <tr key={request.id}>
+                <td><strong>{request.requestCode}</strong><span>{request.poCode}</span></td>
+                <td><strong>{request.customerName || '—'}</strong></td>
+                <td><strong>{request.productName}</strong><span>{[request.productCode, request.material, request.size].filter(Boolean).join(' · ')}</span></td>
+                <td><span className={`sourcing-badge sourcing-badge--${request.sourcingType}`}>{getSourcingTypeLabel(request.sourcingType)}</span></td>
+                <td><strong>{request.quantity.toLocaleString('vi-VN')} {request.unit}</strong></td>
+                <td><span className={request.requiredDate && Date.parse(request.requiredDate) < PURCHASE_PAGE_REFERENCE_TIME && request.status !== 'received' ? 'purchase-date-overdue' : ''}>{formatDate(request.requiredDate, 'vi-VN', '—')}</span></td>
+                <td>{request.assignedPurchaserName || t('Chưa phân công')}</td>
+                <td>{request.selectedSupplierName || '—'}</td>
+                <td><span className={`procurement-status procurement-status--${request.status}`}>{getProcurementStatusLabel(request.status)}</span></td>
+                <td><div className="purchase-row-actions">
+                  {request.status === 'new' && <button type="button" className="btn btn-sm btn-outline" onClick={() => handleUpdateRequestStatus(request, 'reviewing')}>{t('Tiếp nhận')}</button>}
+                  {ACTIVE_STATUSES.includes(request.status) && <button type="button" className="btn btn-sm btn-primary" onClick={() => openRequest(request)}>{t('Chọn NCC')}</button>}
+                  {request.purchaseOrderCode && <span>{request.purchaseOrderCode}</span>}
+                </div></td>
+              </tr>)}
+              {filteredRequests.length === 0 && <tr><td colSpan={10} className="purchase-empty">{t('Không có yêu cầu mua hàng phù hợp.')}</td></tr>}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* DETAILED PURCHASE DIALOG */}
-      {selectedPur && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '600px' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHI TIẾT ĐƠN MUA HÀNG')}: {selectedPur.purCode}</span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                  <>
-                    <button className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => handleOpenEditPur(selectedPur)} title={t('Sửa')}>
-                      <Pencil size={14} />
-                    </button>
-                    <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeletePur(selectedPur.id)} title={t('Xóa')}>
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                )}
-                <button className="btn btn-sm btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
-              </div>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '8px' }}>
-                <span style={{ fontWeight: 600 }}>{t('Nhà Cung Cấp')}:</span>
-                <span>{selectedPur.supplierName}</span>
-
-                <span style={{ fontWeight: 600 }}>{t('PO Liên Kết')}:</span>
-                <span>{selectedPur.linkedPoCode}</span>
-
-                <span style={{ fontWeight: 600 }}>{t('Chi tiết vật tư cần mua')}:</span>
-                <div>
-                  {selectedPur.items?.map((i: any, idx: number) => (
-                    <div key={idx}>{i.materialName}: {i.quantity} {i.unit} ({t('Đơn Giá')}: {i.unitPrice?.toLocaleString()} đ)</div>
-                  ))}
-                </div>
-
-                <span style={{ fontWeight: 600 }}>{t('Thành Tiền')}:</span>
-                <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{selectedPur.totalPrice?.toLocaleString()} đ</span>
-
-                <span style={{ fontWeight: 600 }}>{t('Ngày Giao Dự Kiến')}:</span>
-                <span>{formatDate(selectedPur.expectedReceiveDate, t('vi-VN'))}</span>
-
-                {selectedPur.actualReceiveDate && (
-                  <>
-                    <span style={{ fontWeight: 600 }}>{t('Ngày nhận kho thực tế')}:</span>
-                    <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>
-                      {formatDateTime(selectedPur.actualReceiveDate, t('vi-VN'))}
-                    </span>
-                  </>
-                )}
-
-                <span style={{ fontWeight: 600 }}>{t('Nhân viên mua hàng')}:</span>
-                <span>{selectedPur.assignedPurchaserName || t('Chưa phân công')}</span>
-              </div>
-
-              {selectedPur.status !== 'received' && (currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                <div style={{ border: '1px solid var(--color-border)', padding: '12px', borderRadius: '4px', marginTop: '10px', backgroundColor: '#f8fafc' }}>
-                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Cập nhật trạng thái đơn hàng sang')}:</h4>
-                  <div className="btn-group" style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'confirmed')}>{t('NCC xác nhận')}</button>
-                    <button className="btn btn-sm btn-outline" onClick={() => updatePurStatus(selectedPur.id, 'shipping')}>{t('Đang giao')}</button>
-                    <button className="btn btn-sm btn-success" onClick={() => updatePurStatus(selectedPur.id, 'received')}>
-                      {t('Báo Nhận Kho')}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Audit trail */}
-              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                <div>{t('Tạo bởi:')} {selectedPur.createdBy || t('Không xác định')} {selectedPur.createdAt && `(${formatDateTime(selectedPur.createdAt, t('vi-VN'))})`}</div>
-                {selectedPur.updatedBy && (
-                  <div>{t('Cập nhật bởi:')} {selectedPur.updatedBy} ({formatDateTime(selectedPur.updatedAt, t('vi-VN'))})</div>
-                )}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setSelectedPur(null)}>{t('Đóng')}</button>
-            </div>
-          </div>
+      <section className="purchase-panel">
+        <div className="panel-heading-row"><h2>{t('Đơn mua đã phát hành')}</h2><span>{purchaseOrders.filter(order => order.deleted !== true).length} {t('đơn')}</span></div>
+        <div className="table-container">
+          <table className="purchase-table">
+            <thead><tr><th>{t('Mã đơn mua')}</th><th>{t('Nhà cung cấp')}</th><th>{t('PO khách hàng')}</th><th>{t('Mặt hàng')}</th><th>{t('Giá trị')}</th><th>{t('Ngày nhận dự kiến')}</th><th>{t('Trạng thái')}</th><th>{t('Thao tác')}</th></tr></thead>
+            <tbody>
+              {purchaseOrders.filter(order => order.deleted !== true).map(order => <tr key={asText(order.id)}>
+                <td><strong>{asText(order.purCode)}</strong></td><td>{asText(order.supplierName)}</td><td>{asText(order.linkedPoCode) || '—'}</td>
+                <td>{asArray(order.items).map(item => `${asText(item.materialName ?? item.productName)} (${asNumber(item.quantity).toLocaleString('vi-VN')} ${asText(item.unit)})`).join(', ')}</td>
+                <td><strong>{asNumber(order.totalPrice).toLocaleString('vi-VN')} đ</strong></td><td>{formatDate(asText(order.expectedReceiveDate), 'vi-VN', '—')}</td>
+                <td><span className={`procurement-status procurement-status--${asText(order.status)}`}>{asText(order.status) === 'received' ? t('Đã nhận hàng') : t('Đã đặt hàng')}</span></td>
+                <td>{asText(order.status) !== 'received' && <button type="button" className="btn btn-sm btn-outline" onClick={() => handleReceiveOrder(order)}><Truck size={14} /> {t('Xác nhận nhận hàng')}</button>}</td>
+              </tr>)}
+              {purchaseOrders.filter(order => order.deleted !== true).length === 0 && <tr><td colSpan={8} className="purchase-empty">{t('Chưa có đơn mua nào.')}</td></tr>}
+            </tbody>
+          </table>
         </div>
-      )}
+      </section>
 
-      {/* CREATE PURCHASE ORDER MODAL */}
-      {showAddPurModal && (
+      {selectedRequest && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('TẠO ĐƠN MUA HÀNG VẬT TƯ MỚI')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleCreatePur}>
+          <div className="modal-content procurement-modal">
+            <div className="modal-header"><div><strong>{t('CHỌN NHÀ CUNG CẤP')}</strong><span>{selectedRequest.requestCode} · {selectedRequest.poCode}</span></div><button type="button" className="btn btn-outline btn-symbol-sm" onClick={() => setSelectedRequestId('')}><X size={16} /></button></div>
+            <form onSubmit={handleCreatePurchaseOrder}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Chọn Nhà Cung Cấp *')}</label>
-                  <select value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
-                    <option value="">{t('-- Chọn Nhà Cung Cấp --')}</option>
-                    {suppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.supplierName}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="form-group">
-                  <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
-                  <select value={linkedPoId} onChange={e => setLinkedPoId(e.target.value)}>
-                    <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
-                    {pos.filter(p => !isPOCompleted(p)).map(po => (
-                      <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
-                    ))}
-                  </select>
+                <div className="procurement-context">
+                  <div><span>{t('Khách hàng')}</span><strong>{selectedRequest.customerName}</strong></div><div><span>{t('Mặt hàng')}</span><strong>{selectedRequest.productName}</strong></div><div><span>{t('Quy cách')}</span><strong>{[selectedRequest.material, selectedRequest.size].filter(Boolean).join(' · ') || '—'}</strong></div><div><span>{t('Số lượng')}</span><strong>{selectedRequest.quantity.toLocaleString('vi-VN')} {selectedRequest.unit}</strong></div>
                 </div>
 
-                <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Chi tiết vật tư cần mua')}</h4>
-                  <div className="form-group">
-                    <label>{t('Tên Vật Tư / Quy Cách')} *</label>
-                    <input 
-                      type="text" 
-                      value={materialName} 
-                      onChange={e => setMaterialName(e.target.value)} 
-                      placeholder={t('Ví dụ: Giấy decal Fasson AW0339F, Mực DIC Cyan...')} 
-                      required 
-                    />
+                <section className="recommendation-section">
+                  <div className="panel-heading-row"><h3><Sparkles size={16} /> {t('NCC được đề xuất từ lịch sử mua')}</h3><small>{t('Điểm dựa trên mặt hàng tương tự, giá, số lần mua, giao đúng hạn và đánh giá.')}</small></div>
+                  <div className="recommendation-grid">
+                    {recommendations.map((recommendation, index) => <button type="button" key={recommendation.supplier.id} className={`recommendation-card ${supplierId === recommendation.supplier.id ? 'is-selected' : ''}`} onClick={() => { setSupplierId(recommendation.supplier.id); if (recommendation.lastUnitPrice) setUnitPrice(recommendation.lastUnitPrice); }}>
+                      <div><span>#{index + 1}</span><strong>{recommendation.score} {t('điểm')}</strong></div>
+                      <h4>{recommendation.supplier.supplierName}</h4>
+                      {recommendation.reasons.slice(0, 3).map(reason => <p key={reason}>• {reason}</p>)}
+                    </button>)}
+                    {recommendations.length === 0 && <div className="purchase-empty">{t('Chưa có NCC hoạt động. Hãy thêm NCC trong Danh sách nhà cung cấp.')}</div>}
                   </div>
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
-                    <div className="form-group">
-                      <label>{t('Số Lượng')} *</label>
-                      <input type="number" min="1" value={quantity} onChange={e => setQuantity(Number(e.target.value))} required />
-                    </div>
-                    <div className="form-group">
-                      <label>{t('Đơn Vị')} *</label>
-                      <select value={unit} onChange={e => setUnit(e.target.value)}>
-                        <option value="m²">m²</option>
-                        <option value="kg">kg</option>
-                        <option value="cuộn">{t('cuộn')}</option>
-                        <option value="hộp">{t('hộp')}</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginTop: '8px' }}>
-                    <label>{t('Đơn Giá Nhập (đ) *')}</label>
-                    <input type="number" min="1" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} required />
-                  </div>
-                </div>
+                </section>
 
-                <div className="form-group">
-                  <label>{t('Ngày Nhận Hàng Dự Kiến *')}</label>
-                  <input 
-                    type="date" 
-                    value={expectedReceiveDate} 
-                    onChange={e => setExpectedReceiveDate(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                {currentUser.role === 'admin' && (
-                  <div className="form-group" style={{ marginTop: '8px' }}>
-                    <label>{t('Nhân viên mua hàng phụ trách')}</label>
-                    <select value={addAssignedPurchaserId} onChange={e => setAddAssignedPurchaserId(e.target.value)}>
-                      <option value="">-- {t('Chưa phân công')} --</option>
-                      {purchasers.map(p => (
-                        <option key={p.uid} value={p.uid}>{p.displayName} ({p.email})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddPurModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Tạo Đơn Mua Hàng')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE SUPPLIER MODAL */}
-      {showAddSupplierModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('THÊM NHÀ CUNG CẤP VẬT TƯ MỚI')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddSupplierModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleAddSupplier}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Tên Nhà Cung Cấp')} *</label>
-                  <input type="text" value={supplierName} onChange={e => setSupplierName(e.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label>{t('Người Liên Hệ')}</label>
-                  <input type="text" value={contactPerson} onChange={e => setContactPerson(e.target.value)} />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Điện Thoại')}</label>
-                    <input type="text" value={phone} onChange={e => setPhone(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Email')}</label>
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Địa chỉ văn phòng / Nhà xưởng')}</label>
-                  <input type="text" value={address} onChange={e => setAddress(e.target.value)} />
+                <div className="procurement-form-grid">
+                  <div className="form-group"><label>{t('Phương án cung ứng')}</label><select value={sourcingType} onChange={event => setSourcingType(event.target.value as SourcingType)}>{(['finished_good', 'raw_material', 'subcontract'] as SourcingType[]).map(type => <option key={type} value={type}>{getSourcingTypeLabel(type)}</option>)}</select></div>
+                  <div className="form-group"><label>{t('Nhà cung cấp *')}</label><select value={supplierId} onChange={event => setSupplierId(event.target.value)} required><option value="">{t('Chọn nhà cung cấp')}</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.supplierName}</option>)}</select></div>
+                  <div className="form-group"><label>{t('Đơn giá mua *')}</label><input type="number" min="1" value={unitPrice} onChange={event => setUnitPrice(Number(event.target.value))} required /></div>
+                  <div className="form-group"><label>{t('Ngày nhận dự kiến *')}</label><input type="date" value={expectedReceiveDate} onChange={event => setExpectedReceiveDate(event.target.value)} required /></div>
+                  <div className="form-group"><label>{t('Nhân viên mua hàng')}</label><select value={assignedPurchaserId} onChange={event => setAssignedPurchaserId(event.target.value)}><option value="">{t('Chưa phân công')}</option>{purchasers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
+                  <div className="procurement-total"><span>{t('Tổng tiền dự kiến')}</span><strong>{(selectedRequest.quantity * unitPrice).toLocaleString('vi-VN')} đ</strong></div>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddSupplierModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Lưu Nhà Cung Cấp')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT SUPPLIER MODAL */}
-      {showEditSupplierModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA HỒ SƠ NHÀ CUNG CẤP')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditSupplierModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleEditSupplierSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Tên Nhà Cung Cấp')} *</label>
-                  <input type="text" value={editSupplierName} onChange={e => setEditSupplierName(e.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label>{t('Người Liên Hệ')}</label>
-                  <input type="text" value={editContactPerson} onChange={e => setEditContactPerson(e.target.value)} />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Điện Thoại')}</label>
-                    <input type="text" value={editPhone} onChange={e => setEditPhone(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Email')}</label>
-                    <input type="email" value={editEmail} onChange={e => setEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Địa chỉ văn phòng / Nhà xưởng')}</label>
-                  <input type="text" value={editAddress} onChange={e => setEditAddress(e.target.value)} />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditSupplierModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT PURCHASE ORDER MODAL */}
-      {showEditPurModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('CHỈNH SỬA ĐƠN MUA HÀNG')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowEditPurModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleEditPurSubmit}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>{t('Chọn Nhà Cung Cấp *')}</label>
-                  <select value={editSupplierId} onChange={e => setEditSupplierId(e.target.value)} required>
-                    {suppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.supplierName}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="form-group">
-                  <label>{t('Chọn Đơn Hàng PO Cần Mua Vật Tư (Đối Chiếu BOM)')}</label>
-                  <select value={editLinkedPoId} onChange={e => setEditLinkedPoId(e.target.value)}>
-                    <option value="">{t('-- Không liên kết PO (Mua tồn kho dự phòng) --')}</option>
-                    {pos.filter(p => !isPOCompleted(p)).map(po => (
-                      <option key={po.id} value={po.id}>{po.poCode} - {po.customerName}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ border: '1px solid var(--color-border-light)', padding: '12px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-                  <h4 style={{ marginBottom: '8px', color: 'var(--color-primary)' }}>{t('Chi tiết vật tư cần mua')}</h4>
-                  <div className="form-group">
-                    <label>{t('Tên Vật Tư / Quy Cách')} *</label>
-                    <input 
-                      type="text" 
-                      value={editMaterialName} 
-                      onChange={e => setEditMaterialName(e.target.value)} 
-                      placeholder={t('Ví dụ: Giấy decal Fasson AW0339F, Mực DIC Cyan...')} 
-                      required 
-                    />
-                  </div>
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '8px' }}>
-                    <div className="form-group">
-                      <label>{t('Số Lượng')} *</label>
-                      <input type="number" min="1" value={editQuantity} onChange={e => setEditQuantity(Number(e.target.value))} required />
-                    </div>
-                    <div className="form-group">
-                      <label>{t('Đơn Vị')} *</label>
-                      <select value={editUnit} onChange={e => setEditUnit(e.target.value)}>
-                        <option value="m²">m²</option>
-                        <option value="kg">kg</option>
-                        <option value="cuộn">{t('cuộn')}</option>
-                        <option value="hộp">{t('hộp')}</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginTop: '8px' }}>
-                    <label>{t('Đơn Giá Nhập (đ) *')}</label>
-                    <input type="number" min="1" value={editUnitPrice} onChange={e => setEditUnitPrice(Number(e.target.value))} required />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>{t('Ngày Nhận Hàng Dự Kiến *')}</label>
-                  <input 
-                    type="date" 
-                    value={editExpectedReceiveDate} 
-                    onChange={e => setEditExpectedReceiveDate(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                {currentUser.role === 'admin' && (
-                  <div className="form-group" style={{ marginTop: '8px' }}>
-                    <label>{t('Nhân viên mua hàng phụ trách')}</label>
-                    <select value={editAssignedPurchaserId} onChange={e => setEditAssignedPurchaserId(e.target.value)}>
-                      <option value="">-- {t('Chưa phân công')} --</option>
-                      {purchasers.map(p => (
-                        <option key={p.uid} value={p.uid}>{p.displayName} ({p.email})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowEditPurModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Cập Nhật')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* SUPPLIER DETAILS MODAL (WITH CONTRACTS LIST) */}
-      {selectedSupplier && !showEditSupplierModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '750px', width: '90%' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '16px' }}>{t('HỒ SƠ NHÀ CUNG CẤP')}: {selectedSupplier.supplierName}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setSelectedSupplier(null)}>{t('Đóng')}</button>
-            </div>
-            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '20px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px', borderRight: '1px solid var(--color-border-light)', paddingRight: '16px' }}>
-                <h4 style={{ color: 'var(--color-primary)', marginBottom: '4px' }}>{t('Thông Tin Liên Hệ')}</h4>
-                <div><strong>{t('Tên NCC')}:</strong> {selectedSupplier.supplierName}</div>
-                <div><strong>{t('Người Liên Hệ')}:</strong> {selectedSupplier.contactPerson || t('Chưa cung cấp')}</div>
-                <div><strong>{t('Điện Thoại')}:</strong> {selectedSupplier.phone || t('Chưa cung cấp')}</div>
-                <div><strong>{t('Email')}:</strong> {selectedSupplier.email || t('Chưa cung cấp')}</div>
-                <div><strong>{t('Địa chỉ')}:</strong> {selectedSupplier.address || t('Chưa cung cấp')}</div>
-
-                <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid var(--color-border-light)', fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                  <div>{t('Tạo bởi:')} {selectedSupplier.createdBy || t('Không xác định')}</div>
-                  {selectedSupplier.createdAt && <div>{formatDateTime(selectedSupplier.createdAt)}</div>}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ color: 'var(--color-primary)' }}>{t('Danh Sách Hợp Đồng Cung Ứng')}</h4>
-                  {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                    <button className="btn btn-sm btn-primary btn-symbol-sm" onClick={() => setShowAddContractModal(true)} title={t('Thêm Hợp Đồng')}>
-                      <Plus size={14} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('Số HĐ')}</th>
-                        <th>{t('Ngày Ký')}</th>
-                        <th>{t('Hết Hạn')}</th>
-                        <th>{t('Trị Giá')}</th>
-                        <th>{t('Bản Scan')}</th>
-                        <th>{t('Thao Tác')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(selectedSupplier.contracts || []).map((contr: any) => (
-                        <tr key={contr.id}>
-                          <td style={{ fontWeight: 600 }}>{contr.contractNo}</td>
-                          <td>{formatDate(contr.signDate)}</td>
-                          <td>{formatDate(contr.expiryDate)}</td>
-                          <td>{contr.value?.toLocaleString()} đ</td>
-                          <td>
-                            {contr.fileUrl ? (
-                              <a href={contr.fileUrl} download={`HopDong_${contr.contractNo}`} className="btn btn-sm btn-outline">
-                                {t('Tải file')}
-                              </a>
-                            ) : (
-                              <span style={{ fontStyle: 'italic', color: 'var(--color-text-muted)' }}>{t('Không có')}</span>
-                            )}
-                          </td>
-                          <td>
-                            {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                              <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteContract(contr.id)} title={t('Xóa')}>
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {(selectedSupplier.contracts || []).length === 0 && (
-                        <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '16px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                            {t('Chưa lưu hợp đồng nào với nhà cung cấp này.')}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              {(currentUser.role === 'admin' || currentUser.role === 'purchaser') && (
-                <button className="btn btn-primary" onClick={() => handleOpenEditSupplier(selectedSupplier)}>{t('Sửa Hồ Sơ')}</button>
-              )}
-              <button className="btn btn-outline" onClick={() => setSelectedSupplier(null)}>{t('Đóng')}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADD CONTRACT MODAL */}
-      {showAddContractModal && selectedSupplier && (
-        <div className="modal-overlay" style={{ zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '450px' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '15px' }}>{t('THÊM HỢP ĐỒNG NHÀ CUNG CẤP')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowAddContractModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handleAddContractSubmit}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div className="form-group">
-                  <label>{t('Số Hợp Đồng *')}</label>
-                  <input type="text" value={contractNo} onChange={e => setContractNo(e.target.value)} required placeholder="VD: HĐ-NCC-2026-01" />
-                </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label>{t('Ngày Ký HĐ *')}</label>
-                    <input type="date" value={contractSignDate} onChange={e => setContractSignDate(e.target.value)} required />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Ngày Hết Hạn HĐ *')}</label>
-                    <input type="date" value={contractExpiryDate} onChange={e => setContractExpiryDate(e.target.value)} required />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{t('Giá Trị Hợp Đồng (đ) *')}</label>
-                  <input type="number" min="0" value={contractValue} onChange={e => setContractValue(Number(e.target.value))} required />
-                </div>
-                <div className="form-group">
-                  <label>{t('Tải Bản Scan Hợp Đồng (PDF/Ảnh) *')}</label>
-                  <input type="file" accept="application/pdf,image/*" onChange={handleContractFileChange} style={{ fontSize: '12px' }} required />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddContractModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Tải Lên Hợp Đồng')}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* SUPPLIER DEBT PAYMENT MODAL */}
-      {showPaymentModal && selectedInvoice && (
-        <div className="modal-overlay" style={{ zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '450px' }}>
-            <div className="modal-header">
-              <span style={{ fontWeight: 700, fontSize: '15px' }}>{t('THANH TOÁN CÔNG NỢ NHÀ CUNG CẤP')}</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setShowPaymentModal(false)}>{t('Đóng')}</button>
-            </div>
-            <form onSubmit={handlePaymentSubmit}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '4px' }}>
-                  <div><strong>{t('Mã công nợ:')}</strong> {selectedInvoice.invoiceCode}</div>
-                  <div><strong>{t('Nhà cung cấp:')}</strong> {selectedInvoice.customerName}</div>
-                  <div><strong>{t('Tổng nợ ban đầu:')}</strong> {selectedInvoice.amount?.toLocaleString()} đ</div>
-                  <div><strong>{t('Đã thanh toán:')}</strong> {selectedInvoice.paidAmount?.toLocaleString()} đ</div>
-                  <div><strong>{t('Số nợ còn lại:')}</strong> {(selectedInvoice.amount - selectedInvoice.paidAmount)?.toLocaleString()} đ</div>
-                </div>
-
-                <div className="form-group">
-                  <label>{t('Số Tiền Thanh Toán Đợt Này (đ) *')}</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={selectedInvoice.amount - selectedInvoice.paidAmount}
-                    value={payAmount}
-                    onChange={e => setPayAmount(Number(e.target.value))}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>{t('Ghi chú giao dịch (Phương thức, Mã tham chiếu...)')}</label>
-                  <textarea
-                    value={payNote}
-                    onChange={e => setPayNote(e.target.value)}
-                    placeholder={t('Ví dụ: Chuyển khoản Techcombank, Ủy nhiệm chi số UCF-828')}
-                    rows={2}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>{t('Hủy')}</button>
-                <button type="submit" className="btn btn-primary">{t('Xác Nhận Thanh Toán')}</button>
-              </div>
+              <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => setSelectedRequestId('')}>{t('Hủy')}</button><button type="submit" className="btn btn-primary" disabled={isSaving || !supplierId}>{isSaving ? t('Đang lưu...') : t('Chọn NCC & tạo đơn mua')}</button></div>
             </form>
           </div>
         </div>

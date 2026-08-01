@@ -1,5 +1,6 @@
 import type { CustomerRecord, LeadRecord } from '../domain/crmModels';
 import type { DesignRequest } from '../domain/designWorkflow';
+import type { ProcurementRequestRecord } from '../domain/purchaseModels';
 import {
   getNotificationDocumentId,
   type NotificationModule,
@@ -27,6 +28,7 @@ interface WorkflowNotificationInput {
   customers: CustomerRecord[];
   leads: LeadRecord[];
   pos: UnknownRecord[];
+  procurementRequests: ProcurementRequestRecord[];
   designRequests: DesignRequest[];
   inventory: UnknownRecord[];
   productionCommands: UnknownRecord[];
@@ -90,6 +92,7 @@ export const buildWorkflowNotificationCandidates = ({
   customers,
   leads,
   pos,
+  procurementRequests,
   designRequests,
   inventory,
   productionCommands,
@@ -169,6 +172,24 @@ export const buildWorkflowNotificationCandidates = ({
       message: `${poCode} cần được theo dõi và bàn giao thiết kế.`,
       createdAt: getRecordCreatedAt(po),
       createdById: asText(po.saleId)
+    });
+  });
+
+  procurementRequests.forEach(request => {
+    if (request.deleted || !['new', 'reviewing', 'quoting', 'supplier_selected'].includes(request.status)) return;
+    const recipients = request.assignedPurchaserId
+      ? [request.assignedPurchaserId]
+      : purchaserIds;
+    addForRecipients(candidates, [...adminIds, ...recipients], {
+      module: 'purchase',
+      eventType: 'workflow_procurement_request',
+      eventKey: `purchase:request:${request.id}:${request.status}:${request.assignedPurchaserId || 'team'}`,
+      entityId: request.id,
+      entityCode: request.requestCode,
+      title: request.status === 'new' ? 'PO mới cần xử lý mua hàng' : 'Yêu cầu mua hàng đang chờ xử lý',
+      message: `${request.poCode} · ${request.productName} · ${request.quantity.toLocaleString('vi-VN')} ${request.unit}`,
+      createdAt: request.createdAt,
+      createdById: request.createdById
     });
   });
 
@@ -314,7 +335,10 @@ export const synchronizeWorkflowNotifications = async (
     leads: new Set(input.leads.map(lead => lead.id)),
     sales: new Set(input.pos.map(getEntityId).filter(Boolean)),
     design: new Set(input.designRequests.map(request => request.id)),
-    purchase: new Set(input.inventory.map(getEntityId).filter(Boolean)),
+    purchase: new Set([
+      ...input.inventory.map(getEntityId).filter(Boolean),
+      ...input.procurementRequests.map(request => request.id).filter(Boolean)
+    ]),
     inventory: new Set(input.inventory.map(getEntityId).filter(Boolean)),
     production: new Set(input.productionCommands.map(getEntityId).filter(Boolean)),
     delivery: new Set(input.deliveries.map(getEntityId).filter(Boolean)),

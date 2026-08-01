@@ -1168,7 +1168,6 @@ export default function POFormFullScreen({
                       <th style={{ width: '70px' }}>{t('ĐVT')}</th>
                       <th style={{ width: '80px' }}>{t('Số lượng')}</th>
                       <th style={{ width: '95px' }}>{t('Đơn giá')}</th>
-                      <th style={{ width: '180px' }}>{t('Nhà cung cấp')}</th>
                       <th style={{ width: '65px' }}>{t('Thuế (%)')}</th>
                       <th style={{ width: '190px' }}>{t('Chiết khấu')}</th>
                       <th style={{ width: '125px' }}>{t('Thành tiền (gồm VAT)')}</th>
@@ -1184,10 +1183,6 @@ export default function POFormFullScreen({
                       const imagesList = item.previewImages || (item.previewImage ? [item.previewImage] : []);
                       const itemKey = item.itemId || String(index);
                       const isExpanded = expandedItemIds.includes(itemKey);
-                      const supplierLabel = item.supplierName
-                        || suppliers.find((supplier: any) => supplier.id === item.supplierId)?.supplierName
-                        || '';
-
                       return (
                         <React.Fragment key={itemKey}>
                         <tr>
@@ -1307,21 +1302,6 @@ export default function POFormFullScreen({
                               min="0"
                               step="any"
                             />
-                          </td>
-                          <td>
-                            <select
-                              className="po-grid-input po-supplier-select"
-                              value={item.supplierId || ''}
-                              onChange={(e) => handleUpdateRowField(index, 'supplierId', e.target.value)}
-                              title={supplierLabel || t('Chưa chọn nhà cung cấp')}
-                            >
-                              <option value="">{t('-- Chọn nhà cung cấp --')}</option>
-                              {suppliers.map((supplier: any) => (
-                                <option key={supplier.id} value={supplier.id}>
-                                  {supplier.supplierName || supplier.companyName || supplier.name}
-                                </option>
-                              ))}
-                            </select>
                           </td>
                           <td>
                             <input 

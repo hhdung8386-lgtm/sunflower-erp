@@ -5,6 +5,7 @@ import { FloatingChat } from '../components/FloatingChat';
 import POFormFullScreen from '../components/POFormFullScreen';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { syncDesignRequestsForPO } from '../services/designRequestService';
+import { synchronizeProcurementRequestsForPO } from '../services/procurementService';
 import { DesignRecord, DesignVersion } from '../domain/designWorkflow';
 import {
   calculatePOItemFinancials,
@@ -421,6 +422,12 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
         items: poData.items,
         assignments: poData.assignments || []
       }, currentUser);
+      await synchronizeProcurementRequestsForPO({
+        ...selectedPO,
+        ...poData,
+        id: poData.id,
+        items: poData.items
+      }, currentUser);
 
       setShowEditModal(false);
       setSelectedPO(null);
@@ -539,6 +546,7 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       };
 
       const createdPO = await dbService.addDocument('pos', newPO);
+      await synchronizeProcurementRequestsForPO({ ...newPO, id: createdPO.id }, currentUser);
       const createdDesignRequests = await syncDesignRequestsForPO({
         ...newPO,
         id: createdPO.id

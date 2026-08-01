@@ -7,6 +7,7 @@ import { Sales } from './views/Sales';
 import { Design } from './views/Design';
 import { DesignLibrary } from './views/DesignLibrary';
 import { Purchase } from './views/Purchase';
+import { Suppliers } from './views/Suppliers';
 import { Inventory } from './views/Inventory';
 import { Production } from './views/Production';
 import { Delivery } from './views/Delivery';
@@ -19,6 +20,7 @@ import { DesignRequest } from './domain/designWorkflow';
 import { sortNewestFirst } from './domain/recordOrdering';
 import { normalizePORecords } from './domain/poCompatibility';
 import type { CustomerRecord, LeadRecord } from './domain/crmModels';
+import type { ProcurementRequestRecord } from './domain/purchaseModels';
 import {
   isUnreadNotificationForUser,
   type NotificationModule,
@@ -35,6 +37,7 @@ import {
   FileText, 
   Palette, 
   ShoppingBag, 
+  Building2,
   Archive, 
   FolderOpen,
   Settings, 
@@ -74,13 +77,13 @@ function App() {
   const getDefaultPagesForRole = (role: string): string[] => {
     switch (role) {
       case 'admin':
-        return ['dashboard', 'chat', 'crm', 'leads', 'sales', 'design', 'purchase', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
+        return ['dashboard', 'chat', 'crm', 'leads', 'sales', 'design', 'purchase', 'suppliers', 'inventory', 'production', 'delivery', 'accounting', 'users', 'recycle_bin'];
       case 'sale':
         return ['dashboard', 'chat', 'crm', 'leads', 'sales'];
       case 'designer':
         return ['dashboard', 'chat', 'design'];
       case 'purchaser':
-        return ['dashboard', 'chat', 'purchase', 'inventory'];
+        return ['dashboard', 'chat', 'purchase', 'suppliers', 'inventory'];
       case 'producer':
         return ['dashboard', 'chat', 'production'];
       case 'accountant':
@@ -96,6 +99,9 @@ function App() {
     if (pageId === 'leads') {
       return allowed.includes('leads') || allowed.includes('crm');
     }
+    if (pageId === 'suppliers') {
+      return allowed.includes('suppliers') || allowed.includes('purchase');
+    }
     return allowed.includes(pageId);
   };
   
@@ -108,6 +114,7 @@ function App() {
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [pos, setPOs] = useState<any[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [procurementRequests, setProcurementRequests] = useState<ProcurementRequestRecord[]>([]);
   const [productionCommands, setProductionCommands] = useState<any[]>([]);
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -176,6 +183,12 @@ function App() {
     const unsubPurchases = dbService.subscribeCollection('purchase_orders', (data) => {
       setPurchaseOrders(sortNewestFirst(data, purchaseOrder => [purchaseOrder.createdAt]));
     });
+    const unsubProcurementRequests = dbService.subscribeCollection('procurement_requests', (data) => {
+      setProcurementRequests(sortNewestFirst(
+        data as ProcurementRequestRecord[],
+        request => [request.createdAt, request.updatedAt]
+      ));
+    });
     const unsubProduction = dbService.subscribeCollection('production_commands', (data) => {
       setProductionCommands(sortNewestFirst(data, command => [command.createdAt, command.startedAt]));
     });
@@ -207,6 +220,7 @@ function App() {
       unsubLeads();
       unsubPOs();
       unsubPurchases();
+      unsubProcurementRequests();
       unsubProduction();
       unsubDeliveries();
       unsubInvoices();
@@ -249,6 +263,7 @@ function App() {
         customers,
         leads,
         pos,
+        procurementRequests,
         designRequests,
         inventory,
         productionCommands,
@@ -267,6 +282,7 @@ function App() {
     customers,
     leads,
     pos,
+    procurementRequests,
     designRequests,
     inventory,
     productionCommands,
@@ -317,6 +333,7 @@ function App() {
     const updatedUser = {
       ...user,
       role: newRole,
+      allowedPages: getDefaultPagesForRole(newRole),
       displayName: `Đóng vai: ${newRole.toUpperCase()} - ${user.displayName.replace(/Đóng vai: [A-Z]+ - /, '')}`
     };
     setUser(updatedUser);
@@ -405,7 +422,10 @@ function App() {
         return <DesignLibrary pos={pos} currentUser={user} />;
       case 'purchase':
         if (!isPageAllowed('purchase')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Purchase pos={pos} purchaseOrders={purchaseOrders} currentUser={user} onRefresh={refreshData} users={users} />;
+        return <Purchase pos={pos} purchaseOrders={purchaseOrders} procurementRequests={procurementRequests} currentUser={user} onRefresh={refreshData} users={users} />;
+      case 'suppliers':
+        if (!isPageAllowed('suppliers')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
+        return <Suppliers purchaseOrders={purchaseOrders} currentUser={user} users={users} />;
       case 'inventory':
         if (!isPageAllowed('inventory')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return <Inventory currentUser={user} onRefresh={refreshData} />;
@@ -745,13 +765,26 @@ function App() {
             <button 
               className={`sidebar-item ${activePage === 'purchase' ? 'active' : ''}`}
               onClick={() => { setActivePage('purchase'); setIsSidebarOpen(false); }}
-              title={t('Mua Hàng & NCC')}
+              title={t('Mua Hàng')}
             >
               <div className="sidebar-item-content">
                 <ShoppingBag size={16} />
-                <span className="sidebar-item-label">{t('Mua Hàng & NCC')}</span>
+                <span className="sidebar-item-label">{t('Mua Hàng')}</span>
               </div>
               {getUnreadNotificationCount('purchase') > 0 && <span className="sidebar-badge">{getUnreadNotificationCount('purchase')}</span>}
+            </button>
+          )}
+
+          {isPageAllowed('suppliers') && (
+            <button
+              className={`sidebar-item ${activePage === 'suppliers' ? 'active' : ''}`}
+              onClick={() => { setActivePage('suppliers'); setIsSidebarOpen(false); }}
+              title={t('Danh Sách Nhà Cung Cấp')}
+            >
+              <div className="sidebar-item-content">
+                <Building2 size={16} />
+                <span className="sidebar-item-label">{t('Danh Sách Nhà Cung Cấp')}</span>
+              </div>
             </button>
           )}
 
