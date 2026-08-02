@@ -701,7 +701,7 @@
 }
 
 .lead-toolbar {
-  grid-template-columns: minmax(230px, 1.4fr) repeat(5, minmax(110px, .7fr)) repeat(3, auto);
+  grid-template-columns: minmax(240px, 1.5fr) repeat(6, minmax(112px, .65fr)) repeat(3, auto);
 }
 
 .lead-advanced-toggle {
@@ -751,6 +751,12 @@
   font-weight: 600;
   cursor: pointer;
   list-style: none;
+}
+
+.lead-filter-menu--toolbar summary {
+  width: 100%;
+  min-height: 34px;
+  justify-content: space-between;
 }
 
 .lead-filter-menu summary::-webkit-details-marker {
@@ -1024,15 +1030,13 @@
 }
 
 .lead-classification-panel .lead-dynamic-groups {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .lead-classification-panel .lead-check-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.lead-classification-panel .lead-dynamic-group__title,
-.lead-classification-panel .lead-dynamic-field > strong,
 .lead-table-result {
   display: none;
 }
@@ -1051,6 +1055,11 @@
   color: #1e3a8a;
   font-size: 11.5px;
   font-weight: 750;
+}
+
+.lead-dynamic-group > select {
+  width: 100%;
+  min-height: 34px;
 }
 
 .lead-dynamic-field > strong {
@@ -1447,8 +1456,7 @@
   }
 }
 
-/* Giữ màn hình danh sách theo luồng Lead cũ; chỉ dùng một bộ tiến độ ngắn. */
-.lead-workspace-tabs,
+/* Danh sách giữ gọn; 5 nhóm lọc chính nằm trực tiếp trên thanh công cụ. */
 .lead-saved-views,
 .lead-quick-filters {
   display: none;
