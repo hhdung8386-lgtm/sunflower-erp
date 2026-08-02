@@ -701,7 +701,7 @@
 }
 
 .lead-toolbar {
-  grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(120px, .75fr)) repeat(5, auto);
+  grid-template-columns: minmax(230px, 1.4fr) repeat(5, minmax(110px, .7fr)) repeat(3, auto);
 }
 
 .lead-advanced-toggle {
@@ -961,7 +961,7 @@
 }
 
 .lead-table--classified {
-  min-width: 1480px;
+  min-width: 1100px;
 }
 
 .lead-table--classified th:nth-child(1) { width: 16%; }
@@ -1021,6 +1021,20 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.lead-classification-panel .lead-dynamic-groups {
+  grid-template-columns: 1fr;
+}
+
+.lead-classification-panel .lead-check-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lead-classification-panel .lead-dynamic-group__title,
+.lead-classification-panel .lead-dynamic-field > strong,
+.lead-table-result {
+  display: none;
 }
 
 .lead-dynamic-group {
@@ -1363,7 +1377,7 @@
 
 @media (max-width: 1350px) {
   .lead-toolbar {
-    grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(115px, 0.75fr)) repeat(5, auto);
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 }
 
@@ -1431,4 +1445,11 @@
   .lead-config-checks {
     grid-template-columns: 1fr;
   }
+}
+
+/* Giữ màn hình danh sách theo luồng Lead cũ; chỉ dùng một bộ tiến độ ngắn. */
+.lead-workspace-tabs,
+.lead-saved-views,
+.lead-quick-filters {
+  display: none;
 }

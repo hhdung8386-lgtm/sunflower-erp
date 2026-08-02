@@ -17,7 +17,6 @@ import {
   Plus,
   Save,
   Search,
-  Settings2,
   SlidersHorizontal,
   Tags,
   TrendingUp,
@@ -510,10 +509,6 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const handleQuickStageChange = async (lead: LeadRecord, stage: LeadStage) => {
     if (lead.stage === stage) return;
-    if (stage === 'lost' && !(getLeadFilterValues(lead).loss_reason || []).length) {
-      window.alert('Vui lòng chọn "Lý do không thành công" trong phần Phân loại và bộ lọc Lead trước.');
-      return;
-    }
     const now = new Date().toISOString();
     await dbService.updateDocument('leads', lead.id, {
       stage,
@@ -671,13 +666,6 @@ export const Leads: React.FC<LeadsProps> = ({
       }
     }));
   };
-
-  const activeAdvancedFilterCount = Object.values(dynamicFilters).filter(values => values.length > 0).length
-    + Object.values(dynamicValueFilters).filter(condition => Boolean(condition.operator)).length
-    + Number(Boolean(potentialMin || potentialMax))
-    + Number(Boolean(createdFrom || createdTo))
-    + Number(Boolean(inactiveDays))
-    + Number(finderFilter !== 'all');
 
   const findDuplicateCustomer = (lead: LeadRecord) => {
     const companyName = lead.companyName.trim().toLowerCase();
@@ -886,8 +874,8 @@ export const Leads: React.FC<LeadsProps> = ({
           </section>
 
           <section className="lead-panel lead-panel--wide lead-classification-panel">
-            <div className="lead-panel__title"><Tags size={17} /> {t('Phân loại và bộ lọc Lead')}</div>
-            <p className="lead-panel__hint">Một Lead có thể được tích nhiều nhãn cùng lúc. Mỗi thay đổi được lưu ngay và ghi vào lịch sử chăm sóc.</p>
+            <div className="lead-panel__title"><Tags size={17} /> {t('Tiến độ bán hàng')}</div>
+            <p className="lead-panel__hint">Có thể tích nhiều mục cùng lúc. Thay đổi được lưu ngay vào lịch sử chăm sóc.</p>
             <LeadDynamicFields
               lead={selectedLead}
               definitions={filterDefinitions}
@@ -1068,10 +1056,7 @@ export const Leads: React.FC<LeadsProps> = ({
           <h1 className="page-title">{t('KHÁCH HÀNG TIỀM NĂNG (LEAD)')}</h1>
           <p className="page-subtitle">{t('Quản lý cơ hội bán hàng, lịch chăm sóc và chuyển đổi Lead thành khách hàng chính thức.')}</p>
         </div>
-        <div className="lead-page-actions">
-          {currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowFilterConfig(true)}><Settings2 size={16} /> {t('Cấu hình bộ lọc')}</button>}
-          <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>
-        </div>
+        <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>
       </div>
 
       <div className="lead-workspace-tabs" role="tablist" aria-label="Không gian quản lý Lead">
@@ -1117,14 +1102,18 @@ export const Leads: React.FC<LeadsProps> = ({
               <Search size={16} />
               <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm công ty, liên hệ, SĐT, địa chỉ, nhu cầu, nhãn...')} />
             </div>
-            <select value={stageFilter} onChange={event => setStageFilter(event.target.value as 'all' | LeadStage)}>
-              <option value="all">{t('Tất cả giai đoạn')}</option>
-              {LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
-            </select>
             {currentUser.role === 'admin' && <select value={saleFilter} onChange={event => setSaleFilter(event.target.value)}><option value="all">{t('Tất cả Sale phụ trách')}</option>{saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select>}
             <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}><option value="all">{t('Tất cả nguồn')}</option>{sources.map(source => <option key={source} value={source}>{source}</option>)}</select>
+            <select value={provinceFilter} onChange={event => setProvinceFilter(event.target.value)}><option value="all">{t('Tất cả tỉnh/thành')}</option>{provinces.map(province => <option key={province} value={province}>{province}</option>)}</select>
+            <select value={sizeFilter} onChange={event => setSizeFilter(event.target.value as 'all' | LeadCompanySize)}><option value="all">{t('Tất cả quy mô')}</option><option value="large">{COMPANY_SIZE_LABELS.large}</option><option value="medium">{COMPANY_SIZE_LABELS.medium}</option><option value="small">{COMPANY_SIZE_LABELS.small}</option></select>
+            <select
+              value={(dynamicFilters.lead_progress || [])[0] || 'all'}
+              onChange={event => setDynamicFilters(event.target.value === 'all' ? {} : { lead_progress: [event.target.value] })}
+            >
+              <option value="all">{t('Tất cả tiến độ')}</option>
+              {filterDefinitions[0].options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
             <label className={`lead-overdue-toggle ${onlyOverdue ? 'is-active' : ''}`}><input type="checkbox" checked={onlyOverdue} onChange={event => setOnlyOverdue(event.target.checked)} /><CalendarClock size={14} /> {t('Quá hạn')}</label>
-            <button type="button" className={`btn btn-outline lead-advanced-toggle ${showAdvancedFilters ? 'is-active' : ''}`} onClick={() => setShowAdvancedFilters(previous => !previous)}><SlidersHorizontal size={15} /> Nâng cao {activeAdvancedFilterCount > 0 && <span>{activeAdvancedFilterCount}</span>}</button>
             <button type="button" className="btn btn-outline btn-symbol" onClick={clearFilters} title={t('Xóa bộ lọc')}><Filter size={15} /></button>
             <div className="lead-view-toggle"><button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')} title={t('Dạng danh sách')}><List size={16} /></button><button type="button" className={viewMode === 'kanban' ? 'is-active' : ''} onClick={() => setViewMode('kanban')} title="Kanban"><KanbanSquare size={16} /></button></div>
           </section>
@@ -1184,7 +1173,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <div className="lead-table-result">Hiển thị <strong>{filteredLeads.length}</strong> / {accessibleLeads.length} Lead</div>
               <div className="table-container">
                 <table className="lead-table lead-table--classified">
-                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Nhãn theo dõi')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Giai đoạn')}</th><th>{t('Thao tác')}</th></tr></thead>
+                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Tiến độ')}</th><th>{t('Thao tác')}</th></tr></thead>
                   <tbody>
                     {filteredLeads.map(lead => (
                       <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
@@ -1192,14 +1181,13 @@ export const Leads: React.FC<LeadsProps> = ({
                         <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
                         <td><strong>{lead.source || '—'}</strong><span>{lead.province || 'Chưa xác định'}</span></td>
                         <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
-                        <td><strong>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</strong><span>Tìm bởi: {users.find(user => user.uid === (lead.discoveredById || lead.createdById))?.displayName || lead.discoveredByName || 'Chưa xác định'}</span></td>
-                        <td><LeadTagChips lead={lead} definitions={filterDefinitions} /></td>
+                        <td>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</td>
                         <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
-                        <td><span className={`lead-stage-badge lead-stage-badge--${lead.stage}`}>{getStageLabel(lead.stage)}</span></td>
+                        <td><LeadTagChips lead={lead} definitions={filterDefinitions} /></td>
                         <td><div className="lead-row-actions" onClick={event => event.stopPropagation()}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button><button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button></div></td>
                       </tr>
                     ))}
-                    {filteredLeads.length === 0 && <tr><td colSpan={9} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
+                    {filteredLeads.length === 0 && <tr><td colSpan={8} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
                   </tbody>
                 </table>
               </div>
