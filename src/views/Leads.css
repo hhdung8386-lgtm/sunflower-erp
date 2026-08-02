@@ -995,12 +995,13 @@
   min-width: 1100px;
 }
 
-.lead-table--classified th:nth-child(1) { width: 16%; }
-.lead-table--classified th:nth-child(2) { width: 11%; }
-.lead-table--classified th:nth-child(3) { width: 10%; }
-.lead-table--classified th:nth-child(4) { width: 9%; }
-.lead-table--classified th:nth-child(5) { width: 13%; }
-.lead-table--classified th:nth-child(6) { width: 17%; }
+.lead-table--classified th:nth-child(1) { width: 19%; }
+.lead-table--classified th:nth-child(2) { width: 14%; }
+.lead-table--classified th:nth-child(3) { width: 14%; }
+.lead-table--classified th:nth-child(4) { width: 10%; }
+.lead-table--classified th:nth-child(5) { width: 16%; }
+.lead-table--classified th:nth-child(6) { width: 16%; }
+.lead-table--classified th:nth-child(7) { width: 11%; }
 
 .lead-tag-list {
   flex-wrap: wrap;
@@ -1123,7 +1124,9 @@
   top: calc(100% + 4px);
   right: 0;
   display: grid;
-  width: min(250px, 80vw);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  width: min(340px, 80vw);
   max-height: 230px;
   padding: 6px;
   overflow-y: auto;
@@ -1134,25 +1137,58 @@
 }
 
 .lead-compact-filter-options label {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 5px 7px;
-  border-radius: 5px;
+  min-height: 34px;
+  padding: 6px 28px 6px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   color: #475569;
   font-size: 10.5px;
   cursor: pointer;
 }
 
-.lead-compact-filter-options label:hover,
-.lead-compact-filter-options label.is-checked {
+.lead-compact-filter-options label input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lead-compact-filter-options label::after {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: transparent;
+  content: '✓';
+  font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+  transform: translateY(-50%);
+}
+
+.lead-compact-filter-options label:hover {
   color: #172554;
   background: #f1f5f9;
 }
 
 .lead-compact-filter-options label.is-checked {
+  border-color: #94a3b8;
+  color: #172554;
+  background: #f8fafc;
   font-weight: 650;
+}
+
+.lead-compact-filter-options label.is-checked::after {
+  border-color: #334155;
+  color: #fff;
+  background: #334155;
 }
 
 .lead-compact-filter-row--checkbox > input {

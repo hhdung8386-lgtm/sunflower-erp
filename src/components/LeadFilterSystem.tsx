@@ -3,10 +3,9 @@ import { BarChart3, Pencil, Save, Settings2, X } from 'lucide-react';
 import type {
   LeadCustomFieldType,
   LeadFilterDefinition,
-  LeadFilterOption,
   LeadRecord
 } from '../domain/crmModels';
-import { findLeadFilterOption, getLeadFilterValues, slugifyLeadFilterId } from '../domain/leadFilterConfig';
+import { getLeadFilterValues, slugifyLeadFilterId } from '../domain/leadFilterConfig';
 import type { UserProfile } from '../services/firebaseService';
 
 const FIELD_TYPE_LABELS: Record<LeadCustomFieldType, string> = {
@@ -19,32 +18,6 @@ const FIELD_TYPE_LABELS: Record<LeadCustomFieldType, string> = {
 };
 
 const DEFAULT_OPTION_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706', '#dc2626'];
-
-export const LeadTagChips: React.FC<{
-  lead: LeadRecord;
-  definitions: LeadFilterDefinition[];
-  limit?: number;
-}> = ({ lead, definitions, limit = 3 }) => {
-  const chips = Object.entries(getLeadFilterValues(lead, definitions)).flatMap(([fieldId, values]) => (
-    values.map(optionId => {
-      const option = findLeadFilterOption(definitions, fieldId, optionId);
-      return option ? { fieldId, option } : null;
-    }).filter(Boolean) as Array<{ fieldId: string; option: LeadFilterOption }>
-  ));
-
-  if (chips.length === 0) return <span className="lead-tag-empty">Chưa gắn nhãn</span>;
-
-  return (
-    <div className="lead-tag-list">
-      {chips.slice(0, limit).map(({ fieldId, option }) => (
-        <span key={`${fieldId}-${option.id}`} className="lead-tag-chip" style={{ '--lead-tag-color': option.color } as React.CSSProperties}>
-          {option.label}
-        </span>
-      ))}
-      {chips.length > limit && <span className="lead-tag-more">+{chips.length - limit}</span>}
-    </div>
-  );
-};
 
 export const LeadDynamicFields: React.FC<{
   lead: LeadRecord;

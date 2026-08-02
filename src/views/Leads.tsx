@@ -45,8 +45,7 @@ import { dbService, type UserProfile } from '../services/firebaseService';
 import {
   LeadDynamicFields,
   LeadFilterAdminModal,
-  LeadPerformancePanel,
-  LeadTagChips
+  LeadPerformancePanel
 } from '../components/LeadFilterSystem';
 import './Leads.css';
 
@@ -932,21 +931,20 @@ export const Leads: React.FC<LeadsProps> = ({
               <div className="lead-table-result">Hiển thị <strong>{filteredLeads.length}</strong> / {accessibleLeads.length} Lead</div>
               <div className="table-container">
                 <table className="lead-table lead-table--classified">
-                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Phân loại')}</th><th>{t('Thao tác')}</th></tr></thead>
+                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Thao tác')}</th></tr></thead>
                   <tbody>
                     {filteredLeads.map(lead => (
                       <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
-                        <td><strong>{lead.companyName}</strong><span>{getClassificationLabel(lead, LEAD_FILTER_IDS.companySize, COMPANY_SIZE_LABELS[lead.companySize])}</span></td>
+                        <td><strong>{lead.companyName}</strong></td>
                         <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
                         <td><strong>{getClassificationLabel(lead, LEAD_FILTER_IDS.source, lead.source || '—')}</strong><span>{getClassificationLabel(lead, LEAD_FILTER_IDS.province, lead.province || 'Chưa xác định')}</span></td>
                         <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
                         <td>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</td>
                         <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
-                        <td><LeadTagChips lead={lead} definitions={filterDefinitions} /></td>
                         <td><div className="lead-row-actions" onClick={event => event.stopPropagation()}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button><button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button></div></td>
                       </tr>
                     ))}
-                    {filteredLeads.length === 0 && <tr><td colSpan={8} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
+                    {filteredLeads.length === 0 && <tr><td colSpan={7} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -955,7 +953,7 @@ export const Leads: React.FC<LeadsProps> = ({
             <section className="lead-kanban">
               {ACTIVE_LEAD_STAGES.map(stage => {
                 const stageLeads = filteredLeads.filter(lead => lead.stage === stage.id);
-                return <div key={stage.id} className="lead-kanban-column"><div className="lead-kanban-column__header"><span>{stage.label}</span><strong>{stageLeads.length}</strong></div><div className="lead-kanban-column__body">{stageLeads.map(lead => <button type="button" key={lead.id} className="lead-kanban-card" onClick={() => setSelectedLeadId(lead.id)}><strong>{lead.companyName}</strong><LeadTagChips lead={lead} definitions={filterDefinitions} limit={2} /><span><Phone size={12} /> {lead.phone || 'Chưa có SĐT'}</span><span><Mail size={12} /> {lead.email || 'Chưa có email'}</span><span><MapPin size={12} /> {lead.province || 'Chưa có khu vực'}</span><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}><CalendarClock size={12} /> {formatDateTime(lead.nextFollowUpAt)}</span></button>)}{stageLeads.length === 0 && <div className="lead-kanban-empty">{t('Chưa có Lead')}</div>}</div></div>;
+                return <div key={stage.id} className="lead-kanban-column"><div className="lead-kanban-column__header"><span>{stage.label}</span><strong>{stageLeads.length}</strong></div><div className="lead-kanban-column__body">{stageLeads.map(lead => <button type="button" key={lead.id} className="lead-kanban-card" onClick={() => setSelectedLeadId(lead.id)}><strong>{lead.companyName}</strong><span><Phone size={12} /> {lead.phone || 'Chưa có SĐT'}</span><span><Mail size={12} /> {lead.email || 'Chưa có email'}</span><span><MapPin size={12} /> {lead.province || 'Chưa có khu vực'}</span><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}><CalendarClock size={12} /> {formatDateTime(lead.nextFollowUpAt)}</span></button>)}{stageLeads.length === 0 && <div className="lead-kanban-empty">{t('Chưa có Lead')}</div>}</div></div>;
               })}
             </section>
           )}
