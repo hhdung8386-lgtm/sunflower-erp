@@ -15,7 +15,11 @@ import {
   Pencil,
   Phone,
   Plus,
+  Save,
   Search,
+  Settings2,
+  SlidersHorizontal,
+  Tags,
   TrendingUp,
   UserCheck,
   Users,
@@ -27,11 +31,26 @@ import type {
   LeadActivityRecord,
   LeadCompanySize,
   LeadFileRecord,
+  LeadFilterDefinition,
   LeadRecord,
   LeadStage
 } from '../domain/crmModels';
 import { sortNewestFirst } from '../domain/recordOrdering';
+import {
+  getLeadFilterValues,
+  mergeLeadFilterDefinitions,
+  slugifyLeadFilterId
+} from '../domain/leadFilterConfig';
 import { dbService, type UserProfile } from '../services/firebaseService';
+import {
+  LeadDynamicFields,
+  LeadFilterAdminModal,
+  LeadPerformancePanel,
+  LeadTagChips,
+  type LeadSavedViewRecord,
+  type LeadSavedViewState,
+  type LeadCustomValueFilter
+} from '../components/LeadFilterSystem';
 import './Leads.css';
 
 interface LeadsProps {
@@ -55,6 +74,7 @@ interface LeadFormState {
   expectedProducts: string;
   stage: LeadStage;
   assignedSaleId: string;
+  discoveredById: string;
   nextFollowUpAt: string;
   note: string;
 }
@@ -135,6 +155,7 @@ const createEmptyForm = (currentUser: UserProfile, saleUsers: UserProfile[]): Le
   expectedProducts: '',
   stage: 'new',
   assignedSaleId: currentUser.role === 'sale' ? currentUser.uid : (saleUsers[0]?.uid || ''),
+  discoveredById: currentUser.role === 'sale' ? currentUser.uid : '',
   nextFollowUpAt: '',
   note: ''
 });
@@ -151,11 +172,27 @@ export const Leads: React.FC<LeadsProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState<'all' | LeadStage>('all');
   const [saleFilter, setSaleFilter] = useState('all');
+  const [finderFilter, setFinderFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [provinceFilter, setProvinceFilter] = useState('all');
   const [sizeFilter, setSizeFilter] = useState<'all' | LeadCompanySize>('all');
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [workspaceTab, setWorkspaceTab] = useState<'list' | 'performance'>('list');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showFilterConfig, setShowFilterConfig] = useState(false);
+  const [storedFilterDefinitions, setStoredFilterDefinitions] = useState<LeadFilterDefinition[]>([]);
+  const [savedViews, setSavedViews] = useState<LeadSavedViewRecord[]>([]);
+  const [dynamicFilters, setDynamicFilters] = useState<Record<string, string[]>>({});
+  const [dynamicValueFilters, setDynamicValueFilters] = useState<Record<string, LeadCustomValueFilter>>({});
+  const [dynamicMatchMode, setDynamicMatchMode] = useState<'all' | 'any'>('all');
+  const [potentialMin, setPotentialMin] = useState('');
+  const [potentialMax, setPotentialMax] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [inactiveDays, setInactiveDays] = useState('');
+  const [newSavedViewName, setNewSavedViewName] = useState('');
+  const [newSavedViewVisibility, setNewSavedViewVisibility] = useState<'private' | 'admin' | 'all'>('all');
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [editingLeadId, setEditingLeadId] = useState('');
@@ -170,6 +207,24 @@ export const Leads: React.FC<LeadsProps> = ({
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const unsubscribeDefinitions = dbService.subscribeCollection('lead_filter_definitions', data => {
+      setStoredFilterDefinitions(data as LeadFilterDefinition[]);
+    });
+    const unsubscribeViews = dbService.subscribeCollection('lead_saved_views', data => {
+      setSavedViews(data as LeadSavedViewRecord[]);
+    });
+    return () => {
+      unsubscribeDefinitions();
+      unsubscribeViews();
+    };
+  }, []);
+
+  const filterDefinitions = useMemo(
+    () => mergeLeadFilterDefinitions(storedFilterDefinitions),
+    [storedFilterDefinitions]
+  );
 
   const accessibleLeads = useMemo(() => leads.filter(lead => {
     if (currentUser.role === 'admin') return true;
@@ -191,6 +246,12 @@ export const Leads: React.FC<LeadsProps> = ({
     return Number.isFinite(timestamp) && timestamp < LEADS_PAGE_REFERENCE_TIME;
   };
 
+  const getLastInteractionTime = (lead: LeadRecord) => {
+    const activityTimes = (lead.activities || []).map(activity => new Date(activity.occurredAt).getTime()).filter(Number.isFinite);
+    const updatedTime = new Date(lead.updatedAt || lead.createdAt).getTime();
+    return Math.max(Number.isFinite(updatedTime) ? updatedTime : 0, ...activityTimes, 0);
+  };
+
   const filteredLeads = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return accessibleLeads.filter(lead => {
@@ -209,24 +270,100 @@ export const Leads: React.FC<LeadsProps> = ({
         users.find(user => user.uid === lead.assignedSaleId)?.displayName,
         getStageLabel(lead.stage),
         COMPANY_SIZE_LABELS[lead.companySize],
+        Object.entries(getLeadFilterValues(lead)).flatMap(([fieldId, optionIds]) => {
+          const definition = filterDefinitions.find(field => field.id === fieldId);
+          return optionIds.map(optionId => definition?.options.find(item => item.id === optionId)?.label || optionId);
+        }),
         (lead.activities || []).map(activity => activity.note)
       ]);
       const matchesStage = stageFilter === 'all' || lead.stage === stageFilter;
       const matchesSale = saleFilter === 'all' || lead.assignedSaleId === saleFilter;
+      const matchesFinder = finderFilter === 'all' || (lead.discoveredById || lead.createdById) === finderFilter;
       const matchesSource = sourceFilter === 'all' || lead.source === sourceFilter;
       const matchesProvince = provinceFilter === 'all' || lead.province === provinceFilter;
       const matchesSize = sizeFilter === 'all' || lead.companySize === sizeFilter;
+      const leadFilterValues = getLeadFilterValues(lead);
+      const dynamicMatches = Object.entries(dynamicFilters)
+        .filter(([, selectedValues]) => selectedValues.length > 0)
+        .map(([fieldId, selectedValues]) => {
+          const currentValues = leadFilterValues[fieldId] || [];
+          return dynamicMatchMode === 'all'
+            ? selectedValues.every(value => currentValues.includes(value))
+            : selectedValues.some(value => currentValues.includes(value));
+        });
+      const matchesDynamic = dynamicMatches.length === 0
+        || (dynamicMatchMode === 'all' ? dynamicMatches.every(Boolean) : dynamicMatches.some(Boolean));
+      const matchesDynamicValues = Object.entries(dynamicValueFilters).every(([fieldId, condition]) => {
+        if (!condition.operator) return true;
+        const definition = filterDefinitions.find(field => field.id === fieldId);
+        const rawValue = leadFilterValues[fieldId]?.[0] || '';
+        if (condition.operator === 'empty') return !rawValue;
+        if (condition.operator === 'not_empty') return Boolean(rawValue);
+        if (definition?.type === 'checkbox') {
+          return condition.operator === 'true' ? rawValue === 'true' : rawValue !== 'true';
+        }
+        if (definition?.type === 'text') {
+          const normalizedValue = normalizeSearchText(rawValue);
+          const normalizedCondition = normalizeSearchText(condition.value);
+          return condition.operator === 'not_contains'
+            ? !normalizedValue.includes(normalizedCondition)
+            : normalizedValue.includes(normalizedCondition);
+        }
+        if (definition?.type === 'number') {
+          const numberValue = Number(rawValue);
+          if (!rawValue || !Number.isFinite(numberValue)) return false;
+          if (condition.operator === 'greater') return numberValue > Number(condition.value);
+          if (condition.operator === 'less') return numberValue < Number(condition.value);
+          if (condition.operator === 'between') return numberValue >= Number(condition.value) && numberValue <= Number(condition.valueTo);
+          return numberValue === Number(condition.value);
+        }
+        if (definition?.type === 'date') {
+          const dateValue = new Date(rawValue).getTime();
+          if (!Number.isFinite(dateValue)) return false;
+          const fromValue = new Date(condition.value).getTime();
+          if (condition.operator === 'before') return dateValue < fromValue;
+          if (condition.operator === 'after') return dateValue > fromValue;
+          if (condition.operator === 'between') return dateValue >= fromValue && dateValue <= new Date(condition.valueTo).getTime();
+          return dateValue === fromValue;
+        }
+        return true;
+      });
+      const potentialValue = Number(lead.potentialValue || 0);
+      const matchesPotential = (!potentialMin || potentialValue >= Number(potentialMin))
+        && (!potentialMax || potentialValue <= Number(potentialMax));
+      const createdTime = new Date(lead.createdAt).getTime();
+      const matchesCreatedDate = (!createdFrom || createdTime >= new Date(`${createdFrom}T00:00:00`).getTime())
+        && (!createdTo || createdTime <= new Date(`${createdTo}T23:59:59`).getTime());
+      const inactiveThreshold = Number(inactiveDays);
+      const matchesInactive = !inactiveDays
+        || (LEADS_PAGE_REFERENCE_TIME - getLastInteractionTime(lead)) >= inactiveThreshold * 86_400_000;
       return matchesSearch
         && matchesStage
         && matchesSale
+        && matchesFinder
         && matchesSource
         && matchesProvince
         && matchesSize
+        && matchesDynamic
+        && matchesDynamicValues
+        && matchesPotential
+        && matchesCreatedDate
+        && matchesInactive
         && (!onlyOverdue || isOverdue(lead));
     });
   }, [
     accessibleLeads,
+    createdFrom,
+    createdTo,
+    dynamicFilters,
+    dynamicMatchMode,
+    dynamicValueFilters,
+    filterDefinitions,
+    finderFilter,
+    inactiveDays,
     onlyOverdue,
+    potentialMax,
+    potentialMin,
     provinceFilter,
     saleFilter,
     searchTerm,
@@ -235,6 +372,12 @@ export const Leads: React.FC<LeadsProps> = ({
     stageFilter,
     users
   ]);
+
+  const pursuedLeadCount = accessibleLeads.filter(lead => {
+    const markerValues = Object.values(getLeadFilterValues(lead)).flat();
+    return ['quoted', 'negotiating'].includes(lead.stage)
+      || ['preparing_quote', 'quote_sent', 'negotiating', 'price_negotiation', 'waiting_feedback'].some(marker => markerValues.includes(marker));
+  }).length;
 
   const selectedLead = selectedLeadId
     ? leads.find(lead => lead.id === selectedLeadId) || null
@@ -268,6 +411,7 @@ export const Leads: React.FC<LeadsProps> = ({
       expectedProducts: lead.expectedProducts,
       stage: lead.stage,
       assignedSaleId: lead.assignedSaleId,
+      discoveredById: lead.discoveredById || lead.createdById,
       nextFollowUpAt: toDateTimeLocal(lead.nextFollowUpAt),
       note: lead.note
     });
@@ -295,6 +439,7 @@ export const Leads: React.FC<LeadsProps> = ({
     if (!form.companyName.trim()) return;
 
     const assignedSale = saleUsers.find(user => user.uid === form.assignedSaleId);
+    const discoveredBy = saleUsers.find(user => user.uid === form.discoveredById);
     const now = new Date().toISOString();
     const payload = {
       name: form.companyName.trim(),
@@ -312,6 +457,8 @@ export const Leads: React.FC<LeadsProps> = ({
       stage: form.stage,
       assignedSaleId: form.assignedSaleId,
       assignedSaleName: assignedSale?.displayName || '',
+      discoveredById: form.discoveredById || currentUser.uid,
+      discoveredByName: discoveredBy?.displayName || currentUser.displayName,
       reminderTime: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
       nextFollowUpAt: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
       note: form.note.trim(),
@@ -363,6 +510,10 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const handleQuickStageChange = async (lead: LeadRecord, stage: LeadStage) => {
     if (lead.stage === stage) return;
+    if (stage === 'lost' && !(getLeadFilterValues(lead).loss_reason || []).length) {
+      window.alert('Vui lòng chọn "Lý do không thành công" trong phần Phân loại và bộ lọc Lead trước.');
+      return;
+    }
     const now = new Date().toISOString();
     await dbService.updateDocument('leads', lead.id, {
       stage,
@@ -378,6 +529,155 @@ export const Leads: React.FC<LeadsProps> = ({
       updatedBy: currentUser.displayName
     });
   };
+
+  const handleLeadFilterValueChange = async (
+    lead: LeadRecord,
+    field: LeadFilterDefinition,
+    value: string,
+    checked?: boolean
+  ) => {
+    const currentValues = getLeadFilterValues(lead);
+    const previousFieldValues = currentValues[field.id] || [];
+    let nextFieldValues: string[];
+
+    if (field.type === 'multi_select') {
+      nextFieldValues = checked
+        ? Array.from(new Set([...previousFieldValues, value]))
+        : previousFieldValues.filter(item => item !== value);
+    } else if (field.type === 'checkbox') {
+      nextFieldValues = checked ? ['true'] : [];
+    } else {
+      nextFieldValues = value ? [value] : [];
+    }
+
+    const nextFilterValues = { ...currentValues, [field.id]: nextFieldValues };
+    const optionLabel = field.options.find(item => item.id === value)?.label || value || 'để trống';
+    const actionLabel = field.type === 'multi_select' || field.type === 'checkbox'
+      ? (checked ? 'Thêm' : 'Bỏ')
+      : 'Cập nhật';
+    const now = new Date().toISOString();
+
+    await dbService.updateDocument('leads', lead.id, {
+      filterValues: nextFilterValues,
+      activities: [{
+        id: `activity-filter-${now}`,
+        type: 'filter_tag',
+        note: `${actionLabel} ${field.name}: ${optionLabel}`,
+        occurredAt: now,
+        createdById: currentUser.uid,
+        createdByName: currentUser.displayName
+      }, ...(lead.activities || [])],
+      updatedBy: currentUser.displayName
+    });
+  };
+
+  const handleSaveFilterDefinition = async (definition: LeadFilterDefinition) => {
+    await dbService.addDocument('lead_filter_definitions', {
+      ...definition,
+      updatedBy: currentUser.displayName,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const handleArchiveFilterDefinition = async (definition: LeadFilterDefinition) => {
+    await dbService.addDocument('lead_filter_definitions', {
+      ...definition,
+      active: false,
+      updatedBy: currentUser.displayName,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const getCurrentFilterState = (): LeadSavedViewState => ({
+    searchTerm,
+    stageFilter,
+    saleFilter,
+    finderFilter,
+    sourceFilter,
+    provinceFilter,
+    sizeFilter,
+    onlyOverdue,
+    dynamicFilters,
+    dynamicValueFilters,
+    dynamicMatchMode,
+    potentialMin,
+    potentialMax,
+    createdFrom,
+    createdTo,
+    inactiveDays
+  });
+
+  const applySavedView = (view: LeadSavedViewRecord) => {
+    const state = view.state;
+    setSearchTerm(state.searchTerm || '');
+    setStageFilter((state.stageFilter || 'all') as 'all' | LeadStage);
+    setSaleFilter(state.saleFilter || 'all');
+    setFinderFilter(state.finderFilter || 'all');
+    setSourceFilter(state.sourceFilter || 'all');
+    setProvinceFilter(state.provinceFilter || 'all');
+    setSizeFilter((state.sizeFilter || 'all') as 'all' | LeadCompanySize);
+    setOnlyOverdue(Boolean(state.onlyOverdue));
+    setDynamicFilters(state.dynamicFilters || {});
+    setDynamicValueFilters(state.dynamicValueFilters || {});
+    setDynamicMatchMode(state.dynamicMatchMode || 'all');
+    setPotentialMin(state.potentialMin || '');
+    setPotentialMax(state.potentialMax || '');
+    setCreatedFrom(state.createdFrom || '');
+    setCreatedTo(state.createdTo || '');
+    setInactiveDays(state.inactiveDays || '');
+    setWorkspaceTab('list');
+  };
+
+  const handleSaveCurrentView = async () => {
+    const name = newSavedViewName.trim();
+    if (!name) return;
+    const now = new Date().toISOString();
+    await dbService.addDocument('lead_saved_views', {
+      id: `lead-view-${slugifyLeadFilterId(name)}-${Date.now().toString(36)}`,
+      name,
+      ownerId: currentUser.uid,
+      visibility: currentUser.role === 'admin' ? newSavedViewVisibility : 'private',
+      state: getCurrentFilterState(),
+      createdAt: now,
+      updatedAt: now
+    });
+    setNewSavedViewName('');
+  };
+
+  const visibleSavedViews = savedViews.filter(view => (
+    currentUser.role === 'admin' || view.visibility === 'all' || view.ownerId === currentUser.uid
+  ));
+
+  const handleDynamicFilterToggle = (fieldId: string, optionId: string, checked: boolean) => {
+    setDynamicFilters(previous => {
+      const fieldValues = previous[fieldId] || [];
+      return {
+        ...previous,
+        [fieldId]: checked
+          ? Array.from(new Set([...fieldValues, optionId]))
+          : fieldValues.filter(item => item !== optionId)
+      };
+    });
+  };
+
+  const updateDynamicValueFilter = (fieldId: string, patch: Partial<LeadCustomValueFilter>) => {
+    setDynamicValueFilters(previous => ({
+      ...previous,
+      [fieldId]: {
+        operator: previous[fieldId]?.operator || '',
+        value: previous[fieldId]?.value || '',
+        valueTo: previous[fieldId]?.valueTo || '',
+        ...patch
+      }
+    }));
+  };
+
+  const activeAdvancedFilterCount = Object.values(dynamicFilters).filter(values => values.length > 0).length
+    + Object.values(dynamicValueFilters).filter(condition => Boolean(condition.operator)).length
+    + Number(Boolean(potentialMin || potentialMax))
+    + Number(Boolean(createdFrom || createdTo))
+    + Number(Boolean(inactiveDays))
+    + Number(finderFilter !== 'all');
 
   const findDuplicateCustomer = (lead: LeadRecord) => {
     const companyName = lead.companyName.trim().toLowerCase();
@@ -482,10 +782,19 @@ export const Leads: React.FC<LeadsProps> = ({
     setSearchTerm('');
     setStageFilter('all');
     setSaleFilter('all');
+    setFinderFilter('all');
     setSourceFilter('all');
     setProvinceFilter('all');
     setSizeFilter('all');
     setOnlyOverdue(false);
+    setDynamicFilters({});
+    setDynamicValueFilters({});
+    setDynamicMatchMode('all');
+    setPotentialMin('');
+    setPotentialMax('');
+    setCreatedFrom('');
+    setCreatedTo('');
+    setInactiveDays('');
   };
 
   if (selectedLead) {
@@ -501,6 +810,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <span className={`lead-stage-badge lead-stage-badge--${selectedLead.stage}`}>{getStageLabel(selectedLead.stage)}</span>
               <h1>{selectedLead.companyName}</h1>
             </div>
+            <LeadTagChips lead={selectedLead} definitions={filterDefinitions} limit={5} />
             <p>{t('Theo dõi toàn bộ thông tin và lịch sử chăm sóc khách hàng tiềm năng.')}</p>
           </div>
           <div className="lead-detail-actions">
@@ -547,7 +857,7 @@ export const Leads: React.FC<LeadsProps> = ({
 
           <section className="lead-panel">
             <div className="lead-panel__title"><CalendarClock size={17} /> {t('Tiến độ chăm sóc')}</div>
-            <label className="lead-field-label">{t('Trạng thái')}</label>
+            <label className="lead-field-label">{t('Kết quả / giai đoạn chính')}</label>
             <select
               value={selectedLead.stage}
               onChange={event => handleQuickStageChange(selectedLead, event.target.value as LeadStage)}
@@ -573,6 +883,17 @@ export const Leads: React.FC<LeadsProps> = ({
                 <button type="submit" className="btn btn-primary"><MessageSquarePlus size={15} /> {t('Thêm')}</button>
               </div>
             </form>
+          </section>
+
+          <section className="lead-panel lead-panel--wide lead-classification-panel">
+            <div className="lead-panel__title"><Tags size={17} /> {t('Phân loại và bộ lọc Lead')}</div>
+            <p className="lead-panel__hint">Một Lead có thể được tích nhiều nhãn cùng lúc. Mỗi thay đổi được lưu ngay và ghi vào lịch sử chăm sóc.</p>
+            <LeadDynamicFields
+              lead={selectedLead}
+              definitions={filterDefinitions}
+              canEditAll={currentUser.role === 'admin'}
+              onChange={(field, value, checked) => handleLeadFilterValueChange(selectedLead, field, value, checked)}
+            />
           </section>
 
           <section className="lead-panel lead-panel--wide">
@@ -674,7 +995,7 @@ export const Leads: React.FC<LeadsProps> = ({
                     <input type="number" min="0" value={form.potentialValue} onChange={event => updateForm('potentialValue', Number(event.target.value))} />
                   </div>
                   <div className="form-group">
-                    <label>{t('Trạng thái')}</label>
+                    <label>{t('Kết quả / giai đoạn chính')}</label>
                     <select value={form.stage} onChange={event => updateForm('stage', event.target.value as LeadStage)}>
                       {ACTIVE_LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
                     </select>
@@ -687,6 +1008,17 @@ export const Leads: React.FC<LeadsProps> = ({
                       disabled={currentUser.role === 'sale'}
                     >
                       <option value="">{t('-- Chưa phân công --')}</option>
+                      {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>{t('Người tìm được Lead')}</label>
+                    <select
+                      value={form.discoveredById}
+                      onChange={event => updateForm('discoveredById', event.target.value)}
+                      disabled={currentUser.role === 'sale'}
+                    >
+                      <option value="">{t('-- Chưa xác định --')}</option>
                       {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
                     </select>
                   </div>
@@ -736,129 +1068,164 @@ export const Leads: React.FC<LeadsProps> = ({
           <h1 className="page-title">{t('KHÁCH HÀNG TIỀM NĂNG (LEAD)')}</h1>
           <p className="page-subtitle">{t('Quản lý cơ hội bán hàng, lịch chăm sóc và chuyển đổi Lead thành khách hàng chính thức.')}</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={openCreateForm}>
-          <Plus size={16} /> {t('Thêm Lead')}
-        </button>
+        <div className="lead-page-actions">
+          {currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowFilterConfig(true)}><Settings2 size={16} /> {t('Cấu hình bộ lọc')}</button>}
+          <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>
+        </div>
+      </div>
+
+      <div className="lead-workspace-tabs" role="tablist" aria-label="Không gian quản lý Lead">
+        <button type="button" role="tab" aria-selected={workspaceTab === 'list'} className={workspaceTab === 'list' ? 'is-active' : ''} onClick={() => setWorkspaceTab('list')}><List size={16} /> Danh sách Lead <span>{accessibleLeads.length}</span></button>
+        {currentUser.role === 'admin' && <button type="button" role="tab" aria-selected={workspaceTab === 'performance'} className={workspaceTab === 'performance' ? 'is-active' : ''} onClick={() => setWorkspaceTab('performance')}><TrendingUp size={16} /> Hiệu quả Sale</button>}
       </div>
 
       <div className="lead-summary-grid">
         <div className="lead-summary-card"><Users size={18} /><div><strong>{accessibleLeads.length}</strong><span>Tổng Lead</span></div></div>
-        <div className="lead-summary-card"><TrendingUp size={18} /><div><strong>{accessibleLeads.filter(lead => ['quoted', 'negotiating'].includes(lead.stage)).length}</strong><span>Đang theo đuổi</span></div></div>
+        <div className="lead-summary-card"><TrendingUp size={18} /><div><strong>{pursuedLeadCount}</strong><span>Đang theo đuổi</span></div></div>
         <div className="lead-summary-card"><CalendarClock size={18} /><div><strong>{accessibleLeads.filter(isOverdue).length}</strong><span>Quá hạn chăm sóc</span></div></div>
         <div className="lead-summary-card"><CheckCircle2 size={18} /><div><strong>{accessibleLeads.filter(lead => lead.stage === 'converted').length}</strong><span>Đã chuyển đổi</span></div></div>
       </div>
 
-      <section className="lead-toolbar">
-        <div className="lead-search">
-          <Search size={16} />
-          <input
-            value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)}
-            placeholder={t('Tìm bằng nhiều từ khóa, không cần dấu: công ty, liên hệ, SĐT, địa chỉ, nhu cầu, ghi chú...')}
-          />
-        </div>
-        <select value={stageFilter} onChange={event => setStageFilter(event.target.value as 'all' | LeadStage)}>
-          <option value="all">{t('Tất cả trạng thái')}</option>
-          {LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
-        </select>
-        {currentUser.role === 'admin' && (
-          <select value={saleFilter} onChange={event => setSaleFilter(event.target.value)}>
-            <option value="all">{t('Tất cả Sale')}</option>
-            {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
-          </select>
-        )}
-        <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}>
-          <option value="all">{t('Tất cả nguồn')}</option>
-          {sources.map(source => <option key={source} value={source}>{source}</option>)}
-        </select>
-        <select value={provinceFilter} onChange={event => setProvinceFilter(event.target.value)}>
-          <option value="all">{t('Tất cả tỉnh/thành')}</option>
-          {provinces.map(province => <option key={province} value={province}>{province}</option>)}
-        </select>
-        <select value={sizeFilter} onChange={event => setSizeFilter(event.target.value as 'all' | LeadCompanySize)}>
-          <option value="all">{t('Tất cả quy mô')}</option>
-          <option value="large">{COMPANY_SIZE_LABELS.large}</option>
-          <option value="medium">{COMPANY_SIZE_LABELS.medium}</option>
-          <option value="small">{COMPANY_SIZE_LABELS.small}</option>
-        </select>
-        <label className={`lead-overdue-toggle ${onlyOverdue ? 'is-active' : ''}`}>
-          <input type="checkbox" checked={onlyOverdue} onChange={event => setOnlyOverdue(event.target.checked)} />
-          <CalendarClock size={14} /> {t('Quá hạn')}
-        </label>
-        <button type="button" className="btn btn-outline btn-symbol" onClick={clearFilters} title={t('Xóa bộ lọc')}><Filter size={15} /></button>
-        <div className="lead-view-toggle">
-          <button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')} title={t('Dạng danh sách')}><List size={16} /></button>
-          <button type="button" className={viewMode === 'kanban' ? 'is-active' : ''} onClick={() => setViewMode('kanban')} title="Kanban"><KanbanSquare size={16} /></button>
-        </div>
-      </section>
-
-      {viewMode === 'list' ? (
-        <section className="lead-table-card">
-          <div className="table-container">
-            <table className="lead-table">
-              <thead>
-                <tr>
-                  <th>{t('Doanh nghiệp')}</th>
-                  <th>{t('Liên hệ')}</th>
-                  <th>{t('Nguồn / khu vực')}</th>
-                  <th>{t('Giá trị tiềm năng')}</th>
-                  <th>{t('Sale phụ trách')}</th>
-                  <th>{t('Chăm sóc tiếp')}</th>
-                  <th>{t('Trạng thái')}</th>
-                  <th>{t('Thao tác')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredLeads.map(lead => (
-                  <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
-                    <td><strong>{lead.companyName}</strong><span>{COMPANY_SIZE_LABELS[lead.companySize]}</span></td>
-                    <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
-                    <td><strong>{lead.source || '—'}</strong><span>{lead.province || 'Chưa xác định'}</span></td>
-                    <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
-                    <td>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</td>
-                    <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
-                    <td><span className={`lead-stage-badge lead-stage-badge--${lead.stage}`}>{getStageLabel(lead.stage)}</span></td>
-                    <td>
-                      <div className="lead-row-actions" onClick={event => event.stopPropagation()}>
-                        <button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button>
-                        <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filteredLeads.length === 0 && <tr><td colSpan={8} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      {workspaceTab === 'performance' && currentUser.role === 'admin' ? (
+        <LeadPerformancePanel
+          leads={leads}
+          saleUsers={saleUsers}
+          isOverdue={isOverdue}
+          onOpenSale={saleId => {
+            setFinderFilter(saleId);
+            setWorkspaceTab('list');
+            setShowAdvancedFilters(true);
+          }}
+        />
       ) : (
-        <section className="lead-kanban">
-          {ACTIVE_LEAD_STAGES.map(stage => {
-            const stageLeads = filteredLeads.filter(lead => lead.stage === stage.id);
-            return (
-              <div key={stage.id} className="lead-kanban-column">
-                <div className="lead-kanban-column__header">
-                  <span>{stage.label}</span><strong>{stageLeads.length}</strong>
+        <>
+          <section className="lead-saved-views">
+            <div className="lead-saved-views__list">
+              <span><Save size={14} /> Bộ lọc đã lưu</span>
+              {visibleSavedViews.map(view => <button type="button" key={view.id} onClick={() => applySavedView(view)}>{view.name}</button>)}
+              {visibleSavedViews.length === 0 && <em>Chưa có</em>}
+            </div>
+            <div className="lead-save-view-form">
+              <input value={newSavedViewName} onChange={event => setNewSavedViewName(event.target.value)} placeholder="Tên bộ lọc mới..." />
+              {currentUser.role === 'admin' && <select value={newSavedViewVisibility} onChange={event => setNewSavedViewVisibility(event.target.value as 'private' | 'admin' | 'all')}><option value="all">Dùng chung</option><option value="admin">Chỉ Admin</option><option value="private">Cá nhân</option></select>}
+              <button type="button" className="btn btn-sm btn-outline" disabled={!newSavedViewName.trim()} onClick={handleSaveCurrentView}><Save size={13} /> Lưu</button>
+            </div>
+          </section>
+
+          <section className="lead-toolbar">
+            <div className="lead-search">
+              <Search size={16} />
+              <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm công ty, liên hệ, SĐT, địa chỉ, nhu cầu, nhãn...')} />
+            </div>
+            <select value={stageFilter} onChange={event => setStageFilter(event.target.value as 'all' | LeadStage)}>
+              <option value="all">{t('Tất cả giai đoạn')}</option>
+              {LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
+            </select>
+            {currentUser.role === 'admin' && <select value={saleFilter} onChange={event => setSaleFilter(event.target.value)}><option value="all">{t('Tất cả Sale phụ trách')}</option>{saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select>}
+            <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}><option value="all">{t('Tất cả nguồn')}</option>{sources.map(source => <option key={source} value={source}>{source}</option>)}</select>
+            <label className={`lead-overdue-toggle ${onlyOverdue ? 'is-active' : ''}`}><input type="checkbox" checked={onlyOverdue} onChange={event => setOnlyOverdue(event.target.checked)} /><CalendarClock size={14} /> {t('Quá hạn')}</label>
+            <button type="button" className={`btn btn-outline lead-advanced-toggle ${showAdvancedFilters ? 'is-active' : ''}`} onClick={() => setShowAdvancedFilters(previous => !previous)}><SlidersHorizontal size={15} /> Nâng cao {activeAdvancedFilterCount > 0 && <span>{activeAdvancedFilterCount}</span>}</button>
+            <button type="button" className="btn btn-outline btn-symbol" onClick={clearFilters} title={t('Xóa bộ lọc')}><Filter size={15} /></button>
+            <div className="lead-view-toggle"><button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')} title={t('Dạng danh sách')}><List size={16} /></button><button type="button" className={viewMode === 'kanban' ? 'is-active' : ''} onClick={() => setViewMode('kanban')} title="Kanban"><KanbanSquare size={16} /></button></div>
+          </section>
+
+          <section className="lead-quick-filters">
+            {filterDefinitions.filter(field => field.active && field.showInQuickFilter && ['multi_select', 'single_select'].includes(field.type)).map(field => (
+              <details key={field.id} className="lead-filter-menu">
+                <summary>{field.name}{(dynamicFilters[field.id] || []).length > 0 && <span>{dynamicFilters[field.id].length}</span>}</summary>
+                <div className="lead-filter-menu__content">
+                  {field.options.filter(item => item.active).map(item => <label key={item.id}><input type="checkbox" checked={(dynamicFilters[field.id] || []).includes(item.id)} onChange={event => handleDynamicFilterToggle(field.id, item.id, event.target.checked)} /><i style={{ backgroundColor: item.color }} />{item.label}</label>)}
                 </div>
-                <div className="lead-kanban-column__body">
-                  {stageLeads.map(lead => (
-                    <button type="button" key={lead.id} className="lead-kanban-card" onClick={() => setSelectedLeadId(lead.id)}>
-                      <strong>{lead.companyName}</strong>
-                      <span><Phone size={12} /> {lead.phone || 'Chưa có SĐT'}</span>
-                      <span><Mail size={12} /> {lead.email || 'Chưa có email'}</span>
-                      <span><MapPin size={12} /> {lead.province || 'Chưa có khu vực'}</span>
-                      <span className={isOverdue(lead) ? 'lead-date-overdue' : ''}><CalendarClock size={12} /> {formatDateTime(lead.nextFollowUpAt)}</span>
-                    </button>
-                  ))}
-                  {stageLeads.length === 0 && <div className="lead-kanban-empty">{t('Chưa có Lead')}</div>}
-                </div>
+              </details>
+            ))}
+          </section>
+
+          {showAdvancedFilters && (
+            <section className="lead-advanced-panel">
+              <div className="lead-advanced-panel__header"><div><SlidersHorizontal size={17} /><strong>Bộ lọc nâng cao</strong><span>Kết hợp dữ liệu hệ thống và các trường do Admin cấu hình.</span></div><label>Điều kiện nhãn <select value={dynamicMatchMode} onChange={event => setDynamicMatchMode(event.target.value as 'all' | 'any')}><option value="all">Khớp tất cả</option><option value="any">Khớp bất kỳ</option></select></label></div>
+              <div className="lead-system-filter-grid">
+                {currentUser.role === 'admin' && <label><span>Người tìm Lead</span><select value={finderFilter} onChange={event => setFinderFilter(event.target.value)}><option value="all">Tất cả</option>{saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></label>}
+                <label><span>Tỉnh / thành</span><select value={provinceFilter} onChange={event => setProvinceFilter(event.target.value)}><option value="all">Tất cả</option>{provinces.map(province => <option key={province} value={province}>{province}</option>)}</select></label>
+                <label><span>Quy mô</span><select value={sizeFilter} onChange={event => setSizeFilter(event.target.value as 'all' | LeadCompanySize)}><option value="all">Tất cả</option><option value="large">{COMPANY_SIZE_LABELS.large}</option><option value="medium">{COMPANY_SIZE_LABELS.medium}</option><option value="small">{COMPANY_SIZE_LABELS.small}</option></select></label>
+                <label><span>Giá trị từ</span><input type="number" min="0" value={potentialMin} onChange={event => setPotentialMin(event.target.value)} placeholder="0" /></label>
+                <label><span>Giá trị đến</span><input type="number" min="0" value={potentialMax} onChange={event => setPotentialMax(event.target.value)} placeholder="Không giới hạn" /></label>
+                <label><span>Tạo từ ngày</span><input type="date" value={createdFrom} onChange={event => setCreatedFrom(event.target.value)} /></label>
+                <label><span>Tạo đến ngày</span><input type="date" value={createdTo} onChange={event => setCreatedTo(event.target.value)} /></label>
+                <label><span>Không tương tác ≥ ngày</span><input type="number" min="1" value={inactiveDays} onChange={event => setInactiveDays(event.target.value)} placeholder="Ví dụ: 15" /></label>
               </div>
-            );
-          })}
-        </section>
+              <div className="lead-advanced-fields">
+                {filterDefinitions.filter(field => field.active && ['multi_select', 'single_select'].includes(field.type)).map(field => <div key={field.id}><strong>{field.name}</strong><div>{field.options.filter(item => item.active).map(item => <label key={item.id} className={(dynamicFilters[field.id] || []).includes(item.id) ? 'is-checked' : ''}><input type="checkbox" checked={(dynamicFilters[field.id] || []).includes(item.id)} onChange={event => handleDynamicFilterToggle(field.id, item.id, event.target.checked)} /><i style={{ backgroundColor: item.color }} />{item.label}</label>)}</div></div>)}
+              </div>
+              <div className="lead-custom-value-filters">
+                {filterDefinitions.filter(field => field.active && !['multi_select', 'single_select'].includes(field.type)).map(field => {
+                  const condition = dynamicValueFilters[field.id] || { operator: '', value: '', valueTo: '' };
+                  return (
+                    <div key={field.id}>
+                      <strong>{field.name}</strong>
+                      <select value={condition.operator} onChange={event => updateDynamicValueFilter(field.id, { operator: event.target.value })}>
+                        <option value="">Không lọc</option>
+                        {field.type === 'checkbox' ? <><option value="true">Có</option><option value="false">Không</option></> : <><option value="empty">Đang để trống</option><option value="not_empty">Không để trống</option></>}
+                        {field.type === 'text' && <><option value="contains">Có chứa</option><option value="not_contains">Không chứa</option></>}
+                        {field.type === 'number' && <><option value="equal">Bằng</option><option value="greater">Lớn hơn</option><option value="less">Nhỏ hơn</option><option value="between">Trong khoảng</option></>}
+                        {field.type === 'date' && <><option value="equal">Đúng ngày</option><option value="before">Trước ngày</option><option value="after">Sau ngày</option><option value="between">Trong khoảng</option></>}
+                      </select>
+                      {!['', 'empty', 'not_empty', 'true', 'false'].includes(condition.operator) && <input type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={condition.value} onChange={event => updateDynamicValueFilter(field.id, { value: event.target.value })} placeholder="Giá trị lọc" />}
+                      {condition.operator === 'between' && <input type={field.type === 'number' ? 'number' : 'date'} value={condition.valueTo} onChange={event => updateDynamicValueFilter(field.id, { valueTo: event.target.value })} placeholder="Đến" />}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="lead-filter-result"><strong>{filteredLeads.length}</strong> Lead phù hợp với điều kiện hiện tại.</div>
+            </section>
+          )}
+
+          {viewMode === 'list' ? (
+            <section className="lead-table-card">
+              <div className="lead-table-result">Hiển thị <strong>{filteredLeads.length}</strong> / {accessibleLeads.length} Lead</div>
+              <div className="table-container">
+                <table className="lead-table lead-table--classified">
+                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Nhãn theo dõi')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Giai đoạn')}</th><th>{t('Thao tác')}</th></tr></thead>
+                  <tbody>
+                    {filteredLeads.map(lead => (
+                      <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
+                        <td><strong>{lead.companyName}</strong><span>{COMPANY_SIZE_LABELS[lead.companySize]}</span></td>
+                        <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
+                        <td><strong>{lead.source || '—'}</strong><span>{lead.province || 'Chưa xác định'}</span></td>
+                        <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
+                        <td><strong>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</strong><span>Tìm bởi: {users.find(user => user.uid === (lead.discoveredById || lead.createdById))?.displayName || lead.discoveredByName || 'Chưa xác định'}</span></td>
+                        <td><LeadTagChips lead={lead} definitions={filterDefinitions} /></td>
+                        <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
+                        <td><span className={`lead-stage-badge lead-stage-badge--${lead.stage}`}>{getStageLabel(lead.stage)}</span></td>
+                        <td><div className="lead-row-actions" onClick={event => event.stopPropagation()}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button><button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button></div></td>
+                      </tr>
+                    ))}
+                    {filteredLeads.length === 0 && <tr><td colSpan={9} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : (
+            <section className="lead-kanban">
+              {ACTIVE_LEAD_STAGES.map(stage => {
+                const stageLeads = filteredLeads.filter(lead => lead.stage === stage.id);
+                return <div key={stage.id} className="lead-kanban-column"><div className="lead-kanban-column__header"><span>{stage.label}</span><strong>{stageLeads.length}</strong></div><div className="lead-kanban-column__body">{stageLeads.map(lead => <button type="button" key={lead.id} className="lead-kanban-card" onClick={() => setSelectedLeadId(lead.id)}><strong>{lead.companyName}</strong><LeadTagChips lead={lead} definitions={filterDefinitions} limit={2} /><span><Phone size={12} /> {lead.phone || 'Chưa có SĐT'}</span><span><Mail size={12} /> {lead.email || 'Chưa có email'}</span><span><MapPin size={12} /> {lead.province || 'Chưa có khu vực'}</span><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}><CalendarClock size={12} /> {formatDateTime(lead.nextFollowUpAt)}</span></button>)}{stageLeads.length === 0 && <div className="lead-kanban-empty">{t('Chưa có Lead')}</div>}</div></div>;
+              })}
+            </section>
+          )}
+        </>
       )}
 
       {showLeadForm && renderLeadForm()}
+      {showFilterConfig && currentUser.role === 'admin' && (
+        <LeadFilterAdminModal
+          definitions={filterDefinitions}
+          savedViews={savedViews}
+          onClose={() => setShowFilterConfig(false)}
+          onSaveDefinition={handleSaveFilterDefinition}
+          onArchiveDefinition={handleArchiveFilterDefinition}
+          onDeleteSavedView={async view => { await dbService.deleteDocument('lead_saved_views', view.id); }}
+        />
+      )}
     </div>
   );
 };

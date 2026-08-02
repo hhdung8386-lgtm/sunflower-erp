@@ -7,6 +7,29 @@ export type CustomerContactRole = 'primary' | 'procurement' | 'warehouse' | 'acc
 export type CustomerDocumentCategory = 'contract' | 'acceptance' | 'qc' | 'qa' | 'artwork' | 'other';
 export type LeadStage = 'new' | 'contacted' | 'quoted' | 'negotiating' | 'won' | 'lost' | 'converted';
 export type LeadCompanySize = '' | 'large' | 'medium' | 'small';
+export type LeadCustomFieldType = 'multi_select' | 'single_select' | 'checkbox' | 'text' | 'number' | 'date';
+
+export interface LeadFilterOption {
+  id: string;
+  label: string;
+  color: string;
+  active: boolean;
+}
+
+export interface LeadFilterDefinition extends UnknownRecord {
+  id: string;
+  name: string;
+  group: string;
+  type: LeadCustomFieldType;
+  options: LeadFilterOption[];
+  active: boolean;
+  showInQuickFilter: boolean;
+  reportable: boolean;
+  saleEditable: boolean;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -193,6 +216,9 @@ export interface LeadRecord extends UnknownRecord {
   expectedProducts: string;
   assignedSaleId: string;
   assignedSaleName: string;
+  discoveredById: string;
+  discoveredByName: string;
+  filterValues: Record<string, string[]>;
   note: string;
   reminderTime: string;
   nextFollowUpAt: string;
@@ -493,6 +519,14 @@ export const normalizeLeadRecord = (value: unknown): LeadRecord => {
     expectedProducts: asText(source.expectedProducts),
     assignedSaleId: asText(source.assignedSaleId),
     assignedSaleName: asText(source.assignedSaleName),
+    discoveredById: asText(source.discoveredById, asText(source.createdById)),
+    discoveredByName: asText(source.discoveredByName, asText(source.createdByName)),
+    filterValues: Object.fromEntries(
+      Object.entries(asRecord(source.filterValues)).map(([fieldId, fieldValue]) => [
+        fieldId,
+        asArray(fieldValue).map(item => asText(item)).filter(Boolean)
+      ])
+    ),
     note: asText(source.note),
     reminderTime,
     nextFollowUpAt: reminderTime,
