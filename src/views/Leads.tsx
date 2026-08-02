@@ -620,8 +620,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <span className={`lead-stage-badge lead-stage-badge--${selectedLead.stage}`}>{getStageLabel(selectedLead.stage)}</span>
               <h1>{selectedLead.companyName}</h1>
             </div>
-            <LeadTagChips lead={selectedLead} definitions={filterDefinitions} limit={5} />
-            <p>{t('Theo dõi toàn bộ thông tin và lịch sử chăm sóc khách hàng tiềm năng.')}</p>
+            <p>{t('Thông tin, phân loại và kế hoạch chăm sóc khách hàng tiềm năng.')}</p>
           </div>
           <div className="lead-detail-actions">
             <button type="button" className="btn btn-outline" onClick={() => openEditForm(selectedLead)}>
@@ -663,6 +662,29 @@ export const Leads: React.FC<LeadsProps> = ({
               <strong>{t('Ghi chú')}</strong>
               <p>{selectedLead.note || t('Chưa có ghi chú.')}</p>
             </div>
+            {(selectedLead.files || []).length > 0 && (
+              <div className="lead-profile-files">
+                <strong><Paperclip size={13} /> {t('Tài liệu đính kèm')}</strong>
+                <div className="lead-files">
+                  {(selectedLead.files || []).map(file => (
+                    <a key={file.id} href={file.data || file.url} download={file.name} className="lead-file">
+                      <FileText size={14} /><span>{file.name}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="lead-panel lead-classification-panel">
+            <div className="lead-panel__title"><Tags size={17} /> {t('Phân loại khách hàng')}</div>
+            <p className="lead-panel__hint">5 nhóm thông tin dùng để tìm và lọc Lead ngoài danh sách.</p>
+            <LeadDynamicFields
+              lead={selectedLead}
+              definitions={filterDefinitions}
+              canEditAll={currentUser.role === 'admin'}
+              onChange={(field, value, checked) => handleLeadFilterValueChange(selectedLead, field, value, checked)}
+            />
           </section>
 
           <section className="lead-panel">
@@ -680,7 +702,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <div><span>{t('Lịch chăm sóc tiếp theo')}</span><strong>{formatDateTime(selectedLead.nextFollowUpAt)}</strong></div>
             </div>
             <form className="lead-activity-form" onSubmit={handleAddActivity}>
-              <label className="lead-field-label">{t('Thêm nhật ký chăm sóc')}</label>
+              <label className="lead-field-label">{t('Ghi nhận chăm sóc')}</label>
               <div className="lead-activity-form__controls">
                 <select value={activityType} onChange={event => setActivityType(event.target.value)}>
                   <option value="call">{t('Gọi điện')}</option>
@@ -693,45 +715,6 @@ export const Leads: React.FC<LeadsProps> = ({
                 <button type="submit" className="btn btn-primary"><MessageSquarePlus size={15} /> {t('Thêm')}</button>
               </div>
             </form>
-          </section>
-
-          <section className="lead-panel lead-panel--wide lead-classification-panel">
-            <div className="lead-panel__title"><Tags size={17} /> {t('Phân loại khách hàng tiềm năng')}</div>
-            <p className="lead-panel__hint">Tích các thuộc tính phù hợp cho khách hàng. Thay đổi được lưu ngay và dùng cho 5 bộ lọc ngoài danh sách.</p>
-            <LeadDynamicFields
-              lead={selectedLead}
-              definitions={filterDefinitions}
-              canEditAll={currentUser.role === 'admin'}
-              onChange={(field, value, checked) => handleLeadFilterValueChange(selectedLead, field, value, checked)}
-            />
-          </section>
-
-          <section className="lead-panel lead-panel--wide">
-            <div className="lead-panel__title"><TrendingUp size={17} /> {t('Lịch sử chăm sóc')}</div>
-            <div className="lead-timeline">
-              {(selectedLead.activities || []).map(activity => (
-                <div key={activity.id} className="lead-timeline-item">
-                  <span className="lead-timeline-dot" />
-                  <div>
-                    <strong>{activity.note}</strong>
-                    <span>{formatDateTime(activity.occurredAt)} · {String(activity.createdByName || activity.createdById || '')}</span>
-                  </div>
-                </div>
-              ))}
-              {(selectedLead.activities || []).length === 0 && <div className="lead-empty">{t('Chưa có lịch sử chăm sóc.')}</div>}
-            </div>
-          </section>
-
-          <section className="lead-panel lead-panel--wide">
-            <div className="lead-panel__title"><Paperclip size={17} /> {t('Tài liệu Lead')}</div>
-            <div className="lead-files">
-              {(selectedLead.files || []).map(file => (
-                <a key={file.id} href={file.data || file.url} download={file.name} className="lead-file">
-                  <FileText size={16} /><span>{file.name}</span>
-                </a>
-              ))}
-              {(selectedLead.files || []).length === 0 && <div className="lead-empty">{t('Chưa có tài liệu đính kèm.')}</div>}
-            </div>
           </section>
         </div>
 

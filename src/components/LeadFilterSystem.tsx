@@ -55,66 +55,76 @@ export const LeadDynamicFields: React.FC<{
   const values = getLeadFilterValues(lead, definitions);
 
   return (
-    <div className="lead-dynamic-groups">
+    <div className="lead-compact-filters">
       {definitions.filter(field => field.active).map(field => {
-            const fieldValues = values[field.id] || [];
-            const disabled = !canEditAll && !field.saleEditable;
+        const fieldValues = values[field.id] || [];
+        const disabled = !canEditAll && !field.saleEditable;
+        const activeOptions = field.options.filter(item => item.active);
 
-            if (field.type === 'multi_select') {
-              return (
-                <section key={field.id} className="lead-dynamic-group">
-                  <div className="lead-dynamic-group__title">{field.name}</div>
-                  <div className="lead-check-grid">
-                    {field.options.filter(item => item.active).map(item => (
-                      <label key={item.id} className={`lead-check-option ${fieldValues.includes(item.id) ? 'is-checked' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={fieldValues.includes(item.id)}
-                          disabled={disabled}
-                          onChange={event => onChange(field, item.id, event.target.checked)}
-                        />
-                        <span className="lead-check-color" style={{ backgroundColor: item.color }} />
-                        {item.label}
-                      </label>
-                    ))}
-                  </div>
-                </section>
-              );
-            }
+        if (field.type === 'multi_select') {
+          const selectedLabels = activeOptions
+            .filter(item => fieldValues.includes(item.id))
+            .map(item => item.label);
+          const summary = selectedLabels.length === 0
+            ? 'Chưa chọn'
+            : selectedLabels.length <= 2 ? selectedLabels.join(', ') : `${selectedLabels.length} lựa chọn`;
 
-            if (field.type === 'single_select') {
-              return (
-                <section key={field.id} className="lead-dynamic-group">
-                  <div className="lead-dynamic-group__title">{field.name}</div>
-                  <select value={fieldValues[0] || ''} disabled={disabled} onChange={event => onChange(field, event.target.value)}>
-                    <option value="">-- Chưa chọn --</option>
-                    {field.options.filter(item => item.active).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-                  </select>
-                </section>
-              );
-            }
+          return (
+            <div key={field.id} className="lead-compact-filter-row">
+              <span>{field.name}</span>
+              <details className="lead-compact-filter-menu">
+                <summary className={selectedLabels.length > 0 ? 'has-value' : ''}>{summary}</summary>
+                <div className="lead-compact-filter-options">
+                  {activeOptions.map(item => (
+                    <label key={item.id} className={fieldValues.includes(item.id) ? 'is-checked' : ''}>
+                      <input
+                        type="checkbox"
+                        checked={fieldValues.includes(item.id)}
+                        disabled={disabled}
+                        onChange={event => onChange(field, item.id, event.target.checked)}
+                      />
+                      {item.label}
+                    </label>
+                  ))}
+                </div>
+              </details>
+            </div>
+          );
+        }
 
-            if (field.type === 'checkbox') {
-              return (
-                <label key={field.id} className={`lead-check-option lead-check-option--boolean ${fieldValues[0] === 'true' ? 'is-checked' : ''}`}>
-                  <input type="checkbox" checked={fieldValues[0] === 'true'} disabled={disabled} onChange={event => onChange(field, 'true', event.target.checked)} />
-                  {field.name}
-                </label>
-              );
-            }
+        if (field.type === 'single_select') {
+          return (
+            <label key={field.id} className="lead-compact-filter-row">
+              <span>{field.name}</span>
+              <select value={fieldValues[0] || ''} disabled={disabled} onChange={event => onChange(field, event.target.value)}>
+                <option value="">Chưa chọn</option>
+                {activeOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+          );
+        }
 
-            return (
-              <label key={`${lead.id}-${field.id}-${fieldValues[0] || ''}`} className="lead-dynamic-input">
-                <span>{field.name}</span>
-                <input
-                  type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                  defaultValue={fieldValues[0] || ''}
-                  disabled={disabled}
-                  onBlur={event => onChange(field, event.target.value)}
-                />
-              </label>
-            );
-          })}
+        if (field.type === 'checkbox') {
+          return (
+            <label key={field.id} className="lead-compact-filter-row lead-compact-filter-row--checkbox">
+              <span>{field.name}</span>
+              <input type="checkbox" checked={fieldValues[0] === 'true'} disabled={disabled} onChange={event => onChange(field, 'true', event.target.checked)} />
+            </label>
+          );
+        }
+
+        return (
+          <label key={`${lead.id}-${field.id}-${fieldValues[0] || ''}`} className="lead-compact-filter-row">
+            <span>{field.name}</span>
+            <input
+              type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+              defaultValue={fieldValues[0] || ''}
+              disabled={disabled}
+              onBlur={event => onChange(field, event.target.value)}
+            />
+          </label>
+        );
+      })}
     </div>
   );
 };
