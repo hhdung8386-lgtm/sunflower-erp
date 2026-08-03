@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect } from 'react';
-import { authService, dbService, UserProfile } from './services/firebaseService';
+import { authService, dbService, isFirebaseRuntimeEnabled, UserProfile } from './services/firebaseService';
 import { Dashboard } from './views/Dashboard';
 import { Crm } from './views/Crm';
 import { Leads } from './views/Leads';
@@ -963,22 +963,23 @@ function App() {
             <span>{language === 'vi' ? 'EN' : 'VI'}</span>
           </button>
 
-          {/* DEMO LIVE SWITCH ROLE SELECTOR (Extremely Convenient for Testing) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'inline-block' }}>{t('Chuyển nhanh vai trò:')}</span>
-            <select 
-              value={user.role} 
-              onChange={e => handleSwitchRole(e.target.value)}
-              style={{ padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px', width: '115px' }}
-            >
-              <option value="admin">{t('Giám Đốc')}</option>
-              <option value="sale">{t('Nhân Viên Sale')}</option>
-              <option value="designer">{t('Thiết Kế')}</option>
-              <option value="purchaser">{t('Mua Vật Tư')}</option>
-              <option value="producer">{t('Sản Xuất')}</option>
-              <option value="accountant">{t('Kế Toán')}</option>
-            </select>
-          </div>
+          {!isFirebaseRuntimeEnabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--color-text-muted)', display: 'inline-block' }}>{t('Chuyển nhanh vai trò:')}</span>
+              <select
+                value={user.role}
+                onChange={e => handleSwitchRole(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: '12px', border: '1px solid var(--color-border)', borderRadius: '4px', width: '115px' }}
+              >
+                <option value="admin">{t('Giám Đốc')}</option>
+                <option value="sale">{t('Nhân Viên Sale')}</option>
+                <option value="designer">{t('Thiết Kế')}</option>
+                <option value="purchaser">{t('Mua Vật Tư')}</option>
+                <option value="producer">{t('Sản Xuất')}</option>
+                <option value="accountant">{t('Kế Toán')}</option>
+              </select>
+            </div>
+          )}
 
           <div className="header-user-badge">
             <span style={{ fontWeight: 600 }}>{user.displayName}</span>

@@ -3,7 +3,8 @@ import {
   getAuth,
   onAuthStateChanged as onFirebaseAuthStateChanged,
   signInWithEmailAndPassword,
-  signOut as signOutFirebase
+  signOut as signOutFirebase,
+  type User as FirebaseUser
 } from 'firebase/auth';
 import {
   getFirestore, 
@@ -33,7 +34,12 @@ const firebaseConfig = {
 };
 
 // Check if we should use Real Firebase
-const isFirebaseConfigured = !!firebaseConfig.apiKey && firebaseConfig.apiKey !== 'YOUR_API_KEY' && firebaseConfig.apiKey !== '';
+const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey
+  && firebaseConfig.apiKey !== 'YOUR_API_KEY'
+  && firebaseConfig.projectId
+  && firebaseConfig.authDomain
+);
 const firebaseAuthMode = import.meta.env.VITE_FIREBASE_AUTH_MODE === 'email-password' ? 'email-password' : 'local';
 const isFirebaseRuntimeEnabled = isFirebaseConfigured && firebaseAuthMode === 'email-password';
 
@@ -50,7 +56,7 @@ if (isFirebaseConfigured) {
   }
 }
 
-type FirebaseBackendState = 'idle' | 'connecting' | 'ready' | 'local-fallback';
+type FirebaseBackendState = 'idle' | 'connecting' | 'ready' | 'failed';
 
 let firebaseBackendState: FirebaseBackendState = 'idle';
 let firebaseReadyPromise: Promise<boolean> | null = null;
@@ -76,11 +82,11 @@ const reportFirebaseFailure = (context: string, error: unknown, disableForSessio
 
   if (!reportedFirebaseFailures.has(key)) {
     reportedFirebaseFailures.add(key);
-    console.warn(`[Firebase] ${context} failed (${code}). Remote sync is disabled for this session.`, error);
+    console.error(`[Firebase] ${context} failed (${code}). Local data fallback is disabled.`, error);
   }
 
   if (willDisableFirebase) {
-    firebaseBackendState = 'local-fallback';
+    firebaseBackendState = 'failed';
   }
 };
 
@@ -92,7 +98,7 @@ const reportFirebaseFailure = (context: string, error: unknown, disableForSessio
 const ensureFirebaseReady = async (): Promise<boolean> => {
   if (!isFirebaseRuntimeEnabled || !realDb || !realAuth) return false;
   if (firebaseBackendState === 'ready') return true;
-  if (firebaseBackendState === 'local-fallback') return false;
+  if (firebaseBackendState === 'failed') return false;
   if (firebaseReadyPromise) return firebaseReadyPromise;
 
   firebaseBackendState = 'connecting';
@@ -109,7 +115,19 @@ const ensureFirebaseReady = async (): Promise<boolean> => {
   return firebaseReadyPromise;
 };
 
-const authenticateFirebase = async (email: string, password: string): Promise<void> => {
+const getFirebaseDatabase = async (context: string) => {
+  if (!isFirebaseRuntimeEnabled) return null;
+  if ((await ensureFirebaseReady()) && realDb) return realDb;
+
+  const error = Object.assign(
+    new Error('Firebase is required but no authenticated Firestore connection is available.'),
+    { code: 'firebase/not-ready' }
+  );
+  reportFirebaseFailure(context, error, true);
+  throw error;
+};
+
+const authenticateFirebase = async (email: string, password: string): Promise<FirebaseUser> => {
   if (!isFirebaseRuntimeEnabled || !realAuth) {
     const configurationError = new Error('Firebase email/password authentication is not configured.') as Error & { code: string };
     configurationError.code = 'auth/configuration-not-found';
@@ -118,8 +136,9 @@ const authenticateFirebase = async (email: string, password: string): Promise<vo
 
   try {
     firebaseBackendState = 'connecting';
-    await signInWithEmailAndPassword(realAuth, email, password);
+    const credential = await signInWithEmailAndPassword(realAuth, email, password);
     firebaseBackendState = 'ready';
+    return credential.user;
   } catch (error) {
     reportFirebaseFailure('email/password authentication', error, true);
     throw error;
@@ -700,50 +719,40 @@ const initLocalStorage = () => {
   }
 };
 
-initLocalStorage();
+if (!isFirebaseRuntimeEnabled) {
+  initLocalStorage();
+}
 
-const seedFirestoreIfNeeded = async () => {
-  if (!(await ensureFirebaseReady()) || !realDb) return;
-  try {
-    // 1. Seed users
-    const usersSnap = await getDocs(collection(realDb, 'users'));
-    const existingUsers = usersSnap.docs.map(doc => doc.data());
-    for (const defUser of DEFAULT_USERS) {
-      if (!existingUsers.some((u: any) => u.email.toLowerCase() === defUser.email.toLowerCase())) {
-        await setDoc(doc(realDb, 'users', defUser.uid), defUser);
-      }
-    }
+const FIREBASE_BOOTSTRAP_ADMIN_EMAIL = 'admin@sunflower.com';
 
-    // 2. Seed other collections by checking for missing document IDs
-    const checkAndSeed = async (colName: string, defaults: any[]) => {
-      const snap = await getDocs(collection(realDb, colName));
-      const existingIds = new Set(snap.docs.map(doc => doc.id));
-      for (const item of defaults) {
-        const docId = item.id || `${colName.substring(0, 3)}-${Math.random().toString(36).substr(2, 9)}`;
-        if (!existingIds.has(docId)) {
-          await setDoc(doc(realDb, colName, docId), { ...item, id: docId });
-        }
-      }
-    };
+const getOrCreateFirebaseUserProfile = async (firebaseUser: FirebaseUser): Promise<UserProfile | null> => {
+  if (!firebaseUser.email) return null;
 
-    await checkAndSeed('customers', DEFAULT_CUSTOMERS);
-    await checkAndSeed('pos', DEFAULT_POS);
-    await checkAndSeed('designs', DEFAULT_DESIGNS);
-    await checkAndSeed('inventory', DEFAULT_INVENTORY);
-    await checkAndSeed('suppliers', DEFAULT_SUPPLIERS);
-    await checkAndSeed('purchase_orders', DEFAULT_PURCHASE_ORDERS);
-    await checkAndSeed('production_commands', DEFAULT_PRODUCTION_COMMANDS);
-    await checkAndSeed('deliveries', DEFAULT_DELIVERIES);
-    await checkAndSeed('delivery_vehicles', DEFAULT_DELIVERY_VEHICLES);
-    await checkAndSeed('invoices', DEFAULT_INVOICES);
-    await checkAndSeed('channels', DEFAULT_CHANNELS);
-    await checkAndSeed('product_classifications', DEFAULT_PRODUCT_CLASSIFICATIONS);
-    await checkAndSeed('wind_directions', DEFAULT_WIND_DIRECTIONS);
+  const database = await getFirebaseDatabase('loading authenticated user profile');
+  if (!database) return null;
 
-    console.log("Firestore successfully seeded with default data.");
-  } catch (error) {
-    reportFirebaseFailure('seeding Firestore', error);
-  }
+  const normalizedEmail = firebaseUser.email.toLowerCase();
+  const usersSnapshot = await getDocs(collection(database, 'users'));
+  const existingProfile = usersSnapshot.docs
+    .map(userDocument => ({ id: userDocument.id, ...userDocument.data() }) as UserProfile & { id: string })
+    .find(profile => profile.email.toLowerCase() === normalizedEmail);
+
+  if (existingProfile) return existingProfile;
+  if (normalizedEmail !== FIREBASE_BOOTSTRAP_ADMIN_EMAIL) return null;
+
+  const adminTemplate = DEFAULT_USERS.find(user => user.role === 'admin');
+  if (!adminTemplate) return null;
+
+  const adminProfile: UserProfile = {
+    ...adminTemplate,
+    uid: firebaseUser.uid,
+    email: firebaseUser.email,
+    createdAt: new Date().toISOString(),
+    createdBy: 'firebase-bootstrap'
+  };
+
+  await setDoc(doc(database, 'users', firebaseUser.uid), adminProfile);
+  return adminProfile;
 };
 
 type CollectionCallback = (data: any[]) => void;
@@ -840,27 +849,30 @@ export const isDocumentAlreadyExistsError = (error: unknown): boolean => (
 // ----------------------------------------------------
 export const dbService = {
   async getCollection(colName: string): Promise<any[]> {
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`reading collection ${colName}`);
+    if (database) {
       try {
-        const snap = await getDocs(collection(realDb, colName));
+        const snap = await getDocs(collection(database, colName));
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        writeLocalCollection(colName, data);
         return normalizeCollectionRecords(colName, data);
       } catch (error) {
         reportFirebaseFailure(`reading collection ${colName}`, error);
+        throw error;
       }
     }
     return readLocalCollection(colName);
   },
 
   async getDocument(colName: string, docId: string): Promise<any | null> {
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`reading document ${colName}/${docId}`);
+    if (database) {
       try {
-        const snap = await getDoc(doc(realDb, colName, docId));
+        const snap = await getDoc(doc(database, colName, docId));
         if (!snap.exists()) return null;
         return normalizeCollectionRecords(colName, [{ id: snap.id, ...snap.data() }])[0];
       } catch (error) {
         reportFirebaseFailure(`reading document ${colName}/${docId}`, error);
+        throw error;
       }
     }
     const list = readLocalCollection(colName);
@@ -875,13 +887,14 @@ export const dbService = {
       createdAt: docData.createdAt || new Date().toISOString()
     }])[0];
 
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`creating document in ${colName}`);
+    if (database) {
       try {
-        await setDoc(doc(realDb, colName, docId), finalDoc);
-        upsertLocalDocument(colName, finalDoc);
+        await setDoc(doc(database, colName, docId), finalDoc);
         return finalDoc;
       } catch (error) {
         reportFirebaseFailure(`creating document in ${colName}`, error);
+        throw error;
       }
     }
 
@@ -896,10 +909,11 @@ export const dbService = {
       createdAt: docData.createdAt || new Date().toISOString()
     }])[0];
 
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`creating unique document in ${colName}`);
+    if (database) {
       try {
-        const documentReference = doc(realDb, colName, docId);
-        await runTransaction(realDb, async transaction => {
+        const documentReference = doc(database, colName, docId);
+        await runTransaction(database, async transaction => {
           const existingSnapshot = await transaction.get(documentReference);
           if (existingSnapshot.exists()) {
             throw createDocumentAlreadyExistsError({
@@ -909,7 +923,6 @@ export const dbService = {
           }
           transaction.set(documentReference, finalDoc);
         });
-        upsertLocalDocument(colName, finalDoc);
         return finalDoc;
       } catch (error) {
         if (isDocumentAlreadyExistsError(error)) throw error;
@@ -932,13 +945,14 @@ export const dbService = {
       updatedAt: new Date().toISOString()
     };
 
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`updating document ${colName}/${docId}`);
+    if (database) {
       try {
-        await updateDoc(doc(realDb, colName, docId), finalUpdatedFields);
-        updateLocalDocument(colName, docId, finalUpdatedFields);
+        await updateDoc(doc(database, colName, docId), finalUpdatedFields);
         return true;
       } catch (error) {
         reportFirebaseFailure(`updating document ${colName}/${docId}`, error);
+        throw error;
       }
     }
 
@@ -946,13 +960,14 @@ export const dbService = {
   },
 
   async deleteDocument(colName: string, docId: string): Promise<boolean> {
-    if ((await ensureFirebaseReady()) && realDb) {
+    const database = await getFirebaseDatabase(`deleting document ${colName}/${docId}`);
+    if (database) {
       try {
-        await deleteDoc(doc(realDb, colName, docId));
-        deleteLocalDocument(colName, docId);
+        await deleteDoc(doc(database, colName, docId));
         return true;
       } catch (error) {
         reportFirebaseFailure(`deleting document ${colName}/${docId}`, error);
+        throw error;
       }
     }
 
@@ -960,38 +975,46 @@ export const dbService = {
   },
 
   subscribeCollection(colName: string, callback: (data: any[]) => void): () => void {
+    if (isFirebaseRuntimeEnabled) {
+      callback([]);
+
+      let active = true;
+      let unsubscribeRemote: (() => void) | null = null;
+
+      void (async () => {
+        try {
+          const database = await getFirebaseDatabase(`subscribing to ${colName}`);
+          if (!database || !active) return;
+
+          unsubscribeRemote = onSnapshot(collection(database, colName), (snapshot) => {
+            if (!active) return;
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            callback(normalizeCollectionRecords(colName, data));
+          }, (error) => {
+            if (!active) return;
+            reportFirebaseFailure(`subscribing to ${colName}`, error);
+            callback([]);
+          });
+        } catch (error) {
+          if (!active) return;
+          reportFirebaseFailure(`subscribing to ${colName}`, error);
+          callback([]);
+        }
+      })();
+
+      return () => {
+        active = false;
+        unsubscribeRemote?.();
+      };
+    }
+
     if (!subscribers[colName]) {
       subscribers[colName] = [];
     }
     subscribers[colName].push(callback);
-
-    // Emit cached/local data immediately so the UI never becomes empty while
-    // Firebase Auth and the first remote snapshot are still being established.
     callback(readLocalCollection(colName));
 
-    let active = true;
-    let unsubscribeRemote: (() => void) | null = null;
-
-    void (async () => {
-      if (!(await ensureFirebaseReady()) || !realDb || !active) return;
-
-      try {
-        unsubscribeRemote = onSnapshot(collection(realDb, colName), (snapshot) => {
-          if (!active) return;
-          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          writeLocalCollection(colName, data);
-        }, (error) => {
-          if (!active) return;
-          reportFirebaseFailure(`subscribing to ${colName}`, error);
-        });
-      } catch (error) {
-        reportFirebaseFailure(`subscribing to ${colName}`, error);
-      }
-    })();
-
     return () => {
-      active = false;
-      unsubscribeRemote?.();
       subscribers[colName] = subscribers[colName].filter(existing => existing !== callback);
     };
   }
@@ -1010,25 +1033,26 @@ let currentUser: UserProfile | null = (() => {
 export const authService = {
   async login(identifier: string, password: string): Promise<UserProfile> {
     const searchIdentifier = identifier.toLowerCase().trim();
-    const localUsers = readLocalCollection('users');
-    const fallbackUsers = [
-      ...localUsers,
-      ...DEFAULT_USERS.filter(defaultUser => !localUsers.some((localUser: any) => localUser.email === defaultUser.email))
-    ];
-    const fallbackUser = fallbackUsers.find((candidate: any) =>
-      candidate.email.toLowerCase() === searchIdentifier ||
-      candidate.email.toLowerCase().split('@')[0] === searchIdentifier
-    );
+    let user: UserProfile | null = null;
 
     if (firebaseAuthMode === 'email-password') {
-      const firebaseEmail = fallbackUser?.email || (searchIdentifier.includes('@') ? searchIdentifier : '');
+      const firebaseEmail = searchIdentifier.includes('@')
+        ? searchIdentifier
+        : searchIdentifier === 'admin' ? FIREBASE_BOOTSTRAP_ADMIN_EMAIL : '';
       if (!firebaseEmail) {
         throw new Error('Tài khoản không tồn tại trên hệ thống.');
       }
 
       try {
-        await authenticateFirebase(firebaseEmail, password);
-        await seedFirestoreIfNeeded();
+        const firebaseUser = await authenticateFirebase(firebaseEmail, password);
+        user = await getOrCreateFirebaseUserProfile(firebaseUser);
+        if (!user) {
+          await signOutFirebase(realAuth!);
+          throw Object.assign(
+            new Error('Tài khoản Firebase chưa có hồ sơ phân quyền trong ERP.'),
+            { code: 'auth/profile-not-found' }
+          );
+        }
       } catch (error) {
         const code = getFirebaseErrorCode(error);
         if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
@@ -1037,45 +1061,47 @@ export const authService = {
         if (code === 'auth/configuration-not-found' || code === 'auth/operation-not-allowed') {
           throw new Error('Firebase Authentication chưa được bật chế độ Email/Password.');
         }
+        if (code === 'auth/profile-not-found') {
+          throw error;
+        }
         throw new Error(`Không thể đăng nhập Firebase (${code}). Vui lòng kiểm tra cấu hình hệ thống.`);
+      }
+    } else {
+      const dbUsers = await dbService.getCollection('users');
+      user = dbUsers.find((candidate: UserProfile) =>
+        candidate.email.toLowerCase() === searchIdentifier
+        || candidate.email.toLowerCase().split('@')[0] === searchIdentifier
+      ) || null;
+
+      if (!user) {
+        const defaultUser = DEFAULT_USERS.find(candidate =>
+          candidate.email.toLowerCase() === searchIdentifier
+          || candidate.email.toLowerCase().split('@')[0] === searchIdentifier
+        );
+        if (defaultUser) {
+          user = await dbService.addDocument('users', defaultUser);
+        }
       }
     }
 
-    // Fetch users from database (Firestore or localStorage)
-    const dbUsers = await dbService.getCollection('users');
-    let user = dbUsers.find((u: any) => 
-      u.email.toLowerCase() === searchIdentifier || 
-      u.email.toLowerCase().split('@')[0] === searchIdentifier
-    );
-    
-    // Fallback if user is in DEFAULT_USERS but not yet initialized in Firestore
-    if (!user) {
-      const defaultUser = DEFAULT_USERS.find((u: any) => 
-        u.email.toLowerCase() === searchIdentifier || 
-        u.email.toLowerCase().split('@')[0] === searchIdentifier
-      );
-      if (defaultUser) {
-        user = await dbService.addDocument('users', defaultUser);
-      }
-    }
-    
     if (!user) {
       throw new Error('Tài khoản không tồn tại trên hệ thống.');
     }
-    
-    // Check if account is active
+
     if (user.active === false) {
       throw new Error('Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ Giám đốc.');
     }
-    
-    const expectedPassword = user.role === 'admin' ? 'admin123' : 
-                             user.role === 'sale' ? 'sale123' : 
-                             user.role === 'designer' ? 'design123' : 
-                             user.role === 'purchaser' ? 'purchase123' : 
-                             user.role === 'producer' ? 'produce123' : 'account123';
-    
-    if (firebaseAuthMode === 'local' && password !== expectedPassword && password !== '123456') {
-      throw new Error('Mật khẩu không đúng. Vui lòng thử lại.');
+
+    if (firebaseAuthMode === 'local') {
+      const expectedPassword = user.role === 'admin' ? 'admin123' :
+                               user.role === 'sale' ? 'sale123' :
+                               user.role === 'designer' ? 'design123' :
+                               user.role === 'purchaser' ? 'purchase123' :
+                               user.role === 'producer' ? 'produce123' : 'account123';
+
+      if (password !== expectedPassword && password !== '123456') {
+        throw new Error('Mật khẩu không đúng. Vui lòng thử lại.');
+      }
     }
 
     currentUser = user;
@@ -1113,21 +1139,26 @@ export const authService = {
           return;
         }
 
-        firebaseBackendState = 'ready';
-        const dbUsers = await dbService.getCollection('users');
-        const profile = dbUsers.find((candidate: any) => candidate.email.toLowerCase() === firebaseUser.email!.toLowerCase()) ||
-          DEFAULT_USERS.find(candidate => candidate.email.toLowerCase() === firebaseUser.email!.toLowerCase());
+        try {
+          firebaseBackendState = 'ready';
+          const profile = await getOrCreateFirebaseUserProfile(firebaseUser);
 
-        if (!active || !profile || profile.active === false) {
+          if (!active || !profile || profile.active === false) {
+            currentUser = null;
+            localStorage.removeItem('erp_current_user');
+            callback(null);
+            return;
+          }
+
+          currentUser = profile;
+          localStorage.setItem('erp_current_user', JSON.stringify(profile));
+          callback(profile);
+        } catch (error) {
+          reportFirebaseFailure('restoring authenticated user profile', error);
           currentUser = null;
           localStorage.removeItem('erp_current_user');
           callback(null);
-          return;
         }
-
-        currentUser = profile;
-        localStorage.setItem('erp_current_user', JSON.stringify(profile));
-        callback(profile);
       });
 
       return () => {
@@ -1147,4 +1178,4 @@ export const authService = {
     return currentUser;
   }
 };
-export { isFirebaseConfigured };
+export { isFirebaseConfigured, isFirebaseRuntimeEnabled };
