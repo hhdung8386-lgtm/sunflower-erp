@@ -20,7 +20,10 @@ import {
   type LeadRecord
 } from '../domain/crmModels';
 import { findTaxCodeConflict } from '../domain/taxCodeUniqueness';
-import { buildCustomerMaterialHistory } from '../domain/customerMaterialHistory';
+import {
+  buildCustomerMaterialHistory,
+  buildCustomerOrderedSampleHistory
+} from '../domain/customerMaterialHistory';
 import {
   calculatePOItemFinancials,
   withCalculatedPOFinancials,
@@ -96,6 +99,7 @@ interface CrmProps {
   currentUser: any;
   onRefresh: () => void;
   onRepeatOrder?: (poId: string) => void;
+  onOpenPO?: (poId: string) => void;
   onPreparedOrderCreated?: (customerId: string) => void;
   initialLead?: LeadRecord | null;
   onLeadOnboardingClosed?: () => void;
@@ -155,6 +159,7 @@ export const Crm: React.FC<CrmProps> = ({
   currentUser,
   onRefresh,
   onRepeatOrder,
+  onOpenPO,
   onPreparedOrderCreated,
   initialLead = null,
   onLeadOnboardingClosed
@@ -165,6 +170,7 @@ export const Crm: React.FC<CrmProps> = ({
   const [saleFilter, setSaleFilter] = useState('all');
   const [rankFilter, setRankFilter] = useState<'all' | CustomerRank>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [customerHistoryTab, setCustomerHistoryTab] = useState<'po' | 'samples'>('po');
   const [expandedMaterialsCustomerId, setExpandedMaterialsCustomerId] = useState('');
   
   const [chartMonth, setChartMonth] = useState<string>('all');
@@ -1524,6 +1530,12 @@ export const Crm: React.FC<CrmProps> = ({
   ));
   const accessibleCustomerIds = new Set(accessibleCustomers.map(customer => customer.id));
   const customerMaterialsById = useMemo(() => buildCustomerMaterialHistory(pos), [pos]);
+  const customerSamplesById = useMemo(() => buildCustomerOrderedSampleHistory(pos), [pos]);
+
+  const openCustomerDetail = (customer: CustomerRecord) => {
+    setCustomerHistoryTab('po');
+    setSelectedCustomer(customer);
+  };
 
   const getCustomerOrderValue = (customerId: string) => getCustomerOrders(customerId)
     .reduce((total, order) => total + Number(order.netAmount || order.totalAmount || 0), 0);
@@ -1595,6 +1607,9 @@ export const Crm: React.FC<CrmProps> = ({
     if (filterType === 'has_debt') return getCustomerOutstandingDebt(customer.id) > 0;
     return true;
   }), customer => [customer.createdAt, customer.updatedAt, customer.customerCode]);
+  const selectedCustomerSamples = selectedCustomer
+    ? customerSamplesById[selectedCustomer.id] || []
+    : [];
 
   // Top 5/15 customers by sales volume with time filters
   const topCustomerSales = accessibleCustomers
@@ -2003,7 +2018,7 @@ export const Crm: React.FC<CrmProps> = ({
                         const saleName = users.find(user => user.uid === customer.assignedSaleId)?.displayName || t('Chưa phân công');
                         return (
                           <React.Fragment key={customer.id}>
-                            <tr onClick={() => setSelectedCustomer(customer)}>
+                            <tr onClick={() => openCustomerDetail(customer)}>
                               <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span>{isNew && <span className="crm-new-customer-badge" title={t('Khách hàng mới trong 7 ngày đầu')}><span aria-hidden="true" />NEW</span>}</div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
                               <td><div className="crm-customer-segment"><span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>{customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}</span><small>{customer.discountType === 'amount' ? `${t('CK')} ${Number(customer.discountAmount || 0).toLocaleString('vi-VN')} đ` : `${t('Chiết khấu')} ${Number(customer.discountRate || 0)}%`}</small></div></td>
                               <td><strong className={customer.assignedSaleId ? '' : 'crm-text-muted'}>{saleName}</strong></td>
@@ -2029,7 +2044,7 @@ export const Crm: React.FC<CrmProps> = ({
                               <td><div className={`crm-care-cell ${needsCare ? 'is-overdue' : ''}`}><strong>{daysSinceLastOrder === null ? t('Chưa có đơn') : daysSinceLastOrder === 0 ? t('Hôm nay') : `${daysSinceLastOrder} ${t('ngày trước')}`}</strong><span>{lastOrder ? formatDate(lastOrder.orderDate || lastOrder.createdAt, 'vi-VN', '') : t('Cần tạo đơn đầu tiên')}</span></div></td>
                               <td><div className="crm-row-actions" onClick={(event) => event.stopPropagation()}>
                                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-primary" onClick={() => onPreparedOrderCreated?.(customer.id)}><ClipboardPlus size={13} /> {t('Tạo PO')}</button>}
-                                <button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(customer)}>{t('Chi tiết')}</button>
+                                <button type="button" className="btn btn-sm btn-outline" onClick={() => openCustomerDetail(customer)}>{t('Chi tiết')}</button>
                                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(customer)} title={t('Sửa')}><Pencil size={14} /></button>}
                               </div></td>
                             </tr>
@@ -2087,7 +2102,7 @@ export const Crm: React.FC<CrmProps> = ({
                   {selectedCustomer.customerRank ? `Hạng ${selectedCustomer.customerRank}` : t('Chưa xếp hạng')}
                 </span>
               </div>
-              <p>{t('Hồ sơ khách hàng, mã hàng tiêu chuẩn, lịch sử giao dịch và tài liệu liên quan.')}</p>
+              <p>{t('Hồ sơ khách hàng, lịch sử PO, các mẫu đã đặt và tài liệu liên quan.')}</p>
             </div>
             {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
               <div className="crm-detail-actions">
@@ -2166,199 +2181,107 @@ export const Crm: React.FC<CrmProps> = ({
             </div>
           </div>
 
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">{t('LỊCH SỬ ĐƠN HÀNG (PO)')}</span>
+          <div className="card customer-order-history-card">
+            <div className="customer-order-history-tabs" role="tablist" aria-label={t('Lịch sử giao dịch khách hàng')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={customerHistoryTab === 'po'}
+                className={customerHistoryTab === 'po' ? 'is-active' : ''}
+                onClick={() => setCustomerHistoryTab('po')}
+              >
+                <FileText size={14} /> {t('PO')} <span>{getCustomerOrders(selectedCustomer.id).length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={customerHistoryTab === 'samples'}
+                className={customerHistoryTab === 'samples' ? 'is-active' : ''}
+                onClick={() => setCustomerHistoryTab('samples')}
+              >
+                <ShoppingBag size={14} /> {t('Lịch sử mẫu đã đặt')} <span>{selectedCustomerSamples.length}</span>
+              </button>
             </div>
-            <div className="table-container" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t('Mã PO')}</th>
-                    <th>{t('Ngày Đặt')}</th>
-                    <th>{t('Trị Giá (Net)')}</th>
-                    <th>{t('Tiến Độ')}</th>
-                    <th>{t('Thao Tác')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {getCustomerOrders(selectedCustomer.id).map(po => (
-                    <tr key={po.id}>
-                      <td style={{ fontWeight: 600 }}>{po.poCode}</td>
-                      <td>{formatDate(po.orderDate)}</td>
-                      <td>{po.netAmount.toLocaleString()} đ</td>
-                      <td>
-                        <span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span>
-                      </td>
-                      <td>
-                        {(currentUser.role === 'admin' || currentUser.role === 'sale') && onRepeatOrder ? (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline repeat-order-button"
-                            onClick={() => onRepeatOrder(po.id)}
-                            title="Tạo PO mới từ đơn cũ"
-                          >
-                            <Copy size={13} /> Đặt lại
-                          </button>
-                        ) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                  {getCustomerOrders(selectedCustomer.id).length === 0 && (
-                    <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa phát sinh đơn hàng nào.')}</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
-          {/* CUSTOMER PREDEFINED PRODUCTS & CONTRACTS */}
-          <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="card-title">{t('DANH MỤC MÃ SẢN PHẨM KHÁCH HÀNG')}</span>
-               {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                 <button className="btn btn-primary btn-symbol" onClick={handleOpenAddProduct} title={t('Thêm Mã Sản Phẩm Mới')}>
-                   <Plus size={18} />
-                 </button>
-               )}
-            </div>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t('Mã Sản Phẩm')}</th>
-                    <th>{t('Tên Sản Phẩm')}</th>
-                    <th>{t('Loại')}</th>
-                    <th>{t('ĐVT / VAT')}</th>
-                    <th>{t('Đơn Giá')}</th>
-                    <th>{t('Nhà Cung Cấp')}</th>
-                    <th>{t('Mô Tả Kỹ Thuật')}</th>
-                    <th>{t('Ảnh Layout')}</th>
-                    <th>{t('Thao Tác')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(selectedCustomer.products || []).filter((p: any) => !p.deleted).map((prod: any) => (
-                    <tr key={prod.id}>
-                      <td style={{ fontWeight: 600 }}>{prod.productCode}</td>
-                      <td>{prod.productName}</td>
-                      <td>{t(prod.productType)}</td>
-                      <td>
-                        <strong>{prod.unit || 'cái'}</strong>
-                        <div className="crm-table-secondary">VAT {Number(prod.vatRate ?? 8)}%</div>
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>{prod.currentPrice.toLocaleString()} đ</span>
-                          <button 
-                            type="button" 
-                            className="btn btn-sm btn-outline" 
-                            style={{ padding: '2px 4px', fontSize: '10px', display: 'inline-flex', alignItems: 'center' }}
-                            onClick={() => setPriceHistoryProduct(prod)}
-                          >
-                            {t('Lịch sử')}
-                          </button>
-                        </div>
-                      </td>
-                      <td>
-                        <strong>{prod.supplierName || t('Chưa chọn')}</strong>
-                        <div className="crm-table-secondary">
-                          {prod.purchasePrice ? `${Number(prod.purchasePrice).toLocaleString('vi-VN')} đ mua` : t('Chưa có giá mua')}
-                        </div>
-                        {prod.leadTimeDays > 0 && <div className="crm-table-secondary">{prod.leadTimeDays} ngày chuẩn bị</div>}
-                      </td>
-                      <td style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                        {prod.specifications?.fields && Array.isArray(prod.specifications.fields) ? (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
-                            {prod.specifications.fields.map((f: any) => {
-                              if (f.id === 'windDirectionFiles') return null;
-                              let valStr = '';
-                              if (f.type === 'checkboxes' && Array.isArray(f.value)) {
-                                valStr = f.value.join(', ');
-                              } else {
-                                valStr = String(f.value !== undefined && f.value !== null ? f.value : '');
-                              }
-                              if (!valStr) return null;
-                              return (
-                                <span key={f.id} style={{ display: 'inline-block' }}>
-                                  <span style={{ fontWeight: 600, color: '#475569' }}>{f.label}:</span> {valStr}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <>
-                            {prod.productType === 'muc_in' && (
-                              <span>{prod.specifications.ribbonType} - {prod.specifications.size} - {prod.specifications.color}</span>
-                            )}
-                            {prod.productType === 'tem_trang_cuon' && (
-                              <span>R{prod.specifications.width} X D{prod.specifications.height} MM - Cuộn {prod.specifications.qtyPerRoll} tem - Lõi {prod.specifications.core} - bế {prod.specifications.dieCut}</span>
-                            )}
-                            {prod.productType === 'tem_mau_cuon' && (
-                              <span>{prod.specifications.colors} - {prod.specifications.form} - Lõi {prod.specifications.windingCore} - {prod.specifications.processing?.join(', ')}</span>
-                            )}
-                            {prod.productType === 'tem_mau_to' && (
-                              <span>
-                                {prod.specifications.width && prod.specifications.height ? `R${prod.specifications.width} X D${prod.specifications.height} MM - ` : ''}
-                                {prod.specifications.sheetType} - {prod.specifications.corner} - {prod.specifications.lamination} - {prod.specifications.finished}
-                              </span>
-                            )}
-                            {prod.specifications?.custom && prod.specifications.custom.length > 0 && (
-                              <div style={{ marginTop: '2px', fontStyle: 'italic', color: 'var(--color-primary)' }}>
-                                {prod.specifications.custom.map((c: any, cidx: number) => (
-                                  <div key={cidx}>• {c.key}: {c.value}</div>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {prod.material && (
-                          <div style={{ fontWeight: 600, color: '#334155', marginTop: '4px' }}>
-                            {t('Chất liệu:')} <span style={{ color: 'var(--color-primary-dark)' }}>{prod.material}</span>
-                          </div>
-                        )}
-                        {prod.specifications?.windDirectionFiles?.length > 0 && (
-                          <div style={{ marginTop: '4px', display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span style={{ fontWeight: 600 }}>{t('File Hướng tem:')}</span>
-                            {prod.specifications.windDirectionFiles.map((file: any, fidx: number) => (
-                              <a key={fidx} href={file.data} download={file.name} style={{ textDecoration: 'underline', color: 'var(--color-primary)', fontSize: '11px' }}>
-                                {file.name}
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {prod.layoutUrl ? (
-                          <img src={prod.layoutUrl} alt="Layout" style={{ maxHeight: '40px', borderRadius: '4px' }} />
-                        ) : (
-                          <span style={{ fontSize: '11px', fontStyle: 'italic' }}>{t('Chưa có')}</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="btn-group">
-                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-                            <>
-                               <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditProduct(prod)}>{t('Sửa')}</button>
-                               <button className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => handleDeleteProduct(prod.id)} title={t('Xóa')}>
-                                 <Trash2 size={14} />
-                               </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {(selectedCustomer.products || []).filter((p: any) => !p.deleted).length === 0 && (
+            {customerHistoryTab === 'po' ? (
+              <div className="table-container customer-order-history-table">
+                <table>
+                  <thead>
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '16px' }}>{t('Chưa thiết lập mã sản phẩm nào cho khách hàng này.')}</td>
+                      <th>{t('Mã PO')}</th>
+                      <th>{t('Ngày đặt')}</th>
+                      <th>{t('Trị giá (Net)')}</th>
+                      <th>{t('Tiến độ')}</th>
+                      <th>{t('Thao tác')}</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {getCustomerOrders(selectedCustomer.id).map(po => (
+                      <tr
+                        key={po.id}
+                        className="customer-po-history-row"
+                        onClick={() => onOpenPO?.(po.id)}
+                        onKeyDown={event => {
+                          if ((event.key === 'Enter' || event.key === ' ') && onOpenPO) onOpenPO(po.id);
+                        }}
+                        tabIndex={onOpenPO ? 0 : undefined}
+                      >
+                        <td><button type="button" className="customer-po-link" onClick={event => { event.stopPropagation(); onOpenPO?.(po.id); }}>{po.poCode}</button></td>
+                        <td>{formatDate(po.orderDate)}</td>
+                        <td>{Number(po.netAmount || po.totalAmount || 0).toLocaleString('vi-VN')} đ</td>
+                        <td><span className={`badge ${getPOBadgeClass(po)}`}>{t(getPOQueueLabel(po))}</span></td>
+                        <td onClick={event => event.stopPropagation()}>
+                          {(currentUser.role === 'admin' || currentUser.role === 'sale') && onRepeatOrder ? (
+                            <button type="button" className="btn btn-sm btn-outline repeat-order-button" onClick={() => onRepeatOrder(po.id)} title={t('Tạo PO mới từ đơn cũ')}>
+                              <Copy size={13} /> {t('Đặt lại')}
+                            </button>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    {getCustomerOrders(selectedCustomer.id).length === 0 && (
+                      <tr><td colSpan={5} className="customer-history-empty">{t('Chưa phát sinh đơn hàng nào.')}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="table-container customer-order-history-table">
+                <table className="customer-sample-history-table">
+                  <thead>
+                    <tr>
+                      <th>{t('Mẫu / mã hàng')}</th>
+                      <th>{t('Quy cách & NVL')}</th>
+                      <th>{t('Lịch sử đặt')}</th>
+                      <th>{t('PO gần nhất')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedCustomerSamples.map(sample => (
+                      <tr key={sample.key}>
+                        <td>
+                          <div className="customer-sample-identity">
+                            {sample.previewImage ? <img src={sample.previewImage} alt={sample.productName} /> : <span><FileText size={16} /></span>}
+                            <div><strong>{sample.productName}</strong><small>{sample.productCode || t('Chưa có mã hàng')}</small></div>
+                          </div>
+                        </td>
+                        <td><div className="customer-sample-spec"><strong>{sample.material || t('Chưa có NVL')}</strong><span>{sample.specification || t('Chưa có quy cách')}</span></div></td>
+                        <td><div className="customer-sample-spec"><strong>{sample.orderCount} {t('đơn')}</strong><span>{sample.totalQuantity.toLocaleString('vi-VN')} {sample.unit}</span></div></td>
+                        <td>
+                          <button type="button" className="customer-po-link" onClick={() => sample.lastPoId && onOpenPO?.(sample.lastPoId)} disabled={!sample.lastPoId || !onOpenPO}>
+                            {sample.lastPoCode || t('Chưa có mã PO')}
+                          </button>
+                          <div className="crm-table-secondary">{formatDate(sample.lastOrderedAt, 'vi-VN', '—')}</div>
+                        </td>
+                      </tr>
+                    ))}
+                    {selectedCustomerSamples.length === 0 && (
+                      <tr><td colSpan={4} className="customer-history-empty">{t('Chưa có mẫu nào trong lịch sử PO.')}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="card" style={{ gridColumn: '1 / -1', marginTop: '24px' }}>

@@ -10,6 +10,21 @@ export interface CustomerMaterialUsage {
   lastPoCode: string;
 }
 
+export interface CustomerOrderedSample {
+  key: string;
+  productCode: string;
+  productName: string;
+  material: string;
+  specification: string;
+  unit: string;
+  totalQuantity: number;
+  orderCount: number;
+  lastOrderedAt: string;
+  lastPoId: string;
+  lastPoCode: string;
+  previewImage: string;
+}
+
 interface MutableMaterialUsage {
   key: string;
   materialName: string;
@@ -40,6 +55,16 @@ const normalizeMaterialKey = (value: string): string => value
 const getOrderTimestamp = (value: string): number => {
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const getSampleKey = (item: UnknownRecord): string => {
+  const productCode = asText(item.productCode);
+  if (productCode) return `code:${normalizeMaterialKey(productCode)}`;
+  return `sample:${normalizeMaterialKey([
+    asText(item.productName),
+    asText(item.size),
+    asText(item.material)
+  ].filter(Boolean).join('|'))}`;
 };
 
 export const buildCustomerMaterialHistory = (
@@ -115,6 +140,88 @@ export const buildCustomerMaterialHistory = (
           lastUsedAt: material.lastUsedAt,
           lastPoCode: material.lastPoCode
         }))
+    ])
+  );
+};
+
+export const buildCustomerOrderedSampleHistory = (
+  orders: unknown[]
+): Record<string, CustomerOrderedSample[]> => {
+  const samplesByCustomer = new Map<string, Map<string, CustomerOrderedSample & {
+    orderIds: Set<string>;
+    lastOrderedTimestamp: number;
+  }>>();
+
+  orders.forEach((orderValue, orderIndex) => {
+    const order = asRecord(orderValue);
+    if (order.deleted === true) return;
+
+    const customerId = asText(order.customerId) || asText(asRecord(order.customerSnapshot).customerId);
+    if (!customerId) return;
+
+    const orderId = asText(order.id) || asText(order.poCode) || `order-${orderIndex + 1}`;
+    const orderDate = asText(order.orderDate) || asText(order.createdAt);
+    const orderTimestamp = getOrderTimestamp(orderDate);
+    const poCode = asText(order.poCode) || asText(order.customerPoCode);
+    const customerSamples = samplesByCustomer.get(customerId) || new Map();
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    items.forEach(itemValue => {
+      const item = asRecord(itemValue);
+      const key = getSampleKey(item);
+      if (!key || key === 'sample:') return;
+
+      const previewImages = Array.isArray(item.previewImages) ? item.previewImages : [];
+      const previewImage = asText(previewImages[0]) || asText(item.previewImage);
+      const existing = customerSamples.get(key);
+      const sample = existing || {
+        key,
+        productCode: asText(item.productCode),
+        productName: asText(item.productName) || 'Chưa đặt tên',
+        material: asText(item.material) || asText(asRecord(item.specifications).material),
+        specification: asText(item.size),
+        unit: asText(item.unit) || 'cái',
+        totalQuantity: 0,
+        orderCount: 0,
+        lastOrderedAt: '',
+        lastPoId: '',
+        lastPoCode: '',
+        previewImage: '',
+        orderIds: new Set<string>(),
+        lastOrderedTimestamp: 0
+      };
+
+      sample.totalQuantity += Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 0;
+      sample.orderIds.add(orderId);
+      sample.orderCount = sample.orderIds.size;
+      if (orderTimestamp >= sample.lastOrderedTimestamp) {
+        sample.productCode = asText(item.productCode) || sample.productCode;
+        sample.productName = asText(item.productName) || sample.productName;
+        sample.material = asText(item.material) || asText(asRecord(item.specifications).material) || sample.material;
+        sample.specification = asText(item.size) || sample.specification;
+        sample.unit = asText(item.unit) || sample.unit;
+        sample.lastOrderedAt = orderDate;
+        sample.lastPoId = asText(order.id);
+        sample.lastPoCode = poCode;
+        sample.previewImage = previewImage || sample.previewImage;
+        sample.lastOrderedTimestamp = orderTimestamp;
+      }
+
+      customerSamples.set(key, sample);
+    });
+
+    samplesByCustomer.set(customerId, customerSamples);
+  });
+
+  return Object.fromEntries(
+    Array.from(samplesByCustomer.entries()).map(([customerId, samples]) => [
+      customerId,
+      Array.from(samples.values())
+        .sort((left, right) => (
+          right.lastOrderedTimestamp - left.lastOrderedTimestamp
+          || left.productName.localeCompare(right.productName, 'vi-VN')
+        ))
+        .map(({ orderIds: _orderIds, lastOrderedTimestamp: _lastOrderedTimestamp, ...sample }) => sample)
     ])
   );
 };

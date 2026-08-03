@@ -144,6 +144,13 @@ function App() {
     setActivePage('sales');
   };
 
+  const handleOpenPORequest = (poId: string) => {
+    setRepeatSourcePoId('');
+    setPreparedCustomerId('');
+    setSelectedPoId(poId);
+    setActivePage('sales');
+  };
+
   const handlePreparedOrderOpened = useCallback(() => {
     setPreparedCustomerId('');
   }, []);
@@ -402,6 +409,7 @@ function App() {
             currentUser={user}
             onRefresh={refreshData}
             onRepeatOrder={handleRepeatOrderRequest}
+            onOpenPO={handleOpenPORequest}
             onPreparedOrderCreated={handlePreparedOrderCreated}
             initialLead={leadOnboarding}
             onLeadOnboardingClosed={() => setLeadOnboarding(null)}
