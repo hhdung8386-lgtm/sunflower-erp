@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
-import POFormFullScreen from '../components/POFormFullScreen';
+import { CustomerOnboardingItems } from '../components/CustomerOnboardingItems';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
 import { formatDate, formatDateTime, parseValidDate } from '../domain/dateFormatting';
 import {
-  normalizeCustomerRecord,
   normalizePendingOrderItem,
   type CustomerPendingOrderItem,
   type CustomerPendingOrderDraft,
@@ -17,7 +16,11 @@ import {
   type CustomerRank,
   type CustomerRecord
 } from '../domain/crmModels';
-import type { PODiscountType } from '../domain/poFinancials';
+import {
+  calculatePOItemFinancials,
+  withCalculatedPOFinancials,
+  type PODiscountType
+} from '../domain/poFinancials';
 import '../components/CustomerHistory.css';
 import { 
   Plus, 
@@ -297,7 +300,10 @@ export const Crm: React.FC<CrmProps> = ({
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [customerOnboardingStep, setCustomerOnboardingStep] = useState<'customer' | 'order'>('customer');
+  const [onboardingItems, setOnboardingItems] = useState<CustomerPendingOrderItem[]>([]);
+  const [onboardingCustomerPoCode, setOnboardingCustomerPoCode] = useState('');
+  const [onboardingExpectedDeliveryDate, setOnboardingExpectedDeliveryDate] = useState('');
+  const [onboardingOrderNotes, setOnboardingOrderNotes] = useState('');
   
   // Form fields
   const [customerCode, setCustomerCode] = useState('');
@@ -466,7 +472,10 @@ export const Crm: React.FC<CrmProps> = ({
     setWarehousePhone('');
     setBankAccount('');
     setAdditionalContacts([]);
-    setCustomerOnboardingStep('customer');
+    setOnboardingItems([]);
+    setOnboardingCustomerPoCode('');
+    setOnboardingExpectedDeliveryDate('');
+    setOnboardingOrderNotes('');
     setShowAddModal(true);
   };
 
@@ -535,85 +544,79 @@ export const Crm: React.FC<CrmProps> = ({
 
   const closeCustomerOnboarding = () => {
     setShowAddModal(false);
-    setCustomerOnboardingStep('customer');
   };
 
-  const handleStartFirstOrder = () => {
-    if (!companyName.trim()) {
-      alert(t('Vui lòng nhập tên công ty trước khi chuẩn bị đơn hàng.'));
-      return;
-    }
-    if (!customerRank) {
-      alert(t('Vui lòng chọn hạng khách hàng A, B, C hoặc D để tạo PO.'));
-      return;
-    }
-    setCustomerOnboardingStep('order');
-  };
+  const mapPreparedItemsToProducts = (
+    items: CustomerPendingOrderItem[]
+  ): CustomerProductRecord[] => items.map((item, index) => ({
+    id: item.itemId || `product-${Date.now()}-${index}`,
+    productCode: item.productCode.trim(),
+    productName: item.productName.trim(),
+    productType: item.productType || 'tem_mau_cuon',
+    size: item.size || '',
+    material: item.material || '',
+    unit: item.unit || 'cái',
+    currentPrice: Number(item.price) || 0,
+    salePrice: Number(item.price) || 0,
+    vatRate: Number(item.vatRate) || 0,
+    supplierId: item.supplierId || '',
+    supplierName: item.supplierName || suppliers.find(supplier => supplier.id === item.supplierId)?.supplierName || '',
+    purchasePrice: Number(item.purchasePrice) || 0,
+    discountType: item.discountType === 'amount' ? 'amount' : 'percent',
+    discountRate: Number(item.discountRate) || 0,
+    discountAmount: Number(item.discountAmount) || 0,
+    leadTimeDays: Number(item.leadTimeDays) || 0,
+    layoutUrl: typeof item.previewImages?.[0] === 'string'
+      ? item.previewImages[0]
+      : typeof item.previewImage === 'string' ? item.previewImage : '',
+    specifications: item.specifications || {},
+    files: item.files || [],
+    designLayouts: item.previewImages || []
+  }));
 
-  const onboardingCustomer = normalizeCustomerRecord({
-    id: 'customer-onboarding-draft',
-    ...buildNewCustomerPayload()
-  });
-
-  const handleSavePreparedOrder = async (poData: any) => {
-    const now = new Date().toISOString();
-    const preparedItems: CustomerPendingOrderItem[] = (poData.items || []).map(
-      (item: unknown, index: number) => normalizePendingOrderItem(item, index)
-    );
-    const pendingOrderDraft: CustomerPendingOrderDraft = {
-      customerPoCode: poData.customerPoCode || '',
-      expectedDeliveryDate: poData.expectedDeliveryDate || '',
-      notes: poData.notes || '',
-      items: preparedItems,
-      links: poData.links || {},
-      totalAmount: Number(poData.totalAmount) || 0,
-      discountAmount: Number(poData.discountAmount) || 0,
-      netAmount: Number(poData.netAmount) || 0,
-      preparedAt: now,
-      preparedById: currentUser.uid,
-      preparedBy: currentUser.displayName
-    };
-    const products: CustomerProductRecord[] = preparedItems.map((item: CustomerPendingOrderItem, index: number) => ({
-      id: item.itemId || `product-${Date.now()}-${index}`,
-      productCode: item.productCode.trim(),
-      productName: item.productName.trim(),
-      productType: item.productType || 'tem_mau_cuon',
-      size: item.size || '',
-      material: item.material || '',
-      unit: item.unit || 'cái',
-      currentPrice: Number(item.price) || 0,
-      salePrice: Number(item.price) || 0,
-      vatRate: Number(item.vatRate) || 0,
-      supplierId: item.supplierId || '',
-      supplierName: item.supplierName || suppliers.find(supplier => supplier.id === item.supplierId)?.supplierName || '',
-      purchasePrice: Number(item.purchasePrice) || 0,
-      discountType: item.discountType === 'amount' ? 'amount' : 'percent',
-      discountRate: Number(item.discountRate) || 0,
-      discountAmount: Number(item.discountAmount) || 0,
-      leadTimeDays: Number(item.leadTimeDays) || 0,
-      layoutUrl: typeof item.previewImages?.[0] === 'string'
-        ? item.previewImages[0]
-        : typeof item.previewImage === 'string' ? item.previewImage : '',
-      specifications: item.specifications || {},
-      files: item.files || [],
-      designLayouts: item.previewImages || []
-    }));
-
-    const createdCustomer = await dbService.addDocument('customers', buildNewCustomerPayload(pendingOrderDraft, products));
-    closeCustomerOnboarding();
-    onRefresh();
-    onPreparedOrderCreated?.(createdCustomer.id);
-  };
-
-  // Create customer without an initial order
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!companyName) return;
+    if (!companyName.trim() || !customerRank) return;
 
-    await dbService.addDocument('customers', buildNewCustomerPayload());
+    const normalizedItems = onboardingItems.map((item, index) => (
+      normalizePendingOrderItem(withCalculatedPOFinancials(item), index)
+    ));
+    const duplicateCodes = normalizedItems
+      .map(item => item.productCode.trim().toLocaleLowerCase('vi-VN'))
+      .filter((code, index, codes) => code && codes.indexOf(code) !== index);
+
+    if (normalizedItems.some(item => !item.productCode.trim() || !item.productName.trim() || item.quantity <= 0)) {
+      alert(t('Vui lòng nhập đủ mã hàng, tên hàng và số lượng lớn hơn 0.'));
+      return;
+    }
+    if (duplicateCodes.length > 0) {
+      alert(t(`Mã hàng bị trùng: ${Array.from(new Set(duplicateCodes)).join(', ')}`));
+      return;
+    }
+
+    const itemFinancials = normalizedItems.map(item => calculatePOItemFinancials(item));
+    const pendingOrderDraft: CustomerPendingOrderDraft | null = normalizedItems.length > 0 ? {
+      customerPoCode: onboardingCustomerPoCode.trim(),
+      expectedDeliveryDate: onboardingExpectedDeliveryDate,
+      notes: onboardingOrderNotes.trim(),
+      items: normalizedItems,
+      links: {},
+      totalAmount: itemFinancials.reduce((total, item) => total + item.amountBeforeVat, 0),
+      discountAmount: itemFinancials.reduce((total, item) => total + item.discountAmount, 0),
+      netAmount: itemFinancials.reduce((total, item) => total + item.amountWithVat, 0),
+      preparedAt: new Date().toISOString(),
+      preparedById: currentUser.uid,
+      preparedBy: currentUser.displayName
+    } : null;
+
+    const createdCustomer = await dbService.addDocument(
+      'customers',
+      buildNewCustomerPayload(pendingOrderDraft, mapPreparedItemsToProducts(normalizedItems))
+    );
 
     closeCustomerOnboarding();
     onRefresh();
+    if (pendingOrderDraft) onPreparedOrderCreated?.(createdCustomer.id);
   };
 
   // Edit customer
@@ -1743,6 +1746,21 @@ export const Crm: React.FC<CrmProps> = ({
       </section>
 
       {renderAdditionalContactsEditor()}
+
+      <CustomerOnboardingItems
+        items={onboardingItems}
+        customerPoCode={onboardingCustomerPoCode}
+        expectedDeliveryDate={onboardingExpectedDeliveryDate}
+        notes={onboardingOrderNotes}
+        suppliers={suppliers}
+        defaultDiscountType={discountType}
+        defaultDiscountRate={discountRate}
+        defaultDiscountAmount={discountAmount}
+        onItemsChange={setOnboardingItems}
+        onCustomerPoCodeChange={setOnboardingCustomerPoCode}
+        onExpectedDeliveryDateChange={setOnboardingExpectedDeliveryDate}
+        onNotesChange={setOnboardingOrderNotes}
+      />
     </div>
   );
 
@@ -2433,14 +2451,14 @@ export const Crm: React.FC<CrmProps> = ({
       
       </>
       {/* CREATE MODAL */}
-      {showAddModal && customerOnboardingStep === 'customer' && (
+      {showAddModal && (
         <div className="modal-overlay-fullscreen">
           <div className="modal-content-fullscreen customer-onboarding-screen">
             <div className="customer-onboarding-header">
               <div>
-                <span className="customer-onboarding-step">BƯỚC 1/2 · HỒ SƠ KHÁCH HÀNG</span>
+                <span className="customer-onboarding-step">HỒ SƠ KHÁCH HÀNG & MÃ HÀNG</span>
                 <h2>THÊM KHÁCH HÀNG MỚI</h2>
-                <p>Nhập thông tin một lần để tạo mã khách hàng và chuẩn bị đơn hàng đầu tiên.</p>
+                <p>Nhập hồ sơ, mã hàng và thông tin đơn đầu tiên ngay trên cùng một biểu mẫu.</p>
               </div>
               <button type="button" className="btn btn-outline" onClick={closeCustomerOnboarding}>Đóng / Hủy</button>
             </div>
@@ -2450,33 +2468,20 @@ export const Crm: React.FC<CrmProps> = ({
               </div>
               <div className="modal-footer customer-onboarding-footer">
                 <div className="customer-onboarding-footer-note">
-                  Bạn có thể chỉ lưu hồ sơ, hoặc tiếp tục chuẩn bị sẵn đơn đầu tiên cho Sale PO.
+                  {onboardingItems.length > 0
+                    ? `${onboardingItems.length} mã hàng sẽ được lưu vào hồ sơ và chuyển sẵn sang Sale PO.`
+                    : 'Bạn có thể lưu hồ sơ trước và bổ sung mã hàng sau.'}
                 </div>
                 <button type="button" className="btn btn-outline" onClick={closeCustomerOnboarding}>Hủy</button>
-                <button type="submit" className="btn btn-outline">Chỉ lưu hồ sơ khách hàng</button>
-                <button type="button" className="btn btn-primary" onClick={handleStartFirstOrder}>
-                  Tiếp tục: Thêm mã hàng & chuẩn bị đơn đầu tiên
+                <button type="submit" className="btn btn-primary">
+                  {onboardingItems.length > 0
+                    ? 'Lưu khách hàng & chuẩn bị Sale PO'
+                    : 'Lưu hồ sơ khách hàng'}
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
-
-      {showAddModal && customerOnboardingStep === 'order' && (
-        <POFormFullScreen
-          isOpen
-          onClose={() => setCustomerOnboardingStep('customer')}
-          po={null}
-          initialCustomerId={onboardingCustomer.id}
-          onSave={handleSavePreparedOrder}
-          customers={[onboardingCustomer]}
-          suppliers={suppliers}
-          users={users}
-          currentUser={currentUser}
-          t={t}
-          workflowMode="customer_onboarding"
-        />
       )}
 
       {/* EDIT MODAL */}
