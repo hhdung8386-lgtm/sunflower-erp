@@ -3,6 +3,7 @@ import { dbService, UserProfile } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { FloatingChat } from '../components/FloatingChat';
 import POFormFullScreen from '../components/POFormFullScreen';
+import { PageBackButton } from '../components/PageBackButton';
 import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { syncDesignRequestsForPO } from '../services/designRequestService';
 import { synchronizeProcurementRequestsForPO } from '../services/procurementService';
@@ -946,7 +947,8 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
       {selectedPO && (
         <div className="details-grid" style={{ gridTemplateColumns: '1fr' }}>
           <div className="card">
-            <div className="card-header">
+            <div className="card-header app-detail-header">
+              <PageBackButton onClick={() => setSelectedPO(null)} />
               <span className="card-title" style={{ fontSize: '18px', color: 'var(--color-primary)' }}>
                 {t('CHI TIẾT TIẾN ĐỘ PO')}: {selectedPO.poCode} - {selectedPO.customerName}
               </span>
@@ -965,7 +967,6 @@ export const Sales: React.FC<SalesProps> = ({ pos, customers, currentUser, onRef
                     </button>
                   </>
                 )}
-                <button className="btn btn-sm btn-outline" onClick={() => setSelectedPO(null)}>{t('Đóng chi tiết')}</button>
               </div>
             </div>
 

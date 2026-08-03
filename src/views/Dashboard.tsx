@@ -6,8 +6,8 @@ import { ensureReceivableInvoice } from '../services/poWorkflowService';
 import { calculatePOItemFinancials } from '../domain/poFinancials';
 import { DesignRequest } from '../domain/designWorkflow';
 import { formatDate, formatDateTime } from '../domain/dateFormatting';
-import { 
-  ArrowLeft, Clock, Trash2, Plus, Check, CheckCircle, 
+import {
+  Clock, Trash2, Plus, Check, CheckCircle,
   AlertCircle, Calendar, User, DollarSign, Sliders, 
   BarChart2, PieChart, Bell, Eye, Pencil, MessageSquare, ChevronDown, ChevronUp
 } from 'lucide-react';
@@ -22,6 +22,7 @@ import {
   PO_QUEUE_STATES,
   POQueueStatus
 } from '../domain/poWorkflow';
+import { PageBackButton } from '../components/PageBackButton';
 
 interface DashboardProps {
   user: UserProfile;
@@ -243,25 +244,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     return (
       <div className="dashboard-view dashboard-po-drilldown" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+        <div className="app-detail-heading-row">
+          <PageBackButton
+            onClick={() => {
+              setSelectedProgressCategory(null);
+              setExpandedPoId(null);
+            }}
+          />
           <div>
             <h1 className="page-title">{t('CHI TIẾT TIẾN ĐỘ ĐƠN HÀNG')}</h1>
             <p className="page-subtitle">
               {t('Phân nhóm:')} <strong>{categoryLabels[selectedProgressCategory]}</strong> ({categoryPOs.length} {t('đơn hàng')})
             </p>
           </div>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => {
-              setSelectedProgressCategory(null);
-              setExpandedPoId(null);
-            }}
-            title={t('Quay lại Dashboard')}
-          >
-            <ArrowLeft size={16} />
-            {t('Thoát bảng PO')}
-          </button>
         </div>
 
         <div className="card" style={{ padding: '20px' }}>

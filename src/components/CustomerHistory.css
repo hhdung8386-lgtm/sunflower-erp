@@ -286,10 +286,6 @@
   background: #f8fbff;
 }
 
-.crm-customer-table tbody tr.needs-care {
-  box-shadow: inset 3px 0 0 #ef4444;
-}
-
 .crm-customer-identity,
 .crm-customer-segment,
 .crm-business-result,
@@ -303,7 +299,33 @@
 .crm-customer-identity > div {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
+}
+
+.crm-new-customer-badge {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.crm-new-customer-badge > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fee2e2;
 }
 
 .crm-customer-identity strong,

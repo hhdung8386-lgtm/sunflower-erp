@@ -3,6 +3,7 @@ import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { CustomerOnboardingItems } from '../components/CustomerOnboardingItems';
+import { PageBackButton } from '../components/PageBackButton';
 import { createCustomerOnboardingItem } from '../domain/customerOnboardingItem';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
@@ -44,7 +45,6 @@ import {
   Eye,
   AlertCircle,
   Copy,
-  ArrowLeft,
   BarChart3,
   Building2,
   CircleDollarSign,
@@ -1539,6 +1539,13 @@ export const Crm: React.FC<CrmProps> = ({
     return Math.max(0, Math.floor((today.getTime() - lastOrderDate.getTime()) / 86_400_000));
   };
 
+  const isNewCustomer = (customer: CustomerRecord): boolean => {
+    const createdDate = parseValidDate(customer.createdAt || customer.convertedAt);
+    if (!createdDate) return false;
+    const ageInMilliseconds = today.getTime() - createdDate.getTime();
+    return ageInMilliseconds >= 0 && ageInMilliseconds < 7 * 86_400_000;
+  };
+
   const needsCareCustomers = accessibleCustomers.filter(customer => {
     const daysSinceLastOrder = getDaysSinceLastOrder(customer);
     return daysSinceLastOrder === null || daysSinceLastOrder > 30;
@@ -1991,12 +1998,13 @@ export const Crm: React.FC<CrmProps> = ({
                         const outstandingDebt = getCustomerOutstandingDebt(customer.id);
                         const daysSinceLastOrder = getDaysSinceLastOrder(customer);
                         const needsCare = daysSinceLastOrder === null || daysSinceLastOrder > 30;
+                        const isNew = isNewCustomer(customer);
                         const lastOrder = customerOrders[0];
                         const saleName = users.find(user => user.uid === customer.assignedSaleId)?.displayName || t('Chưa phân công');
                         return (
                           <React.Fragment key={customer.id}>
-                            <tr className={needsCare ? 'needs-care' : ''} onClick={() => setSelectedCustomer(customer)}>
-                              <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span></div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
+                            <tr onClick={() => setSelectedCustomer(customer)}>
+                              <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span>{isNew && <span className="crm-new-customer-badge" title={t('Khách hàng mới trong 7 ngày đầu')}><span aria-hidden="true" />NEW</span>}</div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
                               <td><div className="crm-customer-segment"><span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>{customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}</span><small>{customer.discountType === 'amount' ? `${t('CK')} ${Number(customer.discountAmount || 0).toLocaleString('vi-VN')} đ` : `${t('Chiết khấu')} ${Number(customer.discountRate || 0)}%`}</small></div></td>
                               <td><strong className={customer.assignedSaleId ? '' : 'crm-text-muted'}>{saleName}</strong></td>
                               <td><div className="crm-business-result"><strong>{customerOrders.length} {t('đơn')}</strong><span>{orderValue.toLocaleString('vi-VN')} đ</span></div></td>
@@ -2070,10 +2078,7 @@ export const Crm: React.FC<CrmProps> = ({
        {selectedCustomer && (
         <div className="customer-details-grid">
           <div className="customer-detail-header">
-            <button type="button" className="btn btn-outline customer-detail-back" onClick={() => setSelectedCustomer(null)}>
-              <ArrowLeft size={16} />
-              <span>{t('Quay lại danh sách')}</span>
-            </button>
+            <PageBackButton onClick={() => setSelectedCustomer(null)} />
             <div className="customer-detail-heading">
               <div className="customer-detail-heading__title">
                 <span className="customer-code-badge">{selectedCustomer.customerCode || selectedCustomer.id}</span>

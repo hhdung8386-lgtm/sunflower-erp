@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
-  ArrowLeft,
   CheckCircle2,
   Clock3,
   FileArchive,
@@ -13,6 +12,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { PageBackButton } from '../components/PageBackButton';
 import { formatDateTime } from '../domain/dateFormatting';
 import {
   DESIGN_WORK_STATUSES,
@@ -592,9 +592,7 @@ export const Design: React.FC<DesignProps> = ({
       {selectedRequest && (
         <div className="design-task-page">
           <header className="design-task-page-header">
-            <button className="btn btn-outline design-task-back" onClick={closeRequest}>
-              <ArrowLeft size={16} /> {t('Quay lại danh sách')}
-            </button>
+            <PageBackButton onClick={closeRequest} />
             <div>
               <span>{t('CHI TIẾT CÔNG VIỆC THIẾT KẾ')}</span>
               <h1>{selectedRequest.requestCode} · {selectedRequest.productName || t('Chưa đặt tên')}</h1>

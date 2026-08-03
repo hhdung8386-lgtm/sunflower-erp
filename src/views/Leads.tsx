@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
   AlertCircle,
   Building2,
   CalendarClock,
@@ -52,6 +51,7 @@ import {
   LeadFilterAdminModal,
   LeadSalesWorkspace
 } from '../components/LeadFilterSystem';
+import { PageBackButton } from '../components/PageBackButton';
 import './Leads.css';
 
 interface LeadsProps {
@@ -546,9 +546,7 @@ export const Leads: React.FC<LeadsProps> = ({
     return (
       <div className="lead-detail-page">
         <div className="lead-detail-header">
-          <button type="button" className="btn btn-outline" onClick={() => setSelectedLeadId('')}>
-            <ArrowLeft size={16} /> {t('Quay lại danh sách')}
-          </button>
+          <PageBackButton onClick={() => setSelectedLeadId('')} />
           <div>
             <div className="lead-detail-title">
               <span className={`lead-stage-badge lead-stage-badge--${selectedLead.stage}`}>{getStageLabel(selectedLead.stage)}</span>
@@ -630,9 +628,7 @@ export const Leads: React.FC<LeadsProps> = ({
     return (
       <div className="lead-form-page">
         <header className="lead-form-page__header">
-          <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>
-            <ArrowLeft size={16} /> {t('Quay lại')}
-          </button>
+          <PageBackButton onClick={() => setShowLeadForm(false)} />
           <div>
             <span>{editingLeadId ? t('CHỈNH SỬA HỒ SƠ') : t('HỒ SƠ MỚI')}</span>
             <h1>{editingLeadId ? t('Chỉnh sửa khách hàng tiềm năng') : t('Thêm khách hàng tiềm năng')}</h1>

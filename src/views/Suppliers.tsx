@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { PageBackButton } from '../components/PageBackButton';
 import {
   getSourcingTypeLabel,
   normalizeSupplierRecords,
@@ -329,9 +330,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ purchaseOrders, currentUse
     return (
       <div className="suppliers-page">
         <div className="supplier-detail-header">
-          <button type="button" className="btn btn-outline" onClick={() => setSelectedSupplierId('')}>
-            ← {t('Quay lại danh sách')}
-          </button>
+          <PageBackButton onClick={() => setSelectedSupplierId('')} />
           <div>
             <h1>{selectedSupplier.supplierName}</h1>
             <p>{selectedSupplier.supplierCode || selectedSupplier.id} · {selectedSupplier.categories.join(', ') || t('Chưa phân loại')}</p>
