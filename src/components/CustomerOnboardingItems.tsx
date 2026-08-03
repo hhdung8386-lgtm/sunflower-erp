@@ -2,6 +2,7 @@ import React from 'react';
 import { FileUp, Plus, Trash2 } from 'lucide-react';
 import type { CustomerPendingOrderItem } from '../domain/crmModels';
 import { calculatePOItemFinancials, type PODiscountType } from '../domain/poFinancials';
+import { createCustomerOnboardingItem } from '../domain/customerOnboardingItem';
 
 interface SupplierOption {
   id: string;
@@ -36,37 +37,6 @@ const WORK_TYPES = [
   { value: 'tu_san_xuat', label: 'Sunflower tự sản xuất' }
 ];
 
-const createDraftItem = (
-  index: number,
-  deliveryDate: string,
-  discountType: PODiscountType,
-  discountRate: number,
-  discountAmount: number
-): CustomerPendingOrderItem => ({
-  itemId: `draft-item-${Date.now()}-${index}`,
-  productCode: '',
-  productName: '',
-  productType: 'tem_trang_cuon',
-  size: '',
-  material: '',
-  unit: 'cái',
-  quantity: 1000,
-  price: 0,
-  vatRate: 8,
-  discountType,
-  discountRate,
-  discountAmount,
-  deliveryDate,
-  supplierId: '',
-  supplierName: '',
-  purchasePrice: 0,
-  leadTimeDays: 0,
-  workType: 'gia_cong',
-  specifications: {},
-  files: [],
-  previewImages: []
-});
-
 export const CustomerOnboardingItems: React.FC<CustomerOnboardingItemsProps> = ({
   items,
   customerPoCode,
@@ -84,7 +54,7 @@ export const CustomerOnboardingItems: React.FC<CustomerOnboardingItemsProps> = (
   const addItem = () => {
     onItemsChange([
       ...items,
-      createDraftItem(
+      createCustomerOnboardingItem(
         items.length,
         expectedDeliveryDate,
         defaultDiscountType,
@@ -109,6 +79,19 @@ export const CustomerOnboardingItems: React.FC<CustomerOnboardingItemsProps> = (
       supplierId,
       supplierName: supplier?.supplierName || ''
     } : item));
+  };
+
+  const removeItem = (itemId: string) => {
+    const remainingItems = items.filter(item => item.itemId !== itemId);
+    onItemsChange(remainingItems.length > 0 ? remainingItems : [
+      createCustomerOnboardingItem(
+        0,
+        expectedDeliveryDate,
+        defaultDiscountType,
+        defaultDiscountRate,
+        defaultDiscountAmount
+      )
+    ]);
   };
 
   const handleFilesChange = async (itemId: string, event: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,7 +180,7 @@ export const CustomerOnboardingItems: React.FC<CustomerOnboardingItemsProps> = (
                       </div>
                     </td>
                     <td><strong>{Math.round(financials.amountWithVat).toLocaleString('vi-VN')} đ</strong></td>
-                    <td><button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => onItemsChange(items.filter(current => current.itemId !== item.itemId))} title="Xóa mã hàng"><Trash2 size={13} /></button></td>
+                    <td><button type="button" className="btn btn-sm btn-danger btn-symbol-sm" onClick={() => removeItem(item.itemId)} title="Làm trống dòng mã hàng"><Trash2 size={13} /></button></td>
                   </tr>
                   <tr className="customer-onboarding-items__details">
                     <td />
@@ -216,9 +199,6 @@ export const CustomerOnboardingItems: React.FC<CustomerOnboardingItemsProps> = (
                 </React.Fragment>
               );
             })}
-            {items.length === 0 && (
-              <tr><td colSpan={11} className="customer-onboarding-items__empty">Chưa có mã hàng. Bấm “Thêm mã hàng” để nhập trực tiếp vào hồ sơ này.</td></tr>
-            )}
           </tbody>
         </table>
       </div>

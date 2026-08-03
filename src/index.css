@@ -2584,13 +2584,6 @@ tr:hover td {
   font-weight: 500;
 }
 
-.customer-onboarding-items__empty {
-  height: 72px;
-  color: #65758d;
-  text-align: center;
-  background: #fbfcfe !important;
-}
-
 .customer-onboarding-footer {
   flex-wrap: wrap;
   justify-content: flex-end;

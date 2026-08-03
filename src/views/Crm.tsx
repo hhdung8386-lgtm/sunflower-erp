@@ -3,6 +3,7 @@ import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
 import { CustomerOnboardingItems } from '../components/CustomerOnboardingItems';
+import { createCustomerOnboardingItem } from '../domain/customerOnboardingItem';
 import { getPOBadgeClass, getPOQueueLabel } from '../domain/poWorkflow';
 import { sortNewestFirst } from '../domain/recordOrdering';
 import { formatDate, formatDateTime, parseValidDate } from '../domain/dateFormatting';
@@ -472,7 +473,9 @@ export const Crm: React.FC<CrmProps> = ({
     setWarehousePhone('');
     setBankAccount('');
     setAdditionalContacts([]);
-    setOnboardingItems([]);
+    setOnboardingItems([
+      createCustomerOnboardingItem(0, '', 'percent', 0, 0)
+    ]);
     setOnboardingCustomerPoCode('');
     setOnboardingExpectedDeliveryDate('');
     setOnboardingOrderNotes('');
