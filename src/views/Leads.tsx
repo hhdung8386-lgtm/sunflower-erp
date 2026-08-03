@@ -59,6 +59,7 @@ interface LeadsProps {
   users: UserProfile[];
   currentUser: UserProfile;
   onNavigateToCrm: () => void;
+  onConvertLead: (lead: LeadRecord) => void;
 }
 
 interface LeadFormState {
@@ -153,7 +154,8 @@ export const Leads: React.FC<LeadsProps> = ({
   customers,
   users,
   currentUser,
-  onNavigateToCrm
+  onNavigateToCrm,
+  onConvertLead
 }) => {
   const { t } = useLanguage();
   const saleUsers = useMemo(() => users.filter(user => user.role === 'sale'), [users]);
@@ -515,92 +517,14 @@ export const Leads: React.FC<LeadsProps> = ({
     ));
   };
 
-  const generateCustomerCode = () => {
-    const usedCodes = new Set(
-      customers
-        .map(customer => customer.customerCode?.trim().toUpperCase())
-        .filter(Boolean)
-    );
-    let sequence = customers.length + 1;
-    let customerCode = `KH-${String(sequence).padStart(4, '0')}`;
-    while (usedCodes.has(customerCode)) {
-      sequence += 1;
-      customerCode = `KH-${String(sequence).padStart(4, '0')}`;
-    }
-    return customerCode;
-  };
-
-  const handleConvertLead = async (lead: LeadRecord) => {
+  const handleConvertLead = (lead: LeadRecord) => {
     const duplicate = findDuplicateCustomer(lead);
     if (duplicate) {
       window.alert(`Khách hàng có thể đã tồn tại trong CRM: ${duplicate.companyName} (${duplicate.customerCode || duplicate.id}).`);
       return;
     }
-    if (!window.confirm(`Chuyển "${lead.companyName}" thành khách hàng chính thức?`)) return;
-
-    const now = new Date().toISOString();
-    const customerCode = generateCustomerCode();
-    const customer = await dbService.addDocument('customers', {
-      customerCode,
-      customerRank: '',
-      companyName: lead.companyName,
-      contactPerson: lead.contactPerson,
-      phone: lead.phone,
-      email: lead.email,
-      address: lead.address,
-      taxCode: lead.taxCode,
-      assignedSaleId: lead.assignedSaleId,
-      sourceLeadId: lead.id,
-      convertedAt: now,
-      discountType: 'percent',
-      discountRate: 0,
-      discountAmount: 0,
-      debtLimit: 0,
-      paymentTerms: '30 ngày',
-      note: [lead.note, lead.expectedProducts ? `Nhu cầu dự kiến: ${lead.expectedProducts}` : ''].filter(Boolean).join('\n'),
-      procurementPhone: '',
-      warehousePhone: '',
-      bankAccount: '',
-      contacts: [{
-        id: 'primary',
-        name: lead.contactPerson,
-        role: 'primary',
-        phone: lead.phone,
-        email: lead.email,
-        note: ''
-      }],
-      products: [],
-      documents: [],
-      contracts: [],
-      files: (lead.files || []).map(file => ({
-        ...file,
-        folder: 'Tài liệu từ Lead',
-        createdAt: now,
-        createdById: currentUser.uid
-      })),
-      lastOrderAt: null,
-      createdAt: now,
-      createdById: currentUser.uid,
-      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-      updatedAt: '',
-      updatedBy: ''
-    });
-
-    await dbService.updateDocument('leads', lead.id, {
-      stage: 'converted',
-      convertedCustomerId: customer.id,
-      convertedAt: now,
-      activities: [{
-        id: `activity-${now}`,
-        type: 'converted',
-        note: `Đã chuyển thành khách hàng ${customerCode}`,
-        occurredAt: now,
-        createdById: currentUser.uid,
-        createdByName: currentUser.displayName
-      }, ...(lead.activities || [])],
-      updatedAt: now,
-      updatedBy: currentUser.displayName
-    });
+    if (!window.confirm(`Mở biểu mẫu khách hàng và đơn đầu tiên cho "${lead.companyName}"?`)) return;
+    onConvertLead(lead);
   };
 
   const clearFilters = () => {

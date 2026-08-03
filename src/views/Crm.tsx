@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
@@ -15,8 +15,11 @@ import {
   type CustomerContactRecord,
   type CustomerContactRole,
   type CustomerRank,
-  type CustomerRecord
+  type CustomerRecord,
+  type LeadRecord
 } from '../domain/crmModels';
+import { findTaxCodeConflict } from '../domain/taxCodeUniqueness';
+import { buildCustomerMaterialHistory } from '../domain/customerMaterialHistory';
 import {
   calculatePOItemFinancials,
   withCalculatedPOFinancials,
@@ -50,7 +53,9 @@ import {
   Search,
   ShoppingBag,
   Users,
-  WalletCards
+  WalletCards,
+  ChevronDown,
+  Layers3
 } from 'lucide-react';
 
 const CUSTOMER_FILE_FOLDERS = [
@@ -71,8 +76,20 @@ const CONTACT_ROLE_LABELS: Record<CustomerContactRole, string> = {
   other: 'Khác'
 };
 
+const createNextCustomerCode = (customers: CustomerRecord[]) => {
+  const usedCodes = new Set(customers.map(customer => customer.customerCode).filter(Boolean));
+  let sequence = customers.length + 1;
+  let candidate = `KH-${String(sequence).padStart(4, '0')}`;
+  while (usedCodes.has(candidate)) {
+    sequence += 1;
+    candidate = `KH-${String(sequence).padStart(4, '0')}`;
+  }
+  return candidate;
+};
+
 interface CrmProps {
   customers: CustomerRecord[];
+  leads: LeadRecord[];
   pos: any[];
   invoices: any[];
   users: any[];
@@ -80,6 +97,8 @@ interface CrmProps {
   onRefresh: () => void;
   onRepeatOrder?: (poId: string) => void;
   onPreparedOrderCreated?: (customerId: string) => void;
+  initialLead?: LeadRecord | null;
+  onLeadOnboardingClosed?: () => void;
 }
 
 const loadSpecsToFields = (productType: string, specifications: any = {}) => {
@@ -129,13 +148,16 @@ const loadSpecsToFields = (productType: string, specifications: any = {}) => {
 
 export const Crm: React.FC<CrmProps> = ({
   customers,
+  leads,
   pos,
   invoices,
   users,
   currentUser,
   onRefresh,
   onRepeatOrder,
-  onPreparedOrderCreated
+  onPreparedOrderCreated,
+  initialLead = null,
+  onLeadOnboardingClosed
 }) => {
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
@@ -143,6 +165,7 @@ export const Crm: React.FC<CrmProps> = ({
   const [saleFilter, setSaleFilter] = useState('all');
   const [rankFilter, setRankFilter] = useState<'all' | CustomerRank>('all');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [expandedMaterialsCustomerId, setExpandedMaterialsCustomerId] = useState('');
   
   const [chartMonth, setChartMonth] = useState<string>('all');
   const [chartYear, setChartYear] = useState<string>(() => String(new Date().getFullYear()));
@@ -299,29 +322,37 @@ export const Crm: React.FC<CrmProps> = ({
   };
   
   // Modals state
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(Boolean(initialLead));
   const [showEditModal, setShowEditModal] = useState(false);
-  const [onboardingItems, setOnboardingItems] = useState<CustomerPendingOrderItem[]>([]);
+  const [onboardingSourceLead, setOnboardingSourceLead] = useState<LeadRecord | null>(initialLead);
+  const [onboardingItems, setOnboardingItems] = useState<CustomerPendingOrderItem[]>([
+    createCustomerOnboardingItem(0, '', 'percent', 0, 0)
+  ]);
   const [onboardingCustomerPoCode, setOnboardingCustomerPoCode] = useState('');
   const [onboardingExpectedDeliveryDate, setOnboardingExpectedDeliveryDate] = useState('');
   const [onboardingOrderNotes, setOnboardingOrderNotes] = useState('');
   
   // Form fields
-  const [customerCode, setCustomerCode] = useState('');
+  const [customerCode, setCustomerCode] = useState(() => (
+    initialLead ? createNextCustomerCode(customers) : ''
+  ));
   const [customerRank, setCustomerRank] = useState<CustomerRank>('');
-  const [companyName, setCompanyName] = useState('');
-  const [contactPerson, setContactPerson] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
-  const [taxCode, setTaxCode] = useState('');
-  const [assignedSaleId, setAssignedSaleId] = useState('');
+  const [companyName, setCompanyName] = useState(initialLead?.companyName || '');
+  const [contactPerson, setContactPerson] = useState(initialLead?.contactPerson || '');
+  const [phone, setPhone] = useState(initialLead?.phone || '');
+  const [email, setEmail] = useState(initialLead?.email || '');
+  const [address, setAddress] = useState(initialLead?.address || '');
+  const [taxCode, setTaxCode] = useState(initialLead?.taxCode || '');
+  const [assignedSaleId, setAssignedSaleId] = useState(initialLead?.assignedSaleId || '');
   const [discountType, setDiscountType] = useState<PODiscountType>('percent');
   const [discountRate, setDiscountRate] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
-  const [debtLimit, setDebtLimit] = useState(0);
+  const [debtLimit, setDebtLimit] = useState(50000000);
   const [paymentTerms, setPaymentTerms] = useState('30 ngày');
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(() => [
+    initialLead?.note,
+    initialLead?.expectedProducts ? `Nhu cầu dự kiến: ${initialLead.expectedProducts}` : ''
+  ].filter(Boolean).join('\n'));
   const [additionalContacts, setAdditionalContacts] = useState<CustomerContactRecord[]>([]);
   
   const [procurementPhone, setProcurementPhone] = useState('');
@@ -337,14 +368,7 @@ export const Crm: React.FC<CrmProps> = ({
   }, []);
 
   const generateCustomerCode = () => {
-    const usedCodes = new Set(customers.map(customer => customer.customerCode).filter(Boolean));
-    let sequence = customers.length + 1;
-    let candidate = `KH-${String(sequence).padStart(4, '0')}`;
-    while (usedCodes.has(candidate)) {
-      sequence += 1;
-      candidate = `KH-${String(sequence).padStart(4, '0')}`;
-    }
-    return candidate;
+    return createNextCustomerCode(customers);
   };
 
   const buildCustomerContacts = (): CustomerContactRecord[] => {
@@ -454,6 +478,7 @@ export const Crm: React.FC<CrmProps> = ({
 
   // Handle opening create modal
   const openAddModal = () => {
+    setOnboardingSourceLead(null);
     setCustomerCode(generateCustomerCode());
     setCustomerRank('');
     setCompanyName('');
@@ -512,41 +537,53 @@ export const Crm: React.FC<CrmProps> = ({
   const buildNewCustomerPayload = (
     pendingOrderDraft: CustomerPendingOrderDraft | null = null,
     products: CustomerProductRecord[] = []
-  ) => ({
-    customerCode: customerCode.trim() || generateCustomerCode(),
-    customerRank,
-    companyName: companyName.trim(),
-    contactPerson: contactPerson.trim(),
-    phone: phone.trim(),
-    email: email.trim(),
-    address: address.trim(),
-    taxCode: taxCode.trim(),
-    assignedSaleId,
-    discountType,
-    discountRate: Number(discountRate),
-    discountAmount: Number(discountAmount),
-    debtLimit: Number(debtLimit),
-    paymentTerms,
-    note,
-    procurementPhone,
-    warehousePhone,
-    bankAccount,
-    contacts: buildCustomerContacts(),
-    products,
-    documents: [],
-    contracts: [],
-    files: [],
-    pendingOrderDraft,
-    lastOrderAt: null,
-    createdById: currentUser.uid,
-    createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
-    createdAt: new Date().toISOString(),
-    updatedBy: '',
-    updatedAt: ''
-  });
+  ) => {
+    const now = new Date().toISOString();
+    return ({
+      customerCode: customerCode.trim() || generateCustomerCode(),
+      customerRank,
+      companyName: companyName.trim(),
+      contactPerson: contactPerson.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      taxCode: taxCode.trim(),
+      assignedSaleId,
+      sourceLeadId: onboardingSourceLead?.id || '',
+      convertedAt: onboardingSourceLead ? now : '',
+      discountType,
+      discountRate: Number(discountRate),
+      discountAmount: Number(discountAmount),
+      debtLimit: Number(debtLimit),
+      paymentTerms,
+      note,
+      procurementPhone,
+      warehousePhone,
+      bankAccount,
+      contacts: buildCustomerContacts(),
+      products,
+      documents: [],
+      contracts: [],
+      files: (onboardingSourceLead?.files || []).map(file => ({
+        ...file,
+        folder: 'Tài liệu từ Lead',
+        createdAt: now,
+        createdById: currentUser.uid
+      })),
+      pendingOrderDraft,
+      lastOrderAt: null,
+      createdById: currentUser.uid,
+      createdBy: `${currentUser.displayName} (${currentUser.role.toUpperCase()})`,
+      createdAt: now,
+      updatedBy: '',
+      updatedAt: ''
+    });
+  };
 
   const closeCustomerOnboarding = () => {
     setShowAddModal(false);
+    if (onboardingSourceLead) onLeadOnboardingClosed?.();
+    setOnboardingSourceLead(null);
   };
 
   const mapPreparedItemsToProducts = (
@@ -580,6 +617,17 @@ export const Crm: React.FC<CrmProps> = ({
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName.trim() || !customerRank) return;
+
+    const taxCodeConflict = findTaxCodeConflict(
+      taxCode,
+      leads,
+      customers,
+      onboardingSourceLead?.id || ''
+    );
+    if (taxCodeConflict) {
+      alert(t(`Mã số thuế đã thuộc về ${taxCodeConflict.companyName}. Không thể tạo khách hàng trùng.`));
+      return;
+    }
 
     const normalizedItems = onboardingItems.map((item, index) => (
       normalizePendingOrderItem(withCalculatedPOFinancials(item), index)
@@ -616,6 +664,26 @@ export const Crm: React.FC<CrmProps> = ({
       'customers',
       buildNewCustomerPayload(pendingOrderDraft, mapPreparedItemsToProducts(normalizedItems))
     );
+
+    if (onboardingSourceLead) {
+      const now = new Date().toISOString();
+      const latestLead = await dbService.getDocument('leads', onboardingSourceLead.id) as LeadRecord | null;
+      await dbService.updateDocument('leads', onboardingSourceLead.id, {
+        stage: 'converted',
+        convertedCustomerId: createdCustomer.id,
+        convertedAt: now,
+        activities: [{
+          id: `activity-${now}`,
+          type: 'converted',
+          note: `Đã chuyển thành khách hàng ${customerCode.trim() || createdCustomer.id}`,
+          occurredAt: now,
+          createdById: currentUser.uid,
+          createdByName: currentUser.displayName
+        }, ...(latestLead?.activities || onboardingSourceLead.activities || [])],
+        updatedAt: now,
+        updatedBy: currentUser.displayName
+      });
+    }
 
     closeCustomerOnboarding();
     onRefresh();
@@ -1455,6 +1523,7 @@ export const Crm: React.FC<CrmProps> = ({
     && (currentUser.role !== 'sale' || !customer.assignedSaleId || customer.assignedSaleId === currentUser.uid)
   ));
   const accessibleCustomerIds = new Set(accessibleCustomers.map(customer => customer.id));
+  const customerMaterialsById = useMemo(() => buildCustomerMaterialHistory(pos), [pos]);
 
   const getCustomerOrderValue = (customerId: string) => getCustomerOrders(customerId)
     .reduce((total, order) => total + Number(order.netAmount || order.totalAmount || 0), 0);
@@ -1491,13 +1560,19 @@ export const Crm: React.FC<CrmProps> = ({
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('vi-VN');
   const filteredCustomers = sortNewestFirst(accessibleCustomers.filter(customer => {
     const customerOrders = getCustomerOrders(customer.id);
+    const customerMaterials = customerMaterialsById[customer.id] || [];
     const matchesSearch = !normalizedSearch || [
       customer.customerCode,
       customer.companyName,
       customer.contactPerson,
       customer.phone,
       customer.email,
-      customer.taxCode
+      customer.taxCode,
+      ...customerMaterials.flatMap(material => [
+        material.materialName,
+        ...material.productCodes,
+        ...material.specifications
+      ])
     ].some(value => String(value || '').toLocaleLowerCase('vi-VN').includes(normalizedSearch));
     const matchesSale = saleFilter === 'all'
       || (saleFilter === 'unassigned' ? !customer.assignedSaleId : customer.assignedSaleId === saleFilter);
@@ -1775,7 +1850,7 @@ export const Crm: React.FC<CrmProps> = ({
           <p className="page-subtitle">{t('Quản lý danh sách, hồ sơ liên hệ, hạn mức công nợ và cảnh báo chăm sóc khách hàng.')}</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
-          <button className="btn btn-primary crm-add-customer" onClick={openAddModal} title={t('Thêm Khách Hàng Mới')}>
+          <button className="btn btn-primary crm-add-customer" onClick={() => openAddModal()} title={t('Thêm Khách Hàng Mới')}>
             <Plus size={18} />
             <span>{t('Thêm khách hàng')}</span>
           </button>
@@ -1906,31 +1981,84 @@ export const Crm: React.FC<CrmProps> = ({
 
                 <div className="table-container crm-customer-table-wrap">
                   <table className="crm-customer-table">
-                    <thead><tr><th>{t('Khách hàng')}</th><th>{t('Phân loại')}</th><th>{t('Sale phụ trách')}</th><th>{t('Kết quả kinh doanh')}</th><th>{t('Công nợ / hạn mức')}</th><th>{t('Chăm sóc gần nhất')}</th><th>{t('Thao tác')}</th></tr></thead>
+                    <thead><tr><th>{t('Khách hàng')}</th><th>{t('Phân loại')}</th><th>{t('Sale phụ trách')}</th><th>{t('Kết quả kinh doanh')}</th><th>{t('NVL gốc')}</th><th>{t('Công nợ / hạn mức')}</th><th>{t('Chăm sóc gần nhất')}</th><th>{t('Thao tác')}</th></tr></thead>
                     <tbody>
                       {filteredCustomers.map(customer => {
                         const customerOrders = getCustomerOrders(customer.id);
+                        const customerMaterials = customerMaterialsById[customer.id] || [];
+                        const isMaterialsExpanded = expandedMaterialsCustomerId === customer.id;
                         const orderValue = getCustomerOrderValue(customer.id);
                         const outstandingDebt = getCustomerOutstandingDebt(customer.id);
                         const daysSinceLastOrder = getDaysSinceLastOrder(customer);
                         const needsCare = daysSinceLastOrder === null || daysSinceLastOrder > 30;
                         const lastOrder = customerOrders[0];
                         const saleName = users.find(user => user.uid === customer.assignedSaleId)?.displayName || t('Chưa phân công');
-                        return <tr key={customer.id} className={needsCare ? 'needs-care' : ''} onClick={() => setSelectedCustomer(customer)}>
-                          <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span></div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
-                          <td><div className="crm-customer-segment"><span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>{customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}</span><small>{customer.discountType === 'amount' ? `${t('CK')} ${Number(customer.discountAmount || 0).toLocaleString('vi-VN')} đ` : `${t('Chiết khấu')} ${Number(customer.discountRate || 0)}%`}</small></div></td>
-                          <td><strong className={customer.assignedSaleId ? '' : 'crm-text-muted'}>{saleName}</strong></td>
-                          <td><div className="crm-business-result"><strong>{customerOrders.length} {t('đơn')}</strong><span>{orderValue.toLocaleString('vi-VN')} đ</span></div></td>
-                          <td><div className="crm-debt-cell"><strong className={outstandingDebt > 0 ? 'has-debt' : ''}>{outstandingDebt.toLocaleString('vi-VN')} đ</strong><span>{t('Hạn mức')} {Number(customer.debtLimit || 0).toLocaleString('vi-VN')} đ</span></div></td>
-                          <td><div className={`crm-care-cell ${needsCare ? 'is-overdue' : ''}`}><strong>{daysSinceLastOrder === null ? t('Chưa có đơn') : daysSinceLastOrder === 0 ? t('Hôm nay') : `${daysSinceLastOrder} ${t('ngày trước')}`}</strong><span>{lastOrder ? formatDate(lastOrder.orderDate || lastOrder.createdAt, 'vi-VN', '') : t('Cần tạo đơn đầu tiên')}</span></div></td>
-                          <td><div className="crm-row-actions" onClick={(event) => event.stopPropagation()}>
-                            {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-primary" onClick={() => onPreparedOrderCreated?.(customer.id)}><ClipboardPlus size={13} /> {t('Tạo PO')}</button>}
-                            <button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(customer)}>{t('Chi tiết')}</button>
-                            {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(customer)} title={t('Sửa')}><Pencil size={14} /></button>}
-                          </div></td>
-                        </tr>;
+                        return (
+                          <React.Fragment key={customer.id}>
+                            <tr className={needsCare ? 'needs-care' : ''} onClick={() => setSelectedCustomer(customer)}>
+                              <td><div className="crm-customer-identity"><div><strong>{customer.companyName}</strong><span className="customer-code-badge">{customer.customerCode || customer.id}</span></div><span>{customer.contactPerson || t('Chưa có người liên hệ')}{customer.phone ? ` · ${customer.phone}` : ''}</span></div></td>
+                              <td><div className="crm-customer-segment"><span className={`customer-rank-badge ${customer.customerRank ? 'has-rank' : ''}`}>{customer.customerRank ? `${t('Hạng')} ${customer.customerRank}` : t('Chưa xếp hạng')}</span><small>{customer.discountType === 'amount' ? `${t('CK')} ${Number(customer.discountAmount || 0).toLocaleString('vi-VN')} đ` : `${t('Chiết khấu')} ${Number(customer.discountRate || 0)}%`}</small></div></td>
+                              <td><strong className={customer.assignedSaleId ? '' : 'crm-text-muted'}>{saleName}</strong></td>
+                              <td><div className="crm-business-result"><strong>{customerOrders.length} {t('đơn')}</strong><span>{orderValue.toLocaleString('vi-VN')} đ</span></div></td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                {customerMaterials.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    className={`crm-material-summary ${isMaterialsExpanded ? 'is-expanded' : ''}`}
+                                    onClick={() => setExpandedMaterialsCustomerId(isMaterialsExpanded ? '' : customer.id)}
+                                    aria-expanded={isMaterialsExpanded}
+                                    title={t('Xem nguyên vật liệu từng sử dụng')}
+                                  >
+                                    <span><Layers3 size={13} /> {customerMaterials.length} {t('NVL')}</span>
+                                    <small>{customerMaterials[0].materialName}</small>
+                                    <ChevronDown size={13} />
+                                  </button>
+                                ) : (
+                                  <span className="crm-material-empty">{t('Chưa có dữ liệu')}</span>
+                                )}
+                              </td>
+                              <td><div className="crm-debt-cell"><strong className={outstandingDebt > 0 ? 'has-debt' : ''}>{outstandingDebt.toLocaleString('vi-VN')} đ</strong><span>{t('Hạn mức')} {Number(customer.debtLimit || 0).toLocaleString('vi-VN')} đ</span></div></td>
+                              <td><div className={`crm-care-cell ${needsCare ? 'is-overdue' : ''}`}><strong>{daysSinceLastOrder === null ? t('Chưa có đơn') : daysSinceLastOrder === 0 ? t('Hôm nay') : `${daysSinceLastOrder} ${t('ngày trước')}`}</strong><span>{lastOrder ? formatDate(lastOrder.orderDate || lastOrder.createdAt, 'vi-VN', '') : t('Cần tạo đơn đầu tiên')}</span></div></td>
+                              <td><div className="crm-row-actions" onClick={(event) => event.stopPropagation()}>
+                                {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-primary" onClick={() => onPreparedOrderCreated?.(customer.id)}><ClipboardPlus size={13} /> {t('Tạo PO')}</button>}
+                                <button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedCustomer(customer)}>{t('Chi tiết')}</button>
+                                {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(customer)} title={t('Sửa')}><Pencil size={14} /></button>}
+                              </div></td>
+                            </tr>
+                            {isMaterialsExpanded && (
+                              <tr className="crm-material-history-row" onClick={(event) => event.stopPropagation()}>
+                                <td colSpan={8}>
+                                  <div className="crm-material-history-panel">
+                                    <div className="crm-material-history-heading">
+                                      <span><Layers3 size={15} /> {t('Nguyên vật liệu đã sử dụng')}</span>
+                                      <small>{customer.companyName} · {customerOrders.length} {t('đơn hàng')}</small>
+                                    </div>
+                                    <div className="crm-material-history-list">
+                                      {customerMaterials.map(material => (
+                                        <div key={material.key} className="crm-material-history-item">
+                                          <div>
+                                            <strong>{material.materialName}</strong>
+                                            <span>{material.productCodes.length > 0 ? `${t('Mã hàng')}: ${material.productCodes.join(', ')}` : t('Chưa có mã hàng')}</span>
+                                          </div>
+                                          <div>
+                                            <strong>{material.orderCount} {t('đơn')}</strong>
+                                            <span>{material.specifications.length > 0 ? material.specifications.join(' · ') : t('Chưa có quy cách')}</span>
+                                          </div>
+                                          <div>
+                                            <strong>{material.lastPoCode || t('PO gần nhất')}</strong>
+                                            <span>{material.lastUsedAt ? formatDate(material.lastUsedAt, 'vi-VN', '') : t('Chưa có ngày')}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
                       })}
-                      {filteredCustomers.length === 0 && <tr><td colSpan={7} className="crm-empty-state">{t('Không tìm thấy khách hàng phù hợp với bộ lọc.')}</td></tr>}
+                      {filteredCustomers.length === 0 && <tr><td colSpan={8} className="crm-empty-state">{t('Không tìm thấy khách hàng phù hợp với bộ lọc.')}</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -2459,9 +2587,15 @@ export const Crm: React.FC<CrmProps> = ({
           <div className="modal-content-fullscreen customer-onboarding-screen">
             <div className="customer-onboarding-header">
               <div>
-                <span className="customer-onboarding-step">HỒ SƠ KHÁCH HÀNG & MÃ HÀNG</span>
-                <h2>THÊM KHÁCH HÀNG MỚI</h2>
-                <p>Nhập hồ sơ, mã hàng và thông tin đơn đầu tiên ngay trên cùng một biểu mẫu.</p>
+                <span className="customer-onboarding-step">
+                  {onboardingSourceLead ? 'CHUYỂN ĐỔI LEAD · HỒ SƠ & ĐƠN ĐẦU TIÊN' : 'HỒ SƠ KHÁCH HÀNG & MÃ HÀNG'}
+                </span>
+                <h2>{onboardingSourceLead ? `TẠO KHÁCH HÀNG: ${onboardingSourceLead.companyName}` : 'THÊM KHÁCH HÀNG MỚI'}</h2>
+                <p>
+                  {onboardingSourceLead
+                    ? 'Thông tin từ Lead đã được điền sẵn. Hoàn thiện cùng bộ dữ liệu như khách hàng đặt trực tiếp.'
+                    : 'Nhập hồ sơ, mã hàng và thông tin đơn đầu tiên ngay trên cùng một biểu mẫu.'}
+                </p>
               </div>
               <button type="button" className="btn btn-outline" onClick={closeCustomerOnboarding}>Đóng / Hủy</button>
             </div>

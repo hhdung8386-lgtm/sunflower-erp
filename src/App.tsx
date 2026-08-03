@@ -129,6 +129,7 @@ function App() {
   const [selectedLsxId, setSelectedLsxId] = useState<string>('');
   const [repeatSourcePoId, setRepeatSourcePoId] = useState<string>('');
   const [preparedCustomerId, setPreparedCustomerId] = useState<string>('');
+  const [leadOnboarding, setLeadOnboarding] = useState<LeadRecord | null>(null);
 
   const handleRepeatOrderRequest = (poId: string) => {
     setSelectedPoId('');
@@ -146,6 +147,11 @@ function App() {
   const handlePreparedOrderOpened = useCallback(() => {
     setPreparedCustomerId('');
   }, []);
+
+  const handleLeadConversionRequest = (lead: LeadRecord) => {
+    setLeadOnboarding(lead);
+    setActivePage('crm');
+  };
 
   // Login form states
   const [username, setUsername] = useState(() => {
@@ -386,7 +392,21 @@ function App() {
     switch (activePage) {
       case 'crm':
         if (!isPageAllowed('crm')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
-        return <Crm customers={customers} pos={pos} invoices={invoices} users={users} currentUser={user} onRefresh={refreshData} onRepeatOrder={handleRepeatOrderRequest} onPreparedOrderCreated={handlePreparedOrderCreated} />;
+        return (
+          <Crm
+            customers={customers}
+            leads={leads}
+            pos={pos}
+            invoices={invoices}
+            users={users}
+            currentUser={user}
+            onRefresh={refreshData}
+            onRepeatOrder={handleRepeatOrderRequest}
+            onPreparedOrderCreated={handlePreparedOrderCreated}
+            initialLead={leadOnboarding}
+            onLeadOnboardingClosed={() => setLeadOnboarding(null)}
+          />
+        );
       case 'leads':
         if (!isPageAllowed('leads')) { setTimeout(() => setActivePage('dashboard'), 0); return null; }
         return (
@@ -395,6 +415,7 @@ function App() {
             users={users}
             currentUser={user}
             onNavigateToCrm={() => setActivePage('crm')}
+            onConvertLead={handleLeadConversionRequest}
           />
         );
       case 'sales':
