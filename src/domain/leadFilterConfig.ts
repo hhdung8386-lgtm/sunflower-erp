@@ -40,7 +40,7 @@ export const LEAD_FILTER_IDS = {
 export const DEFAULT_LEAD_FILTER_DEFINITIONS: LeadFilterDefinition[] = [
   {
     id: LEAD_FILTER_IDS.companySize,
-    name: 'Quy mô doanh nghiệp',
+    name: 'Quy mô',
     group: 'Phân loại khách hàng tiềm năng',
     type: 'single_select',
     active: true,
@@ -56,14 +56,14 @@ export const DEFAULT_LEAD_FILTER_DEFINITIONS: LeadFilterDefinition[] = [
   },
   {
     id: LEAD_FILTER_IDS.province,
-    name: 'Tỉnh / thành',
+    name: 'Tỉnh thành',
     group: 'Phân loại khách hàng tiềm năng',
     type: 'single_select',
     active: true,
     showInQuickFilter: true,
     reportable: true,
     saleEditable: true,
-    order: 20,
+    order: 40,
     options: VIETNAM_PROVINCES_2026.map((label, index) => option(slugifyLeadFilterId(label), label, index))
   },
   {
@@ -97,7 +97,7 @@ export const DEFAULT_LEAD_FILTER_DEFINITIONS: LeadFilterDefinition[] = [
     showInQuickFilter: true,
     reportable: true,
     saleEditable: true,
-    order: 40,
+    order: 50,
     options: [
       option('director_referral', 'Giám đốc giới thiệu'),
       option('sale_search', 'Sale tự tìm kiếm', 1),
@@ -117,7 +117,7 @@ export const DEFAULT_LEAD_FILTER_DEFINITIONS: LeadFilterDefinition[] = [
     showInQuickFilter: true,
     reportable: true,
     saleEditable: true,
-    order: 50,
+    order: 20,
     options: [
       option('contacted', 'Đã liên hệ'),
       option('discussing', 'Đang trao đổi', 2),

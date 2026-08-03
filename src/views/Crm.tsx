@@ -8,6 +8,8 @@ import { sortNewestFirst } from '../domain/recordOrdering';
 import { formatDate, formatDateTime, parseValidDate } from '../domain/dateFormatting';
 import {
   normalizeCustomerRecord,
+  normalizePendingOrderItem,
+  type CustomerPendingOrderItem,
   type CustomerPendingOrderDraft,
   type CustomerProductRecord,
   type CustomerContactRecord,
@@ -555,11 +557,14 @@ export const Crm: React.FC<CrmProps> = ({
 
   const handleSavePreparedOrder = async (poData: any) => {
     const now = new Date().toISOString();
+    const preparedItems: CustomerPendingOrderItem[] = (poData.items || []).map(
+      (item: unknown, index: number) => normalizePendingOrderItem(item, index)
+    );
     const pendingOrderDraft: CustomerPendingOrderDraft = {
       customerPoCode: poData.customerPoCode || '',
       expectedDeliveryDate: poData.expectedDeliveryDate || '',
       notes: poData.notes || '',
-      items: poData.items || [],
+      items: preparedItems,
       links: poData.links || {},
       totalAmount: Number(poData.totalAmount) || 0,
       discountAmount: Number(poData.discountAmount) || 0,
@@ -568,10 +573,10 @@ export const Crm: React.FC<CrmProps> = ({
       preparedById: currentUser.uid,
       preparedBy: currentUser.displayName
     };
-    const products: CustomerProductRecord[] = (poData.items || []).map((item: any, index: number) => ({
+    const products: CustomerProductRecord[] = preparedItems.map((item: CustomerPendingOrderItem, index: number) => ({
       id: item.itemId || `product-${Date.now()}-${index}`,
-      productCode: item.productCode || '',
-      productName: item.productName || '',
+      productCode: item.productCode.trim(),
+      productName: item.productName.trim(),
       productType: item.productType || 'tem_mau_cuon',
       size: item.size || '',
       material: item.material || '',
@@ -586,7 +591,9 @@ export const Crm: React.FC<CrmProps> = ({
       discountRate: Number(item.discountRate) || 0,
       discountAmount: Number(item.discountAmount) || 0,
       leadTimeDays: Number(item.leadTimeDays) || 0,
-      layoutUrl: item.previewImages?.[0] || item.previewImage || '',
+      layoutUrl: typeof item.previewImages?.[0] === 'string'
+        ? item.previewImages[0]
+        : typeof item.previewImage === 'string' ? item.previewImage : '',
       specifications: item.specifications || {},
       files: item.files || [],
       designLayouts: item.previewImages || []
@@ -699,6 +706,14 @@ export const Crm: React.FC<CrmProps> = ({
   const handleEditProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer || !selectedProduct) return;
+    if (!productCode.trim() || !productName.trim()) {
+      alert(t('Vui lòng nhập đầy đủ mã hàng và tên hàng.'));
+      return;
+    }
+    if (hasDuplicateProductCode(productCode, selectedProduct.id)) {
+      alert(t(`Mã hàng ${productCode.trim()} đã tồn tại trong hồ sơ khách hàng.`));
+      return;
+    }
 
     const specs: any = { fields: specFields };
     // Flatten fields for backwards compatibility
@@ -776,8 +791,8 @@ export const Crm: React.FC<CrmProps> = ({
 
     const updatedProduct = {
       ...selectedProduct,
-      productCode,
-      productName,
+      productCode: productCode.trim(),
+      productName: productName.trim(),
       productType,
       currentPrice: Number(currentPrice),
       salePrice: Number(currentPrice),
@@ -1108,6 +1123,16 @@ export const Crm: React.FC<CrmProps> = ({
   };
 
   // Product Helpers
+  function hasDuplicateProductCode(code: string, excludedProductId = '') {
+    const normalizedCode = code.trim().toLocaleUpperCase('vi-VN');
+    if (!normalizedCode || !selectedCustomer) return false;
+    return (selectedCustomer.products || []).some((product: CustomerProductRecord) => (
+      !product.deleted
+      && product.id !== excludedProductId
+      && product.productCode.trim().toLocaleUpperCase('vi-VN') === normalizedCode
+    ));
+  }
+
   const handleOpenAddProduct = () => {
     setProductCode('');
     setProductName('');
@@ -1153,6 +1178,10 @@ export const Crm: React.FC<CrmProps> = ({
   const handleAddProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer || !productCode || !productName || !currentPrice) return;
+    if (hasDuplicateProductCode(productCode)) {
+      alert(t(`Mã hàng ${productCode.trim()} đã tồn tại trong hồ sơ khách hàng.`));
+      return;
+    }
 
     const specs: any = { fields: specFields };
     // Flatten fields for backwards compatibility
@@ -1220,8 +1249,8 @@ export const Crm: React.FC<CrmProps> = ({
 
     const newProduct = {
       id: `prod-${Math.random().toString(36).substr(2, 9)}`,
-      productCode,
-      productName,
+      productCode: productCode.trim(),
+      productName: productName.trim(),
       productType,
       currentPrice: Number(currentPrice),
       salePrice: Number(currentPrice),
@@ -2426,7 +2455,7 @@ export const Crm: React.FC<CrmProps> = ({
                 <button type="button" className="btn btn-outline" onClick={closeCustomerOnboarding}>Hủy</button>
                 <button type="submit" className="btn btn-outline">Chỉ lưu hồ sơ khách hàng</button>
                 <button type="button" className="btn btn-primary" onClick={handleStartFirstOrder}>
-                  Tiếp tục: Chuẩn bị đơn đầu tiên
+                  Tiếp tục: Thêm mã hàng & chuẩn bị đơn đầu tiên
                 </button>
               </div>
             </form>

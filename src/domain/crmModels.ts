@@ -86,11 +86,36 @@ export interface CustomerProductRecord extends UnknownRecord {
   designLayouts: unknown[];
 }
 
+export interface CustomerPendingOrderItem extends UnknownRecord {
+  itemId: string;
+  productCode: string;
+  productName: string;
+  productType: string;
+  size: string;
+  material: string;
+  unit: string;
+  quantity: number;
+  price: number;
+  vatRate: number;
+  discountType: PODiscountType;
+  discountRate: number;
+  discountAmount: number;
+  deliveryDate: string;
+  supplierId: string;
+  supplierName: string;
+  purchasePrice: number;
+  leadTimeDays: number;
+  workType: string;
+  specifications: UnknownRecord;
+  files: unknown[];
+  previewImages: unknown[];
+}
+
 export interface CustomerPendingOrderDraft extends UnknownRecord {
   customerPoCode: string;
   expectedDeliveryDate: string;
   notes: string;
-  items: UnknownRecord[];
+  items: CustomerPendingOrderItem[];
   links: UnknownRecord;
   totalAmount: number;
   discountAmount: number;
@@ -329,6 +354,35 @@ const normalizeCustomerFile = (value: unknown, index = 0): CustomerFileRecord =>
   };
 };
 
+export const normalizePendingOrderItem = (value: unknown, index = 0): CustomerPendingOrderItem => {
+  const source = asRecord(value);
+  return {
+    ...source,
+    itemId: asText(source.itemId, `draft-item-${index + 1}`),
+    productCode: asText(source.productCode).trim(),
+    productName: asText(source.productName).trim(),
+    productType: asText(source.productType),
+    size: asText(source.size),
+    material: asText(source.material),
+    unit: asText(source.unit, 'cái'),
+    quantity: Math.max(0, asNumber(source.quantity)),
+    price: Math.max(0, asNumber(source.price ?? source.unitPrice)),
+    vatRate: clamp(asNumber(source.vatRate, 8), 0, 100),
+    discountType: normalizeDiscountType(source.discountType),
+    discountRate: clamp(asNumber(source.discountRate), 0, 100),
+    discountAmount: Math.max(0, asNumber(source.discountAmount)),
+    deliveryDate: asText(source.deliveryDate),
+    supplierId: asText(source.supplierId),
+    supplierName: asText(source.supplierName),
+    purchasePrice: Math.max(0, asNumber(source.purchasePrice)),
+    leadTimeDays: Math.max(0, Math.round(asNumber(source.leadTimeDays))),
+    workType: asText(source.workType),
+    specifications: asRecord(source.specifications),
+    files: asArray(source.files),
+    previewImages: asArray(source.previewImages ?? (source.previewImage ? [source.previewImage] : []))
+  };
+};
+
 const normalizePendingOrderDraft = (value: unknown): CustomerPendingOrderDraft | null => {
   if (!value || typeof value !== 'object') return null;
   const source = asRecord(value);
@@ -337,7 +391,7 @@ const normalizePendingOrderDraft = (value: unknown): CustomerPendingOrderDraft |
     customerPoCode: asText(source.customerPoCode),
     expectedDeliveryDate: asText(source.expectedDeliveryDate),
     notes: asText(source.notes),
-    items: asArray(source.items).map(asRecord),
+    items: asArray(source.items).map(normalizePendingOrderItem),
     links: asRecord(source.links),
     totalAmount: Math.max(0, asNumber(source.totalAmount)),
     discountAmount: Math.max(0, asNumber(source.discountAmount)),

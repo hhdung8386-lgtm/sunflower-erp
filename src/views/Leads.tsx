@@ -6,14 +6,9 @@ import {
   CheckCircle2,
   FileText,
   Filter,
-  KanbanSquare,
   List,
-  Mail,
-  MapPin,
-  MessageSquarePlus,
   Paperclip,
   Pencil,
-  Phone,
   Plus,
   Search,
   Settings2,
@@ -26,7 +21,6 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import type {
   CustomerRecord,
-  LeadActivityRecord,
   LeadCompanySize,
   LeadFileRecord,
   LeadFilterDefinition,
@@ -45,7 +39,7 @@ import { dbService, type UserProfile } from '../services/firebaseService';
 import {
   LeadDynamicFields,
   LeadFilterAdminModal,
-  LeadPerformancePanel
+  LeadSalesWorkspace
 } from '../components/LeadFilterSystem';
 import './Leads.css';
 
@@ -83,18 +77,6 @@ const LEAD_STAGES: Array<{ id: LeadStage; label: string }> = [
   { id: 'won', label: 'Thành công' },
   { id: 'lost', label: 'Không thành công' },
   { id: 'converted', label: 'Đã chuyển đổi' }
-];
-
-const ACTIVE_LEAD_STAGES = LEAD_STAGES.filter(stage => stage.id !== 'converted');
-
-const LEAD_SOURCES = [
-  'Giám đốc giới thiệu',
-  'Sale tự tìm kiếm',
-  'Khách hàng giới thiệu',
-  'Website',
-  'Mạng xã hội',
-  'Hội chợ / sự kiện',
-  'Khác'
 ];
 
 const COMPANY_SIZE_LABELS: Record<LeadCompanySize, string> = {
@@ -166,9 +148,6 @@ export const Leads: React.FC<LeadsProps> = ({
   const saleUsers = useMemo(() => users.filter(user => user.role === 'sale'), [users]);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [saleFilter, setSaleFilter] = useState('all');
-  const [onlyOverdue, setOnlyOverdue] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [workspaceTab, setWorkspaceTab] = useState<'list' | 'performance'>('list');
   const [showFilterConfig, setShowFilterConfig] = useState(false);
   const [storedFilterDefinitions, setStoredFilterDefinitions] = useState<LeadFilterDefinition[]>([]);
@@ -177,8 +156,6 @@ export const Leads: React.FC<LeadsProps> = ({
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [editingLeadId, setEditingLeadId] = useState('');
   const [form, setForm] = useState<LeadFormState>(() => createEmptyForm(currentUser, saleUsers));
-  const [activityType, setActivityType] = useState('call');
-  const [activityNote, setActivityNote] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState<LeadFileRecord[]>([]);
 
   useEffect(() => {
@@ -236,7 +213,6 @@ export const Leads: React.FC<LeadsProps> = ({
         }),
         (lead.activities || []).map(activity => activity.note)
       ]);
-      const matchesSale = saleFilter === 'all' || lead.assignedSaleId === saleFilter;
       const matchesClassifications = Object.entries(dynamicFilters)
         .filter(([, selectedValues]) => selectedValues.length > 0)
         .every(([fieldId, selectedValues]) => {
@@ -244,16 +220,12 @@ export const Leads: React.FC<LeadsProps> = ({
           return selectedValues.some(value => currentValues.includes(value));
         });
       return matchesSearch
-        && matchesSale
-        && matchesClassifications
-        && (!onlyOverdue || isOverdue(lead));
+        && matchesClassifications;
     });
   }, [
     accessibleLeads,
     dynamicFilters,
     filterDefinitions,
-    onlyOverdue,
-    saleFilter,
     searchTerm,
     users
   ]);
@@ -324,7 +296,9 @@ export const Leads: React.FC<LeadsProps> = ({
     if (!form.companyName.trim()) return;
 
     const assignedSale = saleUsers.find(user => user.uid === form.assignedSaleId);
-    const discoveredBy = saleUsers.find(user => user.uid === form.discoveredById);
+    const discoveredById = form.discoveredById
+      || (currentUser.role === 'sale' ? currentUser.uid : form.assignedSaleId);
+    const discoveredBy = saleUsers.find(user => user.uid === discoveredById);
     const existingLead = editingLeadId ? leads.find(lead => lead.id === editingLeadId) : null;
     const currentFilterValues = existingLead
       ? getLeadFilterValues(existingLead, filterDefinitions)
@@ -353,7 +327,7 @@ export const Leads: React.FC<LeadsProps> = ({
       filterValues: profileFilterValues,
       assignedSaleId: form.assignedSaleId,
       assignedSaleName: assignedSale?.displayName || '',
-      discoveredById: form.discoveredById || currentUser.uid,
+      discoveredById,
       discoveredByName: discoveredBy?.displayName || currentUser.displayName,
       reminderTime: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
       nextFollowUpAt: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
@@ -382,44 +356,6 @@ export const Leads: React.FC<LeadsProps> = ({
     }
 
     setShowLeadForm(false);
-  };
-
-  const handleAddActivity = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!selectedLead || !activityNote.trim()) return;
-    const now = new Date().toISOString();
-    const activity: LeadActivityRecord = {
-      id: `activity-${now}`,
-      type: activityType,
-      note: activityNote.trim(),
-      occurredAt: now,
-      createdById: currentUser.uid,
-      createdByName: currentUser.displayName
-    };
-    await dbService.updateDocument('leads', selectedLead.id, {
-      activities: [activity, ...(selectedLead.activities || [])],
-      updatedAt: now,
-      updatedBy: currentUser.displayName
-    });
-    setActivityNote('');
-  };
-
-  const handleQuickStageChange = async (lead: LeadRecord, stage: LeadStage) => {
-    if (lead.stage === stage) return;
-    const now = new Date().toISOString();
-    await dbService.updateDocument('leads', lead.id, {
-      stage,
-      activities: [{
-        id: `activity-${now}`,
-        type: 'status',
-        note: `Chuyển trạng thái: ${getStageLabel(lead.stage)} → ${getStageLabel(stage)}`,
-        occurredAt: now,
-        createdById: currentUser.uid,
-        createdByName: currentUser.displayName
-      }, ...(lead.activities || [])],
-      updatedAt: now,
-      updatedBy: currentUser.displayName
-    });
   };
 
   const handleLeadFilterValueChange = async (
@@ -596,8 +532,6 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const clearFilters = () => {
     setSearchTerm('');
-    setSaleFilter('all');
-    setOnlyOverdue(false);
     setDynamicFilters({});
   };
 
@@ -605,6 +539,10 @@ export const Leads: React.FC<LeadsProps> = ({
     const optionId = getLeadFilterValues(lead, filterDefinitions)[fieldId]?.[0];
     return (optionId && findLeadFilterOption(filterDefinitions, fieldId, optionId)?.label) || fallback;
   };
+
+  if (showLeadForm) {
+    return renderLeadForm();
+  }
 
   if (selectedLead) {
     const assignedSale = users.find(user => user.uid === selectedLead.assignedSaleId);
@@ -651,6 +589,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <span>{t('Quy mô')}</span><strong>{getClassificationLabel(selectedLead, LEAD_FILTER_IDS.companySize, COMPANY_SIZE_LABELS[selectedLead.companySize])}</strong>
               <span>{t('Nguồn Lead')}</span><strong>{getClassificationLabel(selectedLead, LEAD_FILTER_IDS.source, selectedLead.source || '—')}</strong>
               <span>{t('Sale phụ trách')}</span><strong>{assignedSale?.displayName || selectedLead.assignedSaleName || 'Chưa phân công'}</strong>
+              <span>{t('Lịch chăm sóc tiếp theo')}</span><strong className={isOverdue(selectedLead) ? 'lead-date-overdue' : ''}>{formatDateTime(selectedLead.nextFollowUpAt)}</strong>
               <span>{t('Giá trị tiềm năng')}</span><strong>{selectedLead.potentialValue.toLocaleString('vi-VN')} đ</strong>
             </div>
             <div className="lead-note-block">
@@ -685,170 +624,119 @@ export const Leads: React.FC<LeadsProps> = ({
               onChange={(field, value, checked) => handleLeadFilterValueChange(selectedLead, field, value, checked)}
             />
           </section>
-
-          <section className="lead-panel">
-            <div className="lead-panel__title"><CalendarClock size={17} /> {t('Tiến độ chăm sóc')}</div>
-            <label className="lead-field-label">{t('Kết quả / giai đoạn chính')}</label>
-            <select
-              value={selectedLead.stage}
-              onChange={event => handleQuickStageChange(selectedLead, event.target.value as LeadStage)}
-              disabled={selectedLead.stage === 'converted'}
-            >
-              {LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
-            </select>
-            <div className={`lead-follow-up ${isOverdue(selectedLead) ? 'is-overdue' : ''}`}>
-              <CalendarClock size={16} />
-              <div><span>{t('Lịch chăm sóc tiếp theo')}</span><strong>{formatDateTime(selectedLead.nextFollowUpAt)}</strong></div>
-            </div>
-            <form className="lead-activity-form" onSubmit={handleAddActivity}>
-              <label className="lead-field-label">{t('Ghi nhận chăm sóc')}</label>
-              <div className="lead-activity-form__controls">
-                <select value={activityType} onChange={event => setActivityType(event.target.value)}>
-                  <option value="call">{t('Gọi điện')}</option>
-                  <option value="meeting">{t('Gặp mặt')}</option>
-                  <option value="email">{t('Email')}</option>
-                  <option value="quotation">{t('Gửi báo giá')}</option>
-                  <option value="note">{t('Ghi chú')}</option>
-                </select>
-                <input value={activityNote} onChange={event => setActivityNote(event.target.value)} placeholder={t('Nội dung trao đổi hoặc kết quả chăm sóc...')} required />
-                <button type="submit" className="btn btn-primary"><MessageSquarePlus size={15} /> {t('Thêm')}</button>
-              </div>
-            </form>
-          </section>
         </div>
-
-        {showLeadForm && renderLeadForm()}
       </div>
     );
   }
 
   function renderLeadForm() {
     return (
-      <div className="modal-overlay">
-        <div className="modal-content lead-form-modal">
-          <div className="modal-header">
-            <strong>{editingLeadId ? t('CHỈNH SỬA KHÁCH HÀNG TIỀM NĂNG') : t('THÊM KHÁCH HÀNG TIỀM NĂNG')}</strong>
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowLeadForm(false)}>{t('Đóng')}</button>
+      <div className="lead-form-page">
+        <header className="lead-form-page__header">
+          <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>
+            <ArrowLeft size={16} /> {t('Quay lại')}
+          </button>
+          <div>
+            <span>{editingLeadId ? t('CHỈNH SỬA HỒ SƠ') : t('HỒ SƠ MỚI')}</span>
+            <h1>{editingLeadId ? t('Chỉnh sửa khách hàng tiềm năng') : t('Thêm khách hàng tiềm năng')}</h1>
+            <p>{t('Ghi nhận thông tin doanh nghiệp và lịch phụ trách. Năm nhóm phân loại được cập nhật tại trang chi tiết Lead.')}</p>
           </div>
-          <form onSubmit={handleSaveLead}>
-            <div className="modal-body">
-              <div className="lead-form-section">
-                <h3>{t('Thông tin doanh nghiệp')}</h3>
-                <div className="lead-form-grid">
-                  <div className="form-group lead-form-grid__wide">
-                    <label>{t('Tên doanh nghiệp *')}</label>
-                    <input value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} required />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Người liên hệ')}</label>
-                    <input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Điện thoại')}</label>
-                    <input value={form.phone} onChange={event => updateForm('phone', event.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Mã số thuế')}</label>
-                    <input value={form.taxCode} onChange={event => updateForm('taxCode', event.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Tỉnh / thành')}</label>
-                    <input value={form.province} onChange={event => updateForm('province', event.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Quy mô doanh nghiệp')}</label>
-                    <select value={form.companySize} onChange={event => updateForm('companySize', event.target.value as LeadCompanySize)}>
-                      {Object.entries(COMPANY_SIZE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group lead-form-grid__wide">
-                    <label>{t('Địa chỉ')}</label>
-                    <input value={form.address} onChange={event => updateForm('address', event.target.value)} />
-                  </div>
+        </header>
+
+        <form className="lead-form-page__form" onSubmit={handleSaveLead}>
+          <div className="lead-form-page__content">
+            <section className="lead-form-card">
+              <div className="lead-form-card__heading">
+                <Building2 size={18} />
+                <div><h2>{t('Thông tin doanh nghiệp')}</h2><p>{t('Thông tin nhận diện và đầu mối liên hệ chính.')}</p></div>
+              </div>
+              <div className="lead-form-grid">
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Tên doanh nghiệp *')}</label>
+                  <input autoFocus value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>{t('Người liên hệ')}</label>
+                  <input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>{t('Điện thoại')}</label>
+                  <input type="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Email</label>
+                  <input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>{t('Mã số thuế')}</label>
+                  <input value={form.taxCode} onChange={event => updateForm('taxCode', event.target.value)} />
+                </div>
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Địa chỉ')}</label>
+                  <input value={form.address} onChange={event => updateForm('address', event.target.value)} />
                 </div>
               </div>
+            </section>
 
-              <div className="lead-form-section">
-                <h3>{t('Thông tin cơ hội')}</h3>
-                <div className="lead-form-grid">
+            <section className="lead-form-card">
+              <div className="lead-form-card__heading">
+                <CalendarClock size={18} />
+                <div><h2>{t('Phụ trách và lịch làm việc')}</h2><p>{t('Thông tin phục vụ phân công và theo dõi của Sale.')}</p></div>
+              </div>
+              <div className="lead-form-grid">
+                <div className="form-group">
+                  <label>{t('Sale phụ trách')}</label>
+                  <select value={form.assignedSaleId} onChange={event => updateForm('assignedSaleId', event.target.value)} disabled={currentUser.role === 'sale'}>
+                    <option value="">{t('-- Chưa phân công --')}</option>
+                    {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
+                  </select>
+                </div>
+                {currentUser.role === 'admin' && (
                   <div className="form-group">
-                    <label>{t('Nguồn Lead')}</label>
-                    <select value={form.source} onChange={event => updateForm('source', event.target.value)}>
-                      <option value="">{t('-- Chọn nguồn --')}</option>
-                      {LEAD_SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Giá trị tiềm năng (đ)')}</label>
-                    <input type="number" min="0" value={form.potentialValue} onChange={event => updateForm('potentialValue', Number(event.target.value))} />
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Kết quả / giai đoạn chính')}</label>
-                    <select value={form.stage} onChange={event => updateForm('stage', event.target.value as LeadStage)}>
-                      {ACTIVE_LEAD_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Sale phụ trách')}</label>
-                    <select
-                      value={form.assignedSaleId}
-                      onChange={event => updateForm('assignedSaleId', event.target.value)}
-                      disabled={currentUser.role === 'sale'}
-                    >
-                      <option value="">{t('-- Chưa phân công --')}</option>
-                      {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>{t('Người tìm được Lead')}</label>
-                    <select
-                      value={form.discoveredById}
-                      onChange={event => updateForm('discoveredById', event.target.value)}
-                      disabled={currentUser.role === 'sale'}
-                    >
+                    <label>{t('Sale tìm được Lead')}</label>
+                    <select value={form.discoveredById} onChange={event => updateForm('discoveredById', event.target.value)}>
                       <option value="">{t('-- Chưa xác định --')}</option>
                       {saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
                     </select>
                   </div>
-                  <div className="form-group">
-                    <label>{t('Lịch chăm sóc tiếp theo')}</label>
-                    <input type="datetime-local" value={form.nextFollowUpAt} onChange={event => updateForm('nextFollowUpAt', event.target.value)} />
-                  </div>
-                  <div className="form-group lead-form-grid__wide">
-                    <label>{t('Nhu cầu sản phẩm dự kiến')}</label>
-                    <textarea rows={3} value={form.expectedProducts} onChange={event => updateForm('expectedProducts', event.target.value)} placeholder={t('Loại tem, quy cách, chất liệu, sản lượng dự kiến...')} />
-                  </div>
-                  <div className="form-group lead-form-grid__wide">
-                    <label>{t('Ghi chú')}</label>
-                    <textarea rows={3} value={form.note} onChange={event => updateForm('note', event.target.value)} />
-                  </div>
-                  <div className="form-group lead-form-grid__wide">
-                    <label>{t('Tài liệu đính kèm')}</label>
+                )}
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Lịch chăm sóc tiếp theo')}</label>
+                  <input type="datetime-local" value={form.nextFollowUpAt} onChange={event => updateForm('nextFollowUpAt', event.target.value)} />
+                </div>
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Ghi chú')}</label>
+                  <textarea rows={5} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder={t('Thông tin cần lưu ý khi làm việc với khách hàng...')} />
+                </div>
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Tài liệu đính kèm')}</label>
+                  <div className="lead-file-dropzone">
+                    <Paperclip size={18} />
+                    <div><strong>{t('Chọn tệp từ máy tính')}</strong><span>{t('Có thể gắn nhiều báo giá, hình ảnh hoặc tài liệu liên quan.')}</span></div>
                     <input type="file" multiple onChange={handleLeadFilesChange} />
-                    {uploadingFiles.length > 0 && (
-                      <div className="lead-upload-list">
-                        {uploadingFiles.map(file => (
-                          <span key={file.id}>
-                            <Paperclip size={12} /> {file.name}
-                            <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))}><X size={12} /></button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
                   </div>
+                  {uploadingFiles.length > 0 && (
+                    <div className="lead-upload-list">
+                      {uploadingFiles.map(file => (
+                        <span key={file.id}>
+                          <Paperclip size={12} /> {file.name}
+                          <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))} aria-label={`${t('Bỏ tệp')} ${file.name}`}><X size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-            <div className="modal-footer">
+            </section>
+          </div>
+          <footer className="lead-form-page__footer">
+            <span>{t('Các thay đổi chỉ được ghi nhận khi bấm Lưu.')}</span>
+            <div>
               <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>{t('Hủy')}</button>
               <button type="submit" className="btn btn-primary">{editingLeadId ? t('Cập nhật Lead') : t('Lưu Lead')}</button>
             </div>
-          </form>
-        </div>
+          </footer>
+        </form>
       </div>
     );
   }
@@ -868,7 +756,7 @@ export const Leads: React.FC<LeadsProps> = ({
 
       <div className="lead-workspace-tabs" role="tablist" aria-label="Không gian quản lý Lead">
         <button type="button" role="tab" aria-selected={workspaceTab === 'list'} className={workspaceTab === 'list' ? 'is-active' : ''} onClick={() => setWorkspaceTab('list')}><List size={16} /> Danh sách Lead <span>{accessibleLeads.length}</span></button>
-        {currentUser.role === 'admin' && <button type="button" role="tab" aria-selected={workspaceTab === 'performance'} className={workspaceTab === 'performance' ? 'is-active' : ''} onClick={() => setWorkspaceTab('performance')}><TrendingUp size={16} /> Hiệu quả Sale</button>}
+        {currentUser.role === 'admin' && <button type="button" role="tab" aria-selected={workspaceTab === 'performance'} className={workspaceTab === 'performance' ? 'is-active' : ''} onClick={() => setWorkspaceTab('performance')}><Users size={16} /> Khách hàng của Sale</button>}
       </div>
 
       <div className="lead-summary-grid">
@@ -879,14 +767,11 @@ export const Leads: React.FC<LeadsProps> = ({
       </div>
 
       {workspaceTab === 'performance' && currentUser.role === 'admin' ? (
-        <LeadPerformancePanel
+        <LeadSalesWorkspace
           leads={leads}
           saleUsers={saleUsers}
-          isOverdue={isOverdue}
-          onOpenSale={saleId => {
-            setSaleFilter(saleId);
-            setWorkspaceTab('list');
-          }}
+          definitions={filterDefinitions}
+          onOpenLead={setSelectedLeadId}
         />
       ) : (
         <>
@@ -895,72 +780,63 @@ export const Leads: React.FC<LeadsProps> = ({
               <Search size={16} />
               <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm công ty, liên hệ, SĐT, địa chỉ, nhu cầu, nhãn...')} />
             </div>
-            {currentUser.role === 'admin' && <select value={saleFilter} onChange={event => setSaleFilter(event.target.value)}><option value="all">{t('Tất cả Sale phụ trách')}</option>{saleUsers.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select>}
-            {filterDefinitions.filter(field => field.active).map(field => field.type === 'single_select' ? (
-              <select
-                key={field.id}
-                value={(dynamicFilters[field.id] || [])[0] || 'all'}
-                onChange={event => setDynamicFilters(previous => ({
-                  ...previous,
-                  [field.id]: event.target.value === 'all' ? [] : [event.target.value]
-                }))}
-              >
-                <option value="all">Tất cả {field.name.toLocaleLowerCase('vi-VN')}</option>
-                {field.options.filter(option => option.active).map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
-            ) : (
+            {filterDefinitions.filter(field => field.active).map(field => (
               <details key={field.id} className="lead-filter-menu lead-filter-menu--toolbar">
                 <summary>{field.name}{(dynamicFilters[field.id] || []).length > 0 && <span>{dynamicFilters[field.id].length}</span>}</summary>
                 <div className="lead-filter-menu__content">
-                  {field.options.filter(option => option.active).map(option => (
-                    <label key={option.id}>
-                      <input type="checkbox" checked={(dynamicFilters[field.id] || []).includes(option.id)} onChange={event => handleDynamicFilterToggle(field, option.id, event.target.checked)} />
-                      <i style={{ backgroundColor: option.color }} />{option.label}
-                    </label>
-                  ))}
+                  <button
+                    type="button"
+                    className={(dynamicFilters[field.id] || []).length === 0 ? 'is-selected' : ''}
+                    onClick={() => setDynamicFilters(previous => ({ ...previous, [field.id]: [] }))}
+                  >
+                    Tất cả {field.name.toLocaleLowerCase('vi-VN')}
+                  </button>
+                  {field.options.filter(option => option.active).map(option => {
+                    const selected = (dynamicFilters[field.id] || []).includes(option.id);
+                    return (
+                      <button
+                        type="button"
+                        key={option.id}
+                        className={selected ? 'is-selected' : ''}
+                        onClick={() => handleDynamicFilterToggle(field, option.id, !selected)}
+                      >
+                        <i style={{ backgroundColor: option.color }} />
+                        <span>{option.label}</span>
+                        {selected && <CheckCircle2 size={14} />}
+                      </button>
+                    );
+                  })}
                 </div>
               </details>
             ))}
-            <label className={`lead-overdue-toggle ${onlyOverdue ? 'is-active' : ''}`}><input type="checkbox" checked={onlyOverdue} onChange={event => setOnlyOverdue(event.target.checked)} /><CalendarClock size={14} /> {t('Quá hạn')}</label>
             <button type="button" className="btn btn-outline btn-symbol" onClick={clearFilters} title={t('Xóa bộ lọc')}><Filter size={15} /></button>
-            <div className="lead-view-toggle"><button type="button" className={viewMode === 'list' ? 'is-active' : ''} onClick={() => setViewMode('list')} title={t('Dạng danh sách')}><List size={16} /></button><button type="button" className={viewMode === 'kanban' ? 'is-active' : ''} onClick={() => setViewMode('kanban')} title="Kanban"><KanbanSquare size={16} /></button></div>
           </section>
 
-          {viewMode === 'list' ? (
-            <section className="lead-table-card">
-              <div className="lead-table-result">Hiển thị <strong>{filteredLeads.length}</strong> / {accessibleLeads.length} Lead</div>
-              <div className="table-container">
-                <table className="lead-table lead-table--classified">
-                  <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Thao tác')}</th></tr></thead>
-                  <tbody>
-                    {filteredLeads.map(lead => (
-                      <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
-                        <td><strong>{lead.companyName}</strong></td>
-                        <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
-                        <td><strong>{getClassificationLabel(lead, LEAD_FILTER_IDS.source, lead.source || '—')}</strong><span>{getClassificationLabel(lead, LEAD_FILTER_IDS.province, lead.province || 'Chưa xác định')}</span></td>
-                        <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
-                        <td>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</td>
-                        <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
-                        <td><div className="lead-row-actions" onClick={event => event.stopPropagation()}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button><button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button></div></td>
-                      </tr>
-                    ))}
-                    {filteredLeads.length === 0 && <tr><td colSpan={7} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : (
-            <section className="lead-kanban">
-              {ACTIVE_LEAD_STAGES.map(stage => {
-                const stageLeads = filteredLeads.filter(lead => lead.stage === stage.id);
-                return <div key={stage.id} className="lead-kanban-column"><div className="lead-kanban-column__header"><span>{stage.label}</span><strong>{stageLeads.length}</strong></div><div className="lead-kanban-column__body">{stageLeads.map(lead => <button type="button" key={lead.id} className="lead-kanban-card" onClick={() => setSelectedLeadId(lead.id)}><strong>{lead.companyName}</strong><span><Phone size={12} /> {lead.phone || 'Chưa có SĐT'}</span><span><Mail size={12} /> {lead.email || 'Chưa có email'}</span><span><MapPin size={12} /> {lead.province || 'Chưa có khu vực'}</span><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}><CalendarClock size={12} /> {formatDateTime(lead.nextFollowUpAt)}</span></button>)}{stageLeads.length === 0 && <div className="lead-kanban-empty">{t('Chưa có Lead')}</div>}</div></div>;
-              })}
-            </section>
-          )}
+          <section className="lead-table-card">
+            <div className="lead-table-result">Hiển thị <strong>{filteredLeads.length}</strong> / {accessibleLeads.length} Lead</div>
+            <div className="table-container">
+              <table className="lead-table lead-table--classified">
+                <thead><tr><th>{t('Doanh nghiệp')}</th><th>{t('Liên hệ')}</th><th>{t('Nguồn / khu vực')}</th><th>{t('Giá trị tiềm năng')}</th><th>{t('Sale phụ trách')}</th><th>{t('Chăm sóc tiếp')}</th><th>{t('Thao tác')}</th></tr></thead>
+                <tbody>
+                  {filteredLeads.map(lead => (
+                    <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}>
+                      <td><strong>{lead.companyName}</strong></td>
+                      <td><strong>{lead.contactPerson || '—'}</strong><span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
+                      <td><strong>{getClassificationLabel(lead, LEAD_FILTER_IDS.source, lead.source || '—')}</strong><span>{getClassificationLabel(lead, LEAD_FILTER_IDS.province, lead.province || 'Chưa xác định')}</span></td>
+                      <td><strong>{lead.potentialValue.toLocaleString('vi-VN')} đ</strong></td>
+                      <td>{users.find(user => user.uid === lead.assignedSaleId)?.displayName || lead.assignedSaleName || 'Chưa phân công'}</td>
+                      <td><span className={isOverdue(lead) ? 'lead-date-overdue' : ''}>{formatDateTime(lead.nextFollowUpAt)}</span></td>
+                      <td><div className="lead-row-actions" onClick={event => event.stopPropagation()}><button type="button" className="btn btn-sm btn-outline" onClick={() => setSelectedLeadId(lead.id)}>{t('Chi tiết')}</button><button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditForm(lead)} title={t('Sửa')}><Pencil size={13} /></button></div></td>
+                    </tr>
+                  ))}
+                  {filteredLeads.length === 0 && <tr><td colSpan={7} className="lead-empty">{t('Không có Lead phù hợp với bộ lọc.')}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </>
       )}
 
-      {showLeadForm && renderLeadForm()}
       {showFilterConfig && currentUser.role === 'admin' && (
         <LeadFilterAdminModal
           definitions={filterDefinitions}

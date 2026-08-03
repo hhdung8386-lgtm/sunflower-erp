@@ -711,7 +711,19 @@ export default function POFormFullScreen({
     }
 
     // Validate that all items have a name and quantity
+    const preparedProductCodes = new Set<string>();
     for (let i = 0; i < poItems.length; i++) {
+      const productCode = String(poItems[i].productCode || '').trim();
+      if (workflowMode === 'customer_onboarding' && !productCode) {
+        alert(t(`Dòng ${i + 1}: Vui lòng nhập mã hàng để lưu vào hồ sơ khách hàng!`));
+        return;
+      }
+      const normalizedProductCode = productCode.toLocaleUpperCase('vi-VN');
+      if (workflowMode === 'customer_onboarding' && preparedProductCodes.has(normalizedProductCode)) {
+        alert(t(`Dòng ${i + 1}: Mã hàng ${productCode} đang bị trùng trong danh sách!`));
+        return;
+      }
+      if (normalizedProductCode) preparedProductCodes.add(normalizedProductCode);
       if (!poItems[i].productName) {
         alert(t(`Dòng ${i + 1}: Vui lòng nhập tên hàng!`));
         return;

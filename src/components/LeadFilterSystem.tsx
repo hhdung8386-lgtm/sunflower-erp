@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { BarChart3, Pencil, Save, Settings2, X } from 'lucide-react';
+import { Pencil, Save, Settings2, UserRoundSearch, X } from 'lucide-react';
 import type {
   LeadCustomFieldType,
   LeadFilterDefinition,
   LeadRecord
 } from '../domain/crmModels';
-import { getLeadFilterValues, slugifyLeadFilterId } from '../domain/leadFilterConfig';
+import {
+  findLeadFilterOption,
+  getLeadFilterValues,
+  LEAD_FILTER_IDS,
+  slugifyLeadFilterId
+} from '../domain/leadFilterConfig';
 import type { UserProfile } from '../services/firebaseService';
 
 const FIELD_TYPE_LABELS: Record<LeadCustomFieldType, string> = {
@@ -217,18 +222,24 @@ export const LeadFilterAdminModal: React.FC<{
   );
 };
 
-const hasAnyMarker = (lead: LeadRecord, markerIds: string[]) => {
-  const values = Object.values(getLeadFilterValues(lead)).flat();
-  return markerIds.some(markerId => values.includes(markerId));
+const LEAD_STAGE_LABELS: Record<string, string> = {
+  new: 'Mới tiếp nhận',
+  contacted: 'Đã liên hệ',
+  quoted: 'Đã báo giá',
+  negotiating: 'Đang đàm phán',
+  won: 'Thành công',
+  lost: 'Không thành công',
+  converted: 'Đã chuyển đổi'
 };
 
-export const LeadPerformancePanel: React.FC<{
+export const LeadSalesWorkspace: React.FC<{
   leads: LeadRecord[];
   saleUsers: UserProfile[];
-  isOverdue: (lead: LeadRecord) => boolean;
-  onOpenSale: (saleId: string) => void;
-}> = ({ leads, saleUsers, isOverdue, onOpenSale }) => {
+  definitions: LeadFilterDefinition[];
+  onOpenLead: (leadId: string) => void;
+}> = ({ leads, saleUsers, definitions, onOpenLead }) => {
   const currentYear = new Date().getFullYear();
+  const [selectedSaleId, setSelectedSaleId] = useState(saleUsers[0]?.uid || '');
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState('all');
   const years = Array.from(new Set([currentYear, ...leads.map(lead => new Date(lead.createdAt).getFullYear()).filter(Number.isFinite)])).sort((a, b) => b - a);
@@ -236,39 +247,84 @@ export const LeadPerformancePanel: React.FC<{
     const createdAt = new Date(lead.createdAt);
     return createdAt.getFullYear() === year && (month === 'all' || createdAt.getMonth() + 1 === Number(month));
   });
-  const rows = saleUsers.map(sale => {
-    const discovered = periodLeads.filter(lead => (lead.discoveredById || lead.createdById) === sale.uid);
-    const assigned = periodLeads.filter(lead => lead.assignedSaleId === sale.uid);
-    const contacted = discovered.filter(lead => lead.stage !== 'new' || hasAnyMarker(lead, ['contacted', 'discussing']));
-    const quoted = discovered.filter(lead => ['quoted', 'negotiating', 'won', 'converted'].includes(lead.stage) || hasAnyMarker(lead, ['preparing_quote', 'quote_sent', 'quote_received']));
-    const negotiating = discovered.filter(lead => lead.stage === 'negotiating' || hasAnyMarker(lead, ['negotiating', 'price_negotiation', 'quantity_negotiation', 'payment_negotiation']));
-    const converted = discovered.filter(lead => lead.stage === 'converted');
-    return {
-      sale,
-      discovered: discovered.length,
-      assigned: assigned.length,
-      contacted: contacted.length,
-      quoted: quoted.length,
-      negotiating: negotiating.length,
-      converted: converted.length,
-      conversionRate: discovered.length > 0 ? converted.length / discovered.length * 100 : 0,
-      overdue: assigned.filter(isOverdue).length,
-      potentialValue: discovered.reduce((sum, lead) => sum + Number(lead.potentialValue || 0), 0)
-    };
-  }).sort((a, b) => b.converted - a.converted || b.discovered - a.discovered);
+  const selectedSale = saleUsers.find(sale => sale.uid === selectedSaleId) || saleUsers[0];
+  const saleLeads = selectedSale
+    ? periodLeads.filter(lead => (
+      (lead.discoveredById || lead.createdById) === selectedSale.uid
+      || lead.assignedSaleId === selectedSale.uid
+    ))
+    : [];
+  const discoveredLeads = selectedSale
+    ? saleLeads.filter(lead => (lead.discoveredById || lead.createdById) === selectedSale.uid)
+    : [];
+  const assignedLeads = selectedSale
+    ? saleLeads.filter(lead => lead.assignedSaleId === selectedSale.uid)
+    : [];
+  const convertedLeads = discoveredLeads.filter(lead => lead.stage === 'converted');
+  const conversionRate = discoveredLeads.length > 0
+    ? convertedLeads.length / discoveredLeads.length * 100
+    : 0;
+  const potentialValue = saleLeads.reduce((sum, lead) => sum + Number(lead.potentialValue || 0), 0);
+
+  const getRelationshipLabel = (lead: LeadRecord) => {
+    const discovered = (lead.discoveredById || lead.createdById) === selectedSale?.uid;
+    const assigned = lead.assignedSaleId === selectedSale?.uid;
+    if (discovered && assigned) return 'Sale tìm & phụ trách';
+    return discovered ? 'Sale tìm được' : 'Được phân công';
+  };
+
+  const getProgressLabel = (lead: LeadRecord) => {
+    const optionId = getLeadFilterValues(lead, definitions)[LEAD_FILTER_IDS.progress]?.at(-1);
+    return (optionId && findLeadFilterOption(definitions, LEAD_FILTER_IDS.progress, optionId)?.label)
+      || LEAD_STAGE_LABELS[lead.stage]
+      || 'Chưa cập nhật';
+  };
+
+  const getNeedLabel = (lead: LeadRecord) => {
+    const optionIds = getLeadFilterValues(lead, definitions)[LEAD_FILTER_IDS.productNeed] || [];
+    const labels = optionIds
+      .map(optionId => findLeadFilterOption(definitions, LEAD_FILTER_IDS.productNeed, optionId)?.label)
+      .filter(Boolean);
+    return labels.join(', ') || 'Chưa xác định';
+  };
 
   return (
-    <section className="lead-performance-panel">
-      <div className="lead-performance-header">
-        <div><BarChart3 size={19} /><div><strong>Hiệu quả tìm kiếm và chuyển đổi Lead</strong><span>Tính theo người tìm được Lead trong kỳ.</span></div></div>
-        <div><select value={year} onChange={event => setYear(Number(event.target.value))}>{years.map(item => <option key={item} value={item}>{item}</option>)}</select><select value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></div>
+    <section className="lead-sales-workspace">
+      <div className="lead-sales-workspace__header">
+        <div>
+          <UserRoundSearch size={20} />
+          <div><strong>Khách hàng của Sale</strong><span>Chọn nhân viên để xem danh sách Lead và hiệu quả chuyển đổi trong kỳ.</span></div>
+        </div>
+        <div className="lead-sales-workspace__selectors">
+          <label>Nhân viên Sale<select value={selectedSale?.uid || ''} onChange={event => setSelectedSaleId(event.target.value)} disabled={saleUsers.length === 0}>{saleUsers.length === 0 && <option value="">Chưa có tài khoản Sale</option>}{saleUsers.map(sale => <option key={sale.uid} value={sale.uid}>{sale.displayName}</option>)}</select></label>
+          <label>Năm<select value={year} onChange={event => setYear(Number(event.target.value))}>{years.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>Tháng<select value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tất cả</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></label>
+        </div>
+      </div>
+      <div className="lead-sales-metrics">
+        <div><span>Tổng Lead liên quan</span><strong>{saleLeads.length}</strong></div>
+        <div><span>Sale tìm được</span><strong>{discoveredLeads.length}</strong></div>
+        <div><span>Được phân công</span><strong>{assignedLeads.length}</strong></div>
+        <div><span>Đã chuyển đổi</span><strong>{convertedLeads.length}</strong></div>
+        <div><span>Tỷ lệ chuyển đổi</span><strong>{conversionRate.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</strong></div>
+        <div><span>Giá trị tiềm năng</span><strong>{potentialValue.toLocaleString('vi-VN')} đ</strong></div>
       </div>
       <div className="table-container">
-        <table className="lead-performance-table">
-          <thead><tr><th>Sale</th><th>Lead tìm được</th><th>Được giao</th><th>Đã liên hệ</th><th>Đã báo giá</th><th>Đàm phán</th><th>Chuyển đổi</th><th>Tỷ lệ</th><th>Quá hạn</th><th>Giá trị tiềm năng</th></tr></thead>
+        <table className="lead-sales-table">
+          <thead><tr><th>Doanh nghiệp</th><th>Liên hệ</th><th>Quan hệ với Sale</th><th>Tiến độ</th><th>Nhu cầu</th><th>Giá trị tiềm năng</th><th></th></tr></thead>
           <tbody>
-            {rows.map(row => <tr key={row.sale.uid} onClick={() => onOpenSale(row.sale.uid)}><td><button type="button">{row.sale.displayName}</button></td><td>{row.discovered}</td><td>{row.assigned}</td><td>{row.contacted}</td><td>{row.quoted}</td><td>{row.negotiating}</td><td><strong>{row.converted}</strong></td><td><strong>{row.conversionRate.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</strong></td><td className={row.overdue > 0 ? 'is-danger' : ''}>{row.overdue}</td><td>{row.potentialValue.toLocaleString('vi-VN')} đ</td></tr>)}
-            {rows.length === 0 && <tr><td colSpan={10} className="lead-empty">Chưa có dữ liệu Sale trong kỳ.</td></tr>}
+            {saleLeads.map(lead => (
+              <tr key={lead.id}>
+                <td><strong>{lead.companyName}</strong></td>
+                <td>{lead.contactPerson || '—'}<span>{lead.phone || lead.email || 'Chưa có liên hệ'}</span></td>
+                <td><span className="lead-sale-relation">{getRelationshipLabel(lead)}</span></td>
+                <td>{getProgressLabel(lead)}</td>
+                <td>{getNeedLabel(lead)}</td>
+                <td><strong>{Number(lead.potentialValue || 0).toLocaleString('vi-VN')} đ</strong></td>
+                <td><button type="button" className="btn btn-sm btn-outline" onClick={() => onOpenLead(lead.id)}>Chi tiết</button></td>
+              </tr>
+            ))}
+            {saleLeads.length === 0 && <tr><td colSpan={7} className="lead-empty">Sale này chưa có khách hàng tiềm năng trong kỳ đã chọn.</td></tr>}
           </tbody>
         </table>
       </div>
