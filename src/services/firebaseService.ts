@@ -15,7 +15,8 @@ import {
   updateDoc, 
   deleteDoc, 
   query, 
-  onSnapshot
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore';
 import { normalizeCustomerRecords, normalizeLeadRecords } from '../domain/crmModels';
 import { normalizeNotificationRecords } from '../domain/notificationModels';
@@ -822,6 +823,18 @@ const deleteLocalDocument = (colName: string, docId: string): boolean => {
   return true;
 };
 
+const createDocumentAlreadyExistsError = (existingDocument: unknown) => Object.assign(
+  new Error('Document already exists.'),
+  { code: 'document-already-exists', existingDocument }
+);
+
+export const isDocumentAlreadyExistsError = (error: unknown): boolean => (
+  typeof error === 'object'
+  && error !== null
+  && 'code' in error
+  && error.code === 'document-already-exists'
+);
+
 // ----------------------------------------------------
 // DB SERVICE WRAPPER (Firestore or Mock DB)
 // ----------------------------------------------------
@@ -872,6 +885,43 @@ export const dbService = {
       }
     }
 
+    upsertLocalDocument(colName, finalDoc);
+    return finalDoc;
+  },
+
+  async addDocumentIfAbsent(colName: string, docId: string, docData: any): Promise<any> {
+    const finalDoc = normalizeCollectionRecords(colName, [{
+      ...docData,
+      id: docId,
+      createdAt: docData.createdAt || new Date().toISOString()
+    }])[0];
+
+    if ((await ensureFirebaseReady()) && realDb) {
+      try {
+        const documentReference = doc(realDb, colName, docId);
+        await runTransaction(realDb, async transaction => {
+          const existingSnapshot = await transaction.get(documentReference);
+          if (existingSnapshot.exists()) {
+            throw createDocumentAlreadyExistsError({
+              id: existingSnapshot.id,
+              ...existingSnapshot.data()
+            });
+          }
+          transaction.set(documentReference, finalDoc);
+        });
+        upsertLocalDocument(colName, finalDoc);
+        return finalDoc;
+      } catch (error) {
+        if (isDocumentAlreadyExistsError(error)) throw error;
+        reportFirebaseFailure(`creating unique document in ${colName}`, error);
+        // Unique records must fail closed. Falling back to a local write here
+        // could let two Sales register the same business while remote sync is down.
+        throw error;
+      }
+    }
+
+    const existingDocument = readLocalCollection(colName).find(item => item.id === docId);
+    if (existingDocument) throw createDocumentAlreadyExistsError(existingDocument);
     upsertLocalDocument(colName, finalDoc);
     return finalDoc;
   },

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  AlertCircle,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -29,13 +30,23 @@ import type {
 } from '../domain/crmModels';
 import { sortNewestFirst } from '../domain/recordOrdering';
 import {
+  createLeadDocumentIdFromTaxCode,
+  findTaxCodeConflict,
+  normalizeTaxCode,
+  type TaxCodeConflictRecord
+} from '../domain/taxCodeUniqueness';
+import {
   findLeadFilterOption,
   findLeadFilterOptionId,
   getLeadFilterValues,
   LEAD_FILTER_IDS,
   mergeLeadFilterDefinitions,
 } from '../domain/leadFilterConfig';
-import { dbService, type UserProfile } from '../services/firebaseService';
+import {
+  dbService,
+  isDocumentAlreadyExistsError,
+  type UserProfile
+} from '../services/firebaseService';
 import {
   LeadDynamicFields,
   LeadFilterAdminModal,
@@ -157,6 +168,7 @@ export const Leads: React.FC<LeadsProps> = ({
   const [editingLeadId, setEditingLeadId] = useState('');
   const [form, setForm] = useState<LeadFormState>(() => createEmptyForm(currentUser, saleUsers));
   const [uploadingFiles, setUploadingFiles] = useState<LeadFileRecord[]>([]);
+  const [taxCodeSaveError, setTaxCodeSaveError] = useState('');
 
   useEffect(() => {
     const unsubscribe = dbService.subscribeCollection('leads', data => {
@@ -241,19 +253,42 @@ export const Leads: React.FC<LeadsProps> = ({
     : null;
 
   const updateForm = <K extends keyof LeadFormState>(field: K, value: LeadFormState[K]) => {
+    if (field === 'taxCode') setTaxCodeSaveError('');
     setForm(previous => ({ ...previous, [field]: value }));
+  };
+
+  const editingLead = editingLeadId
+    ? leads.find(lead => lead.id === editingLeadId) || null
+    : null;
+  const isTaxCodeLocked = Boolean(editingLeadId && normalizeTaxCode(editingLead?.taxCode));
+  const taxCodeConflict = useMemo(() => findTaxCodeConflict(
+    form.taxCode,
+    leads,
+    customers,
+    editingLeadId,
+    editingLead?.convertedCustomerId || ''
+  ), [customers, editingLead?.convertedCustomerId, editingLeadId, form.taxCode, leads]);
+
+  const describeTaxCodeConflict = (conflict: TaxCodeConflictRecord): string => {
+    const saleName = conflict.assignedSaleName
+      || users.find(user => user.uid === conflict.assignedSaleId)?.displayName
+      || 'Sale khác';
+    const profileType = conflict.recordType === 'customer' ? 'khách hàng CRM' : 'khách hàng tiềm năng';
+    return `Mã số thuế này đã thuộc ${profileType} “${conflict.companyName}” và đang do ${saleName} phụ trách.`;
   };
 
   const openCreateForm = () => {
     setEditingLeadId('');
     setUploadingFiles([]);
     setForm(createEmptyForm(currentUser, saleUsers));
+    setTaxCodeSaveError('');
     setShowLeadForm(true);
   };
 
   const openEditForm = (lead: LeadRecord) => {
     setEditingLeadId(lead.id);
     setUploadingFiles(lead.files || []);
+    setTaxCodeSaveError('');
     setForm({
       companyName: lead.companyName,
       contactPerson: lead.contactPerson,
@@ -293,15 +328,31 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const handleSaveLead = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.companyName.trim()) return;
+    const normalizedTaxCode = normalizeTaxCode(form.taxCode);
+    if (!form.companyName.trim() || !normalizedTaxCode) return;
+
+    const [latestLeadData, latestCustomerData] = await Promise.all([
+      dbService.getCollection('leads'),
+      dbService.getCollection('customers')
+    ]);
+    const latestConflict = findTaxCodeConflict(
+      form.taxCode,
+      latestLeadData as LeadRecord[],
+      latestCustomerData as CustomerRecord[],
+      editingLeadId,
+      editingLead?.convertedCustomerId || ''
+    );
+    if (latestConflict) {
+      setTaxCodeSaveError(describeTaxCodeConflict(latestConflict));
+      return;
+    }
 
     const assignedSale = saleUsers.find(user => user.uid === form.assignedSaleId);
     const discoveredById = form.discoveredById
       || (currentUser.role === 'sale' ? currentUser.uid : form.assignedSaleId);
     const discoveredBy = saleUsers.find(user => user.uid === discoveredById);
-    const existingLead = editingLeadId ? leads.find(lead => lead.id === editingLeadId) : null;
-    const currentFilterValues = existingLead
-      ? getLeadFilterValues(existingLead, filterDefinitions)
+    const currentFilterValues = editingLead
+      ? getLeadFilterValues(editingLead, filterDefinitions)
       : {};
     const profileFilterValues = {
       ...currentFilterValues,
@@ -316,7 +367,7 @@ export const Leads: React.FC<LeadsProps> = ({
       contactPerson: form.contactPerson.trim(),
       phone: form.phone.trim(),
       email: form.email.trim(),
-      taxCode: form.taxCode.trim(),
+      taxCode: normalizedTaxCode,
       address: form.address.trim(),
       province: form.province.trim(),
       companySize: form.companySize,
@@ -340,19 +391,41 @@ export const Leads: React.FC<LeadsProps> = ({
     if (editingLeadId) {
       await dbService.updateDocument('leads', editingLeadId, payload);
     } else {
-      await dbService.addDocument('leads', {
-        ...payload,
-        activities: [{
-          id: `activity-${now}`,
-          type: 'created',
-          note: 'Khởi tạo khách hàng tiềm năng',
-          occurredAt: now,
-          createdById: currentUser.uid,
-          createdByName: currentUser.displayName
-        }],
-        createdAt: now,
-        createdById: currentUser.uid
-      });
+      try {
+        await dbService.addDocumentIfAbsent(
+          'leads',
+          createLeadDocumentIdFromTaxCode(normalizedTaxCode),
+          {
+            ...payload,
+            activities: [{
+              id: `activity-${now}`,
+              type: 'created',
+              note: 'Khởi tạo khách hàng tiềm năng',
+              occurredAt: now,
+              createdById: currentUser.uid,
+              createdByName: currentUser.displayName
+            }],
+            createdAt: now,
+            createdById: currentUser.uid
+          }
+        );
+      } catch (error) {
+        if (!isDocumentAlreadyExistsError(error)) {
+          setTaxCodeSaveError('Không thể xác minh mã số thuế trên hệ thống. Lead chưa được lưu; vui lòng thử lại.');
+          return;
+        }
+        const existingLead = (error as { existingDocument?: LeadRecord }).existingDocument;
+        setTaxCodeSaveError(existingLead
+          ? describeTaxCodeConflict({
+              id: existingLead.id,
+              recordType: 'lead',
+              companyName: existingLead.companyName,
+              assignedSaleId: existingLead.assignedSaleId,
+              assignedSaleName: existingLead.assignedSaleName
+            })
+          : 'Mã số thuế này vừa được một Sale khác đăng ký. Vui lòng kiểm tra lại.');
+        return;
+      }
     }
 
     setShowLeadForm(false);
@@ -668,8 +741,26 @@ export const Leads: React.FC<LeadsProps> = ({
                   <input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label>{t('Mã số thuế')}</label>
-                  <input value={form.taxCode} onChange={event => updateForm('taxCode', event.target.value)} />
+                  <label>{t('Mã số thuế *')}</label>
+                  <input
+                    value={form.taxCode}
+                    onChange={event => updateForm('taxCode', event.target.value)}
+                    required
+                    readOnly={isTaxCodeLocked}
+                    aria-invalid={Boolean(taxCodeConflict || taxCodeSaveError)}
+                    aria-describedby="lead-tax-code-guidance"
+                  />
+                  <span
+                    id="lead-tax-code-guidance"
+                    className={taxCodeConflict || taxCodeSaveError ? 'lead-tax-code-message is-error' : 'lead-tax-code-message'}
+                  >
+                    {(taxCodeConflict || taxCodeSaveError) && <AlertCircle size={13} />}
+                    {taxCodeConflict
+                      ? describeTaxCodeConflict(taxCodeConflict)
+                      : taxCodeSaveError || (isTaxCodeLocked
+                        ? t('Mã số thuế là định danh duy nhất và không thể thay đổi sau khi tạo Lead.')
+                        : t('Mã số thuế được kiểm tra trên toàn bộ Lead và khách hàng CRM.'))}
+                  </span>
                 </div>
                 <div className="form-group lead-form-grid__wide">
                   <label>{t('Địa chỉ')}</label>
@@ -733,7 +824,13 @@ export const Leads: React.FC<LeadsProps> = ({
             <span>{t('Các thay đổi chỉ được ghi nhận khi bấm Lưu.')}</span>
             <div>
               <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>{t('Hủy')}</button>
-              <button type="submit" className="btn btn-primary">{editingLeadId ? t('Cập nhật Lead') : t('Lưu Lead')}</button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={Boolean(taxCodeConflict) || !normalizeTaxCode(form.taxCode)}
+              >
+                {editingLeadId ? t('Cập nhật Lead') : t('Lưu Lead')}
+              </button>
             </div>
           </footer>
         </form>

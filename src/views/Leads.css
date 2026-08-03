@@ -397,6 +397,38 @@
   grid-column: 1 / -1;
 }
 
+.lead-tax-code-message {
+  min-height: 17px;
+  margin-top: 5px;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: #64748b;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.lead-tax-code-message.is-error {
+  color: #b91c1c;
+  font-weight: 650;
+}
+
+.lead-tax-code-message svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.lead-form-grid input[aria-invalid='true'] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgb(220 38 38 / 10%);
+}
+
+.lead-form-grid input[readonly] {
+  color: #475569;
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
+
 .lead-file-dropzone {
   position: relative;
   display: grid;
