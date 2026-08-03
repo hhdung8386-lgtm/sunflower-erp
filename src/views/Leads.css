@@ -353,7 +353,7 @@
 
 .lead-form-page__content {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr);
+  grid-template-columns: minmax(390px, 1.25fr) minmax(280px, .75fr) minmax(310px, .85fr);
   align-items: start;
   gap: 14px;
 }
@@ -385,6 +385,10 @@
   margin: 3px 0 0;
   color: #64748b;
   font-size: 10.5px;
+}
+
+.lead-form-card--classification .lead-compact-filter-row {
+  grid-template-columns: 86px minmax(0, 1fr);
 }
 
 .lead-form-grid {
@@ -1436,6 +1440,12 @@
 @media (max-width: 1350px) {
   .lead-toolbar {
     grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(105px, .7fr)) auto;
+  }
+}
+
+@media (max-width: 1200px) {
+  .lead-form-page__content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

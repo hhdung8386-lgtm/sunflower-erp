@@ -131,6 +131,28 @@ const matchesEverySearchTerm = (searchTerm: string, values: unknown[]) => {
   return terms.every(term => haystack.includes(term));
 };
 
+const updateLeadFilterValues = (
+  currentValues: Record<string, string[]>,
+  field: LeadFilterDefinition,
+  value: string,
+  checked?: boolean
+) => {
+  const previousFieldValues = currentValues[field.id] || [];
+  let nextFieldValues: string[];
+
+  if (field.type === 'multi_select') {
+    nextFieldValues = checked
+      ? Array.from(new Set([...previousFieldValues, value]))
+      : previousFieldValues.filter(item => item !== value);
+  } else if (field.type === 'checkbox') {
+    nextFieldValues = checked ? ['true'] : [];
+  } else {
+    nextFieldValues = value ? [value] : [];
+  }
+
+  return { ...currentValues, [field.id]: nextFieldValues };
+};
+
 const createEmptyForm = (currentUser: UserProfile, saleUsers: UserProfile[]): LeadFormState => ({
   companyName: '',
   contactPerson: '',
@@ -169,6 +191,7 @@ export const Leads: React.FC<LeadsProps> = ({
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [editingLeadId, setEditingLeadId] = useState('');
   const [form, setForm] = useState<LeadFormState>(() => createEmptyForm(currentUser, saleUsers));
+  const [formFilterValues, setFormFilterValues] = useState<Record<string, string[]>>({});
   const [uploadingFiles, setUploadingFiles] = useState<LeadFileRecord[]>([]);
   const [taxCodeSaveError, setTaxCodeSaveError] = useState('');
 
@@ -281,6 +304,7 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const openCreateForm = () => {
     setEditingLeadId('');
+    setFormFilterValues({});
     setUploadingFiles([]);
     setForm(createEmptyForm(currentUser, saleUsers));
     setTaxCodeSaveError('');
@@ -289,6 +313,7 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const openEditForm = (lead: LeadRecord) => {
     setEditingLeadId(lead.id);
+    setFormFilterValues(getLeadFilterValues(lead, filterDefinitions));
     setUploadingFiles(lead.files || []);
     setTaxCodeSaveError('');
     setForm({
@@ -310,6 +335,23 @@ export const Leads: React.FC<LeadsProps> = ({
       note: lead.note
     });
     setShowLeadForm(true);
+  };
+
+  const handleFormFilterValueChange = (
+    field: LeadFilterDefinition,
+    value: string,
+    checked?: boolean
+  ) => {
+    setFormFilterValues(previous => updateLeadFilterValues(previous, field, value, checked));
+
+    const selectedLabel = field.options.find(option => option.id === value)?.label || '';
+    if (field.id === LEAD_FILTER_IDS.companySize) {
+      updateForm('companySize', ['', 'large', 'medium', 'small'].includes(value) ? value as LeadCompanySize : '');
+    } else if (field.id === LEAD_FILTER_IDS.province) {
+      updateForm('province', selectedLabel);
+    } else if (field.id === LEAD_FILTER_IDS.source) {
+      updateForm('source', selectedLabel);
+    }
   };
 
   const handleLeadFilesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,6 +400,7 @@ export const Leads: React.FC<LeadsProps> = ({
       : {};
     const profileFilterValues = {
       ...currentFilterValues,
+      ...formFilterValues,
       [LEAD_FILTER_IDS.companySize]: form.companySize ? [form.companySize] : [],
       [LEAD_FILTER_IDS.province]: [findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.province, form.province)].filter(Boolean),
       [LEAD_FILTER_IDS.source]: [findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.source, form.source)].filter(Boolean)
@@ -440,20 +483,7 @@ export const Leads: React.FC<LeadsProps> = ({
     checked?: boolean
   ) => {
     const currentValues = getLeadFilterValues(lead, filterDefinitions);
-    const previousFieldValues = currentValues[field.id] || [];
-    let nextFieldValues: string[];
-
-    if (field.type === 'multi_select') {
-      nextFieldValues = checked
-        ? Array.from(new Set([...previousFieldValues, value]))
-        : previousFieldValues.filter(item => item !== value);
-    } else if (field.type === 'checkbox') {
-      nextFieldValues = checked ? ['true'] : [];
-    } else {
-      nextFieldValues = value ? [value] : [];
-    }
-
-    const nextFilterValues = { ...currentValues, [field.id]: nextFieldValues };
+    const nextFilterValues = updateLeadFilterValues(currentValues, field, value, checked);
     const optionLabel = field.options.find(item => item.id === value)?.label || value || 'để trống';
     const actionLabel = field.type === 'multi_select' || field.type === 'checkbox'
       ? (checked ? 'Thêm' : 'Bỏ')
@@ -632,7 +662,7 @@ export const Leads: React.FC<LeadsProps> = ({
           <div>
             <span>{editingLeadId ? t('CHỈNH SỬA HỒ SƠ') : t('HỒ SƠ MỚI')}</span>
             <h1>{editingLeadId ? t('Chỉnh sửa khách hàng tiềm năng') : t('Thêm khách hàng tiềm năng')}</h1>
-            <p>{t('Ghi nhận thông tin doanh nghiệp và lịch phụ trách. Năm nhóm phân loại được cập nhật tại trang chi tiết Lead.')}</p>
+            <p>{t('Ghi nhận đầy đủ hồ sơ, phân loại và lịch phụ trách trong một lần tạo Lead.')}</p>
           </div>
         </header>
 
@@ -686,7 +716,42 @@ export const Leads: React.FC<LeadsProps> = ({
                   <label>{t('Địa chỉ')}</label>
                   <input value={form.address} onChange={event => updateForm('address', event.target.value)} />
                 </div>
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Ghi chú')}</label>
+                  <textarea rows={4} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder={t('Thông tin cần lưu ý khi làm việc với khách hàng...')} />
+                </div>
+                <div className="form-group lead-form-grid__wide">
+                  <label>{t('Tệp / tài liệu liên quan')}</label>
+                  <div className="lead-file-dropzone">
+                    <Paperclip size={18} />
+                    <div><strong>{t('Chọn tệp từ máy tính')}</strong><span>{t('Có thể gắn nhiều báo giá, hình ảnh hoặc tài liệu liên quan.')}</span></div>
+                    <input type="file" multiple onChange={handleLeadFilesChange} />
+                  </div>
+                  {uploadingFiles.length > 0 && (
+                    <div className="lead-upload-list">
+                      {uploadingFiles.map(file => (
+                        <span key={file.id}>
+                          <Paperclip size={12} /> {file.name}
+                          <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))} aria-label={`${t('Bỏ tệp')} ${file.name}`}><X size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+            </section>
+
+            <section className="lead-form-card lead-form-card--classification">
+              <div className="lead-form-card__heading">
+                <Tags size={18} />
+                <div><h2>{t('Phân loại khách hàng')}</h2><p>{t('Chọn thông tin để tìm kiếm, theo dõi và đánh giá Lead.')}</p></div>
+              </div>
+              <LeadDynamicFields
+                values={formFilterValues}
+                definitions={filterDefinitions}
+                canEditAll={currentUser.role === 'admin'}
+                onChange={handleFormFilterValueChange}
+              />
             </section>
 
             <section className="lead-form-card">
@@ -714,28 +779,6 @@ export const Leads: React.FC<LeadsProps> = ({
                 <div className="form-group lead-form-grid__wide">
                   <label>{t('Lịch chăm sóc tiếp theo')}</label>
                   <input type="datetime-local" value={form.nextFollowUpAt} onChange={event => updateForm('nextFollowUpAt', event.target.value)} />
-                </div>
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Ghi chú')}</label>
-                  <textarea rows={5} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder={t('Thông tin cần lưu ý khi làm việc với khách hàng...')} />
-                </div>
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Tài liệu đính kèm')}</label>
-                  <div className="lead-file-dropzone">
-                    <Paperclip size={18} />
-                    <div><strong>{t('Chọn tệp từ máy tính')}</strong><span>{t('Có thể gắn nhiều báo giá, hình ảnh hoặc tài liệu liên quan.')}</span></div>
-                    <input type="file" multiple onChange={handleLeadFilesChange} />
-                  </div>
-                  {uploadingFiles.length > 0 && (
-                    <div className="lead-upload-list">
-                      {uploadingFiles.map(file => (
-                        <span key={file.id}>
-                          <Paperclip size={12} /> {file.name}
-                          <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))} aria-label={`${t('Bỏ tệp')} ${file.name}`}><X size={12} /></button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             </section>

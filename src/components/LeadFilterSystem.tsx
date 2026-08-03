@@ -25,12 +25,14 @@ const FIELD_TYPE_LABELS: Record<LeadCustomFieldType, string> = {
 const DEFAULT_OPTION_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706', '#dc2626'];
 
 export const LeadDynamicFields: React.FC<{
-  lead: LeadRecord;
+  lead?: LeadRecord;
+  values?: Record<string, string[]>;
   definitions: LeadFilterDefinition[];
   canEditAll: boolean;
   onChange: (field: LeadFilterDefinition, value: string, checked?: boolean) => void;
-}> = ({ lead, definitions, canEditAll, onChange }) => {
-  const values = getLeadFilterValues(lead, definitions);
+}> = ({ lead, values: controlledValues, definitions, canEditAll, onChange }) => {
+  const values = controlledValues || (lead ? getLeadFilterValues(lead, definitions) : {});
+  const fieldKeyPrefix = lead?.id || 'lead-draft';
 
   return (
     <div className="lead-compact-filters">
@@ -92,7 +94,7 @@ export const LeadDynamicFields: React.FC<{
         }
 
         return (
-          <label key={`${lead.id}-${field.id}-${fieldValues[0] || ''}`} className="lead-compact-filter-row">
+          <label key={`${fieldKeyPrefix}-${field.id}-${fieldValues[0] || ''}`} className="lead-compact-filter-row">
             <span>{field.name}</span>
             <input
               type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
