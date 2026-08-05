@@ -27,6 +27,7 @@ import {
   isDocumentAlreadyExistsError,
   type UserProfile
 } from '../services/firebaseService';
+import { PageBackButton } from './PageBackButton';
 
 interface LeadCandidateWorkspaceProps {
   candidates: LeadCandidateRecord[];
@@ -312,9 +313,18 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       }
       setShowForm(false);
     } catch (error) {
-      setSaveError(isDocumentAlreadyExistsError(error)
-        ? 'Mã số thuế này vừa được một Sale khác lưu vào Dữ liệu khách hàng.'
-        : 'Không thể lưu dữ liệu khách hàng. Vui lòng kiểm tra kết nối và thử lại.');
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : '';
+      if (isDocumentAlreadyExistsError(error)) {
+        setSaveError('Mã số thuế này vừa được một Sale khác lưu vào Dữ liệu khách hàng.');
+      } else if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
+        setSaveError('Firebase chưa cấp quyền lưu Dữ liệu khách hàng. Admin cần xuất bản Firestore Rules mới nhất.');
+      } else if (errorCode === 'auth/session-expired' || errorCode === 'unauthenticated') {
+        setSaveError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.');
+      } else {
+        setSaveError('Không thể lưu dữ liệu khách hàng. Vui lòng kiểm tra kết nối và thử lại.');
+      }
     }
   };
 
@@ -344,6 +354,79 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       updatedBy: currentUser.displayName
     });
   };
+
+  if (showForm) {
+    return (
+      <div className="lead-form-page lead-candidate-form-page">
+        <header className="lead-form-page__header">
+          <PageBackButton onClick={() => setShowForm(false)} />
+          <div>
+            <span>{editingCandidateId ? 'CHỈNH SỬA DỮ LIỆU' : 'DỮ LIỆU MỚI'}</span>
+            <h1>{editingCandidateId ? 'Chỉnh sửa dữ liệu khách hàng' : 'Thêm dữ liệu khách hàng'}</h1>
+            <p>Ghi nhận doanh nghiệp tìm được, nguồn thông tin và người phụ trách trước lần tiếp cận đầu tiên.</p>
+          </div>
+        </header>
+
+        <form className="lead-form-page__form" onSubmit={handleSaveCandidate}>
+          <div className="lead-form-page__content lead-candidate-form-page__content">
+            <section className="lead-form-card">
+              <div className="lead-form-card__heading">
+                <Building2 size={18} />
+                <div><h2>Thông tin doanh nghiệp</h2><p>Thông tin nhận diện và đầu mối liên hệ ban đầu.</p></div>
+              </div>
+              <div className="lead-form-grid">
+                <div className="form-group lead-form-grid__wide"><label>Tên doanh nghiệp *</label><input autoFocus required value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} /></div>
+                <div className="form-group"><label>Mã số thuế</label><input value={form.taxCode} readOnly={Boolean(editingCandidate?.taxCode)} onChange={event => updateForm('taxCode', event.target.value)} /></div>
+                <div className="form-group"><label>Người liên hệ</label><input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} /></div>
+                <div className="form-group"><label>Điện thoại</label><input type="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)} /></div>
+                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} /></div>
+                <div className="form-group lead-form-grid__wide"><label>Địa chỉ</label><input value={form.address} onChange={event => updateForm('address', event.target.value)} /></div>
+              </div>
+            </section>
+
+            <section className="lead-form-card">
+              <div className="lead-form-card__heading">
+                <ExternalLink size={18} />
+                <div><h2>Nguồn dữ liệu</h2><p>Lưu lại nơi tìm thấy doanh nghiệp để thuận tiện kiểm tra.</p></div>
+              </div>
+              <div className="lead-form-grid">
+                <div className="form-group lead-form-grid__wide"><label>Nguồn tìm kiếm</label><select value={form.source} onChange={event => updateForm('source', event.target.value)}>{CANDIDATE_SOURCES.map(source => <option key={source}>{source}</option>)}</select></div>
+                <div className="form-group lead-form-grid__wide"><label>Website</label><input type="url" value={form.website} onChange={event => updateForm('website', event.target.value)} placeholder="https://..." /></div>
+                <div className="form-group lead-form-grid__wide"><label>Đường dẫn nguồn</label><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="Link Google Maps, Facebook hoặc trang doanh nghiệp..." /></div>
+              </div>
+            </section>
+
+            <section className="lead-form-card">
+              <div className="lead-form-card__heading">
+                <CalendarClock size={18} />
+                <div><h2>Phụ trách và lịch tiếp cận</h2><p>Thông tin phục vụ phân công và theo dõi của Sale.</p></div>
+              </div>
+              <div className="lead-form-grid">
+                <div className="form-group"><label>Người phụ trách *</label><select required value={form.assignedSaleId} disabled={currentUser.role === 'sale'} onChange={event => updateForm('assignedSaleId', event.target.value)}><option value="">Chưa phân công</option>{candidateOwners.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
+                <div className="form-group"><label>Lịch tiếp cận</label><input type="datetime-local" value={form.nextContactAt} onChange={event => updateForm('nextContactAt', event.target.value)} /></div>
+                <div className="form-group lead-form-grid__wide"><label>Ghi chú</label><textarea rows={6} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder="Thông tin sơ bộ trước khi Sale liên hệ..." /></div>
+              </div>
+            </section>
+          </div>
+
+          {(duplicate || saveError) && (
+            <div className={`lead-candidate-warning ${hasBlockingDuplicate || saveError ? 'is-error' : ''}`}>
+              <AlertCircle size={15} />
+              <span>{saveError || (duplicate && describeDuplicate(duplicate))}</span>
+            </div>
+          )}
+
+          <footer className="lead-form-page__footer">
+            <span>Dữ liệu chỉ được ghi nhận khi bấm Lưu dữ liệu.</span>
+            <div>
+              <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Hủy</button>
+              <button type="submit" className="btn btn-primary" disabled={Boolean(hasBlockingDuplicate)}>Lưu dữ liệu</button>
+            </div>
+          </footer>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="lead-candidate-workspace">
@@ -461,54 +544,6 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
           </table>
         </div>
       </section>
-
-      {showForm && (
-        <div className="modal-overlay">
-          <form className="modal-content lead-candidate-modal" onSubmit={handleSaveCandidate}>
-            <div className="modal-header">
-              <div>
-                <strong>{editingCandidateId ? 'CHỈNH SỬA DỮ LIỆU KHÁCH HÀNG' : 'THÊM DỮ LIỆU KHÁCH HÀNG'}</strong>
-                <span>Doanh nghiệp ở đây chưa được tính là Lead cho đến khi Sale thực hiện lần tiếp cận đầu tiên.</span>
-              </div>
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowForm(false)}><X size={14} /> Đóng</button>
-            </div>
-            <div className="modal-body lead-candidate-form">
-              <section>
-                <div className="lead-candidate-section-title"><Building2 size={16} /><strong>Thông tin doanh nghiệp</strong></div>
-                <div className="lead-form-grid">
-                  <div className="form-group lead-form-grid__wide"><label>Tên doanh nghiệp *</label><input autoFocus required value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} /></div>
-                  <div className="form-group"><label>Mã số thuế</label><input value={form.taxCode} readOnly={Boolean(editingCandidate?.taxCode)} onChange={event => updateForm('taxCode', event.target.value)} /></div>
-                  <div className="form-group"><label>Người liên hệ</label><input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} /></div>
-                  <div className="form-group"><label>Điện thoại</label><input type="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)} /></div>
-                  <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} /></div>
-                  <div className="form-group lead-form-grid__wide"><label>Địa chỉ</label><input value={form.address} onChange={event => updateForm('address', event.target.value)} /></div>
-                  <div className="form-group"><label>Website</label><input type="url" value={form.website} onChange={event => updateForm('website', event.target.value)} placeholder="https://..." /></div>
-                  <div className="form-group"><label>Nguồn tìm kiếm</label><select value={form.source} onChange={event => updateForm('source', event.target.value)}>{CANDIDATE_SOURCES.map(source => <option key={source}>{source}</option>)}</select></div>
-                  <div className="form-group lead-form-grid__wide"><label>Đường dẫn nguồn</label><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="Link Google Maps, Facebook hoặc trang doanh nghiệp..." /></div>
-                </div>
-              </section>
-              <section>
-                <div className="lead-candidate-section-title"><CalendarClock size={16} /><strong>Phân công tiếp cận</strong></div>
-                <div className="lead-form-grid">
-                  <div className="form-group"><label>Người phụ trách *</label><select required value={form.assignedSaleId} disabled={currentUser.role === 'sale'} onChange={event => updateForm('assignedSaleId', event.target.value)}><option value="">Chưa phân công</option>{candidateOwners.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
-                  <div className="form-group"><label>Lịch tiếp cận</label><input type="datetime-local" value={form.nextContactAt} onChange={event => updateForm('nextContactAt', event.target.value)} /></div>
-                  <div className="form-group lead-form-grid__wide"><label>Ghi chú</label><textarea rows={4} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder="Thông tin sơ bộ trước khi Sale liên hệ..." /></div>
-                </div>
-              </section>
-              {(duplicate || saveError) && (
-                <div className={`lead-candidate-warning ${hasBlockingDuplicate || saveError ? 'is-error' : ''}`}>
-                  <AlertCircle size={15} />
-                  <span>{saveError || (duplicate && describeDuplicate(duplicate))}</span>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Hủy</button>
-              <button type="submit" className="btn btn-primary" disabled={Boolean(hasBlockingDuplicate)}>Lưu dữ liệu</button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {attemptCandidate && (
         <div className="modal-overlay">
