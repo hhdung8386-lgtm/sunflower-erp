@@ -200,14 +200,6 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   ), [candidates, customers, editingCandidateId, form.companyName, form.phone, form.taxCode, leads]);
   const hasBlockingDuplicate = duplicate?.reason === 'taxCode';
 
-  const newCount = accessibleCandidates.filter(candidate => candidate.status === 'new').length;
-  const retryCount = accessibleCandidates.filter(candidate => candidate.status === 'retry').length;
-  const convertedCount = accessibleCandidates.filter(candidate => candidate.status === 'converted').length;
-  const dueCount = accessibleCandidates.filter(candidate => {
-    if (!candidate.nextContactAt || !['new', 'retry'].includes(candidate.status)) return false;
-    return new Date(candidate.nextContactAt).getTime() < CANDIDATE_WORKSPACE_REFERENCE_TIME;
-  }).length;
-
   const updateForm = <K extends keyof CandidateFormState>(field: K, value: CandidateFormState[K]) => {
     setSaveError('');
     setForm(previous => ({ ...previous, [field]: value }));
@@ -366,13 +358,6 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
         <button type="button" className="btn btn-primary" onClick={openCreateForm}>
           <Plus size={15} /> Thêm dữ liệu khách hàng
         </button>
-      </div>
-
-      <div className="lead-candidate-metrics">
-        <div><span>Chưa tiếp cận</span><strong>{newCount}</strong></div>
-        <div><span>Cần liên hệ lại</span><strong>{retryCount}</strong></div>
-        <div><span>Quá lịch tiếp cận</span><strong>{dueCount}</strong></div>
-        <div><span>Đã thành Lead</span><strong>{convertedCount}</strong></div>
       </div>
 
       <section className="lead-candidate-toolbar">
