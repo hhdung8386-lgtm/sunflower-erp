@@ -195,6 +195,7 @@ export const getLeadFilterValues = (
     || [findLeadFilterOptionId(definitions, LEAD_FILTER_IDS.source, lead.source)].filter(Boolean);
 
   return {
+    ...existingValues,
     [LEAD_FILTER_IDS.companySize]: companySizeValues,
     [LEAD_FILTER_IDS.province]: provinceValues,
     [LEAD_FILTER_IDS.productNeed]: productNeedValues,
@@ -205,7 +206,8 @@ export const getLeadFilterValues = (
 
 export const mergeLeadFilterDefinitions = (stored: LeadFilterDefinition[] = []): LeadFilterDefinition[] => {
   const storedById = new Map(stored.map(field => [field.id, field]));
-  return DEFAULT_LEAD_FILTER_DEFINITIONS.map(defaultField => {
+  const defaultIds = new Set(DEFAULT_LEAD_FILTER_DEFINITIONS.map(field => field.id));
+  const defaultDefinitions = DEFAULT_LEAD_FILTER_DEFINITIONS.map(defaultField => {
     const savedField = storedById.get(defaultField.id);
     if (!savedField) return defaultField;
     return {
@@ -214,5 +216,11 @@ export const mergeLeadFilterDefinitions = (stored: LeadFilterDefinition[] = []):
       id: defaultField.id,
       options: Array.isArray(savedField.options) ? savedField.options : defaultField.options
     };
-  }).sort((a, b) => a.order - b.order);
+  });
+  const customDefinitions = stored.filter(field => !defaultIds.has(field.id)).map(field => ({
+    ...field,
+    options: Array.isArray(field.options) ? field.options : []
+  }));
+
+  return [...defaultDefinitions, ...customDefinitions].sort((a, b) => a.order - b.order);
 };

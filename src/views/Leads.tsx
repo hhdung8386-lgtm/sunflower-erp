@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarClock,
   CheckCircle2,
+  Database,
   FileText,
   Filter,
   List,
@@ -24,9 +25,15 @@ import type {
   LeadCompanySize,
   LeadFileRecord,
   LeadFilterDefinition,
+  LeadProfileFieldDefinition,
   LeadRecord,
   LeadStage
 } from '../domain/crmModels';
+import {
+  findCandidateDuplicate,
+  mapCandidateSourceToLeadSource,
+  type LeadCandidateRecord
+} from '../domain/leadCandidateModels';
 import { sortNewestFirst } from '../domain/recordOrdering';
 import {
   createLeadDocumentIdFromTaxCode,
@@ -51,6 +58,8 @@ import {
   LeadFilterAdminModal,
   LeadSalesWorkspace
 } from '../components/LeadFilterSystem';
+import { LeadCandidateWorkspace } from '../components/LeadCandidateWorkspace';
+import { LeadProfileAdminModal, LeadProfileFields } from '../components/LeadProfileFields';
 import { PageBackButton } from '../components/PageBackButton';
 import './Leads.css';
 
@@ -183,17 +192,24 @@ export const Leads: React.FC<LeadsProps> = ({
   const saleUsers = useMemo(() => users.filter(user => user.role === 'sale'), [users]);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [workspaceTab, setWorkspaceTab] = useState<'list' | 'performance'>('list');
+  const [workspaceTab, setWorkspaceTab] = useState<'list' | 'performance' | 'data'>('list');
+  const [candidates, setCandidates] = useState<LeadCandidateRecord[]>([]);
   const [showFilterConfig, setShowFilterConfig] = useState(false);
+  const [showProfileConfig, setShowProfileConfig] = useState(false);
   const [storedFilterDefinitions, setStoredFilterDefinitions] = useState<LeadFilterDefinition[]>([]);
+  const [profileDefinitions, setProfileDefinitions] = useState<LeadProfileFieldDefinition[]>([]);
   const [dynamicFilters, setDynamicFilters] = useState<Record<string, string[]>>({});
+  const [openFilterId, setOpenFilterId] = useState('');
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [editingLeadId, setEditingLeadId] = useState('');
+  const [convertingCandidateId, setConvertingCandidateId] = useState('');
   const [form, setForm] = useState<LeadFormState>(() => createEmptyForm(currentUser, saleUsers));
   const [formFilterValues, setFormFilterValues] = useState<Record<string, string[]>>({});
+  const [formProfileValues, setFormProfileValues] = useState<Record<string, string[]>>({});
   const [uploadingFiles, setUploadingFiles] = useState<LeadFileRecord[]>([]);
   const [taxCodeSaveError, setTaxCodeSaveError] = useState('');
+  const [profileSaveError, setProfileSaveError] = useState('');
 
   useEffect(() => {
     const unsubscribe = dbService.subscribeCollection('leads', data => {
@@ -203,8 +219,43 @@ export const Leads: React.FC<LeadsProps> = ({
   }, []);
 
   useEffect(() => {
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && !target.closest('[data-lead-filter-popover]')) {
+        setOpenFilterId('');
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenFilterId('');
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = dbService.subscribeCollection('lead_candidates', data => {
+      setCandidates(sortNewestFirst(data as LeadCandidateRecord[], candidate => [candidate.createdAt, candidate.updatedAt]));
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     const unsubscribeDefinitions = dbService.subscribeCollection('lead_filter_definitions', data => {
       setStoredFilterDefinitions(data as LeadFilterDefinition[]);
+    });
+    return unsubscribeDefinitions;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeDefinitions = dbService.subscribeCollection('lead_profile_field_definitions', data => {
+      const definitions = (data as LeadProfileFieldDefinition[])
+        .map(field => ({ ...field, options: Array.isArray(field.options) ? field.options : [] }))
+        .sort((a, b) => a.order - b.order);
+      setProfileDefinitions(definitions);
     });
     return unsubscribeDefinitions;
   }, []);
@@ -218,6 +269,10 @@ export const Leads: React.FC<LeadsProps> = ({
     if (currentUser.role === 'admin') return true;
     return lead.assignedSaleId === currentUser.uid;
   }), [currentUser.role, currentUser.uid, leads]);
+
+  const accessibleCandidates = useMemo(() => candidates.filter(candidate => (
+    currentUser.role === 'admin' || candidate.assignedSaleId === currentUser.uid
+  )), [candidates, currentUser.role, currentUser.uid]);
 
   const isOverdue = (lead: LeadRecord) => {
     if (!lead.nextFollowUpAt || ['won', 'lost', 'converted'].includes(lead.stage)) return false;
@@ -248,7 +303,11 @@ export const Leads: React.FC<LeadsProps> = ({
           const definition = filterDefinitions.find(field => field.id === fieldId);
           return optionIds.map(optionId => definition?.options.find(item => item.id === optionId)?.label || optionId);
         }),
-        (lead.activities || []).map(activity => activity.note)
+        (lead.activities || []).map(activity => activity.note),
+        Object.entries(lead.profileValues || {}).flatMap(([fieldId, fieldValues]) => {
+          const definition = profileDefinitions.find(field => field.id === fieldId);
+          return fieldValues.map(value => definition?.options.find(option => option.id === value)?.label || value);
+        })
       ]);
       const matchesClassifications = Object.entries(dynamicFilters)
         .filter(([, selectedValues]) => selectedValues.length > 0)
@@ -264,7 +323,8 @@ export const Leads: React.FC<LeadsProps> = ({
     dynamicFilters,
     filterDefinitions,
     searchTerm,
-    users
+    users,
+    profileDefinitions
   ]);
 
   const pursuedLeadCount = accessibleLeads.filter(lead => {
@@ -285,7 +345,13 @@ export const Leads: React.FC<LeadsProps> = ({
   const editingLead = editingLeadId
     ? leads.find(lead => lead.id === editingLeadId) || null
     : null;
-  const isTaxCodeLocked = Boolean(editingLeadId && normalizeTaxCode(editingLead?.taxCode));
+  const convertingCandidate = convertingCandidateId
+    ? candidates.find(candidate => candidate.id === convertingCandidateId) || null
+    : null;
+  const isTaxCodeLocked = Boolean(
+    (editingLeadId && normalizeTaxCode(editingLead?.taxCode))
+    || (convertingCandidateId && normalizeTaxCode(convertingCandidate?.taxCode))
+  );
   const taxCodeConflict = useMemo(() => findTaxCodeConflict(
     form.taxCode,
     leads,
@@ -293,6 +359,15 @@ export const Leads: React.FC<LeadsProps> = ({
     editingLeadId,
     editingLead?.convertedCustomerId || ''
   ), [customers, editingLead?.convertedCustomerId, editingLeadId, form.taxCode, leads]);
+  const candidateTaxCodeConflict = useMemo(() => {
+    const normalizedTaxCode = normalizeTaxCode(form.taxCode);
+    if (!normalizedTaxCode) return null;
+    const excludedCandidateId = convertingCandidateId || editingLead?.sourceCandidateId || '';
+    return candidates.find(candidate => (
+      candidate.id !== excludedCandidateId
+      && normalizeTaxCode(candidate.taxCode) === normalizedTaxCode
+    )) || null;
+  }, [candidates, convertingCandidateId, editingLead?.sourceCandidateId, form.taxCode]);
 
   const describeTaxCodeConflict = (conflict: TaxCodeConflictRecord): string => {
     const saleName = conflict.assignedSaleName
@@ -304,18 +379,24 @@ export const Leads: React.FC<LeadsProps> = ({
 
   const openCreateForm = () => {
     setEditingLeadId('');
+    setConvertingCandidateId('');
     setFormFilterValues({});
+    setFormProfileValues({});
     setUploadingFiles([]);
     setForm(createEmptyForm(currentUser, saleUsers));
     setTaxCodeSaveError('');
+    setProfileSaveError('');
     setShowLeadForm(true);
   };
 
   const openEditForm = (lead: LeadRecord) => {
     setEditingLeadId(lead.id);
+    setConvertingCandidateId('');
     setFormFilterValues(getLeadFilterValues(lead, filterDefinitions));
+    setFormProfileValues(lead.profileValues || {});
     setUploadingFiles(lead.files || []);
     setTaxCodeSaveError('');
+    setProfileSaveError('');
     setForm({
       companyName: lead.companyName,
       contactPerson: lead.contactPerson,
@@ -335,6 +416,50 @@ export const Leads: React.FC<LeadsProps> = ({
       note: lead.note
     });
     setShowLeadForm(true);
+  };
+
+  const openCreateFormFromCandidate = (candidate: LeadCandidateRecord) => {
+    setEditingLeadId('');
+    setConvertingCandidateId(candidate.id);
+    setUploadingFiles([]);
+    setFormProfileValues({});
+    setTaxCodeSaveError('');
+    setProfileSaveError('');
+    const leadSource = mapCandidateSourceToLeadSource(candidate.source);
+    const sourceOptionId = findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.source, leadSource);
+    setFormFilterValues({
+      [LEAD_FILTER_IDS.source]: sourceOptionId ? [sourceOptionId] : [],
+      [LEAD_FILTER_IDS.progress]: ['contacted']
+    });
+    const sourceReference = candidate.sourceUrl || candidate.website;
+    const notes = [
+      candidate.note,
+      sourceReference ? `Nguồn dữ liệu: ${sourceReference}` : ''
+    ].filter(Boolean).join('\n');
+    const assignedSaleId = saleUsers.some(user => user.uid === candidate.assignedSaleId)
+      ? candidate.assignedSaleId
+      : '';
+    setForm({
+      ...createEmptyForm(currentUser, saleUsers),
+      companyName: candidate.companyName,
+      contactPerson: candidate.contactPerson,
+      phone: candidate.phone,
+      email: candidate.email,
+      taxCode: candidate.taxCode,
+      address: candidate.address,
+      source: leadSource,
+      stage: 'contacted',
+      assignedSaleId,
+      discoveredById: candidate.discoveredById || candidate.createdById,
+      nextFollowUpAt: toDateTimeLocal(candidate.nextContactAt),
+      note: notes
+    });
+    setShowLeadForm(true);
+  };
+
+  const closeLeadForm = () => {
+    setShowLeadForm(false);
+    setConvertingCandidateId('');
   };
 
   const handleFormFilterValueChange = (
@@ -370,14 +495,27 @@ export const Leads: React.FC<LeadsProps> = ({
     setUploadingFiles(previous => [...previous, ...nextFiles]);
   };
 
+  const handleProfileValueChange = (fieldId: string, values: string[]) => {
+    setProfileSaveError('');
+    setFormProfileValues(previous => ({ ...previous, [fieldId]: values }));
+  };
+
   const handleSaveLead = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalizedTaxCode = normalizeTaxCode(form.taxCode);
     if (!form.companyName.trim() || !normalizedTaxCode) return;
+    const missingRequiredField = profileDefinitions.find(field => (
+      field.active && field.required && (formProfileValues[field.id] || []).length === 0
+    ));
+    if (missingRequiredField) {
+      setProfileSaveError(`Vui lòng nhập trường “${missingRequiredField.name}”.`);
+      return;
+    }
 
-    const [latestLeadData, latestCustomerData] = await Promise.all([
+    const [latestLeadData, latestCustomerData, latestCandidateData] = await Promise.all([
       dbService.getCollection('leads'),
-      dbService.getCollection('customers')
+      dbService.getCollection('customers'),
+      dbService.getCollection('lead_candidates')
     ]);
     const latestConflict = findTaxCodeConflict(
       form.taxCode,
@@ -388,6 +526,21 @@ export const Leads: React.FC<LeadsProps> = ({
     );
     if (latestConflict) {
       setTaxCodeSaveError(describeTaxCodeConflict(latestConflict));
+      return;
+    }
+    const latestCandidateConflict = findCandidateDuplicate(
+      {
+        companyName: form.companyName,
+        phone: form.phone,
+        taxCode: normalizedTaxCode
+      },
+      latestCandidateData as LeadCandidateRecord[],
+      [],
+      [],
+      convertingCandidateId || editingLead?.sourceCandidateId || ''
+    );
+    if (latestCandidateConflict?.reason === 'taxCode') {
+      setTaxCodeSaveError(`Mã số thuế này đang nằm trong Dữ liệu khách hàng của doanh nghiệp “${latestCandidateConflict.companyName}”.`);
       return;
     }
 
@@ -421,10 +574,12 @@ export const Leads: React.FC<LeadsProps> = ({
       expectedProducts: form.expectedProducts.trim(),
       stage: form.stage,
       filterValues: profileFilterValues,
+      profileValues: formProfileValues,
       assignedSaleId: form.assignedSaleId,
       assignedSaleName: assignedSale?.displayName || '',
       discoveredById,
       discoveredByName: discoveredBy?.displayName || currentUser.displayName,
+      sourceCandidateId: convertingCandidateId || editingLead?.sourceCandidateId || '',
       reminderTime: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
       nextFollowUpAt: form.nextFollowUpAt ? new Date(form.nextFollowUpAt).toISOString() : '',
       note: form.note.trim(),
@@ -433,11 +588,12 @@ export const Leads: React.FC<LeadsProps> = ({
       updatedBy: currentUser.displayName
     };
 
+    let savedLeadId = editingLeadId;
     if (editingLeadId) {
       await dbService.updateDocument('leads', editingLeadId, payload);
     } else {
       try {
-        await dbService.addDocumentIfAbsent(
+        const createdLead = await dbService.addDocumentIfAbsent(
           'leads',
           createLeadDocumentIdFromTaxCode(normalizedTaxCode),
           {
@@ -454,6 +610,7 @@ export const Leads: React.FC<LeadsProps> = ({
             createdById: currentUser.uid
           }
         );
+        savedLeadId = createdLead.id;
       } catch (error) {
         if (!isDocumentAlreadyExistsError(error)) {
           setTaxCodeSaveError('Không thể xác minh mã số thuế trên hệ thống. Lead chưa được lưu; vui lòng thử lại.');
@@ -473,7 +630,19 @@ export const Leads: React.FC<LeadsProps> = ({
       }
     }
 
-    setShowLeadForm(false);
+    if (convertingCandidateId && savedLeadId) {
+      const candidate = candidates.find(item => item.id === convertingCandidateId);
+      await dbService.updateDocument('lead_candidates', convertingCandidateId, {
+        status: 'converted',
+        convertedLeadId: savedLeadId,
+        convertedAt: now,
+        lastContactAt: now,
+        contactAttempts: (candidate?.contactAttempts || 0) + 1,
+        updatedBy: currentUser.displayName
+      });
+    }
+
+    closeLeadForm();
   };
 
   const handleLeadFilterValueChange = async (
@@ -523,6 +692,14 @@ export const Leads: React.FC<LeadsProps> = ({
     });
   };
 
+  const handleSaveProfileDefinition = async (definition: LeadProfileFieldDefinition) => {
+    await dbService.addDocument('lead_profile_field_definitions', {
+      ...definition,
+      updatedBy: currentUser.displayName,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
   const handleDynamicFilterToggle = (field: LeadFilterDefinition, optionId: string, checked: boolean) => {
     setDynamicFilters(previous => {
       const fieldValues = previous[field.id] || [];
@@ -533,6 +710,7 @@ export const Leads: React.FC<LeadsProps> = ({
           : fieldValues.filter(item => item !== optionId)
       };
     });
+    if (field.type === 'single_select') setOpenFilterId('');
   };
 
 
@@ -565,6 +743,12 @@ export const Leads: React.FC<LeadsProps> = ({
   const getClassificationLabel = (lead: LeadRecord, fieldId: string, fallback = '—') => {
     const optionId = getLeadFilterValues(lead, filterDefinitions)[fieldId]?.[0];
     return (optionId && findLeadFilterOption(filterDefinitions, fieldId, optionId)?.label) || fallback;
+  };
+
+  const getProfileDisplayValue = (definition: LeadProfileFieldDefinition, values: string[]) => {
+    if (definition.type === 'checkbox') return values[0] === 'true' ? 'Có' : 'Không';
+    const labels = values.map(value => definition.options.find(option => option.id === value)?.label || value);
+    return labels.join(', ') || '—';
   };
 
   if (showLeadForm) {
@@ -616,6 +800,14 @@ export const Leads: React.FC<LeadsProps> = ({
               <span>{t('Sale phụ trách')}</span><strong>{assignedSale?.displayName || selectedLead.assignedSaleName || 'Chưa phân công'}</strong>
               <span>{t('Lịch chăm sóc tiếp theo')}</span><strong className={isOverdue(selectedLead) ? 'lead-date-overdue' : ''}>{formatDateTime(selectedLead.nextFollowUpAt)}</strong>
               <span>{t('Giá trị tiềm năng')}</span><strong>{selectedLead.potentialValue.toLocaleString('vi-VN')} đ</strong>
+              {profileDefinitions
+                .filter(definition => definition.active || (selectedLead.profileValues?.[definition.id] || []).length > 0)
+                .map(definition => (
+                  <React.Fragment key={definition.id}>
+                    <span>{definition.name}</span>
+                    <strong>{getProfileDisplayValue(definition, selectedLead.profileValues?.[definition.id] || [])}</strong>
+                  </React.Fragment>
+                ))}
             </div>
             <div className="lead-note-block">
               <strong>{t('Nhu cầu sản phẩm')}</strong>
@@ -658,10 +850,10 @@ export const Leads: React.FC<LeadsProps> = ({
     return (
       <div className="lead-form-page">
         <header className="lead-form-page__header">
-          <PageBackButton onClick={() => setShowLeadForm(false)} />
+          <PageBackButton onClick={closeLeadForm} />
           <div>
-            <span>{editingLeadId ? t('CHỈNH SỬA HỒ SƠ') : t('HỒ SƠ MỚI')}</span>
-            <h1>{editingLeadId ? t('Chỉnh sửa khách hàng tiềm năng') : t('Thêm khách hàng tiềm năng')}</h1>
+            <span>{editingLeadId ? t('CHỈNH SỬA HỒ SƠ') : convertingCandidateId ? t('CHUYỂN TỪ DỮ LIỆU KHÁCH HÀNG') : t('HỒ SƠ MỚI')}</span>
+            <h1>{editingLeadId ? t('Chỉnh sửa khách hàng tiềm năng') : convertingCandidateId ? t('Tiếp nhận khách hàng thành Lead') : t('Thêm khách hàng tiềm năng')}</h1>
             <p>{t('Ghi nhận đầy đủ hồ sơ, phân loại và lịch phụ trách trong một lần tạo Lead.')}</p>
           </div>
         </header>
@@ -697,17 +889,19 @@ export const Leads: React.FC<LeadsProps> = ({
                     onChange={event => updateForm('taxCode', event.target.value)}
                     required
                     readOnly={isTaxCodeLocked}
-                    aria-invalid={Boolean(taxCodeConflict || taxCodeSaveError)}
+                    aria-invalid={Boolean(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError)}
                     aria-describedby="lead-tax-code-guidance"
                   />
                   <span
                     id="lead-tax-code-guidance"
-                    className={taxCodeConflict || taxCodeSaveError ? 'lead-tax-code-message is-error' : 'lead-tax-code-message'}
+                    className={taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError ? 'lead-tax-code-message is-error' : 'lead-tax-code-message'}
                   >
-                    {(taxCodeConflict || taxCodeSaveError) && <AlertCircle size={13} />}
+                    {(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError) && <AlertCircle size={13} />}
                     {taxCodeConflict
                       ? describeTaxCodeConflict(taxCodeConflict)
-                      : taxCodeSaveError || (isTaxCodeLocked
+                      : candidateTaxCodeConflict
+                        ? `Mã số thuế này đang nằm trong Dữ liệu khách hàng của doanh nghiệp “${candidateTaxCodeConflict.companyName}”.`
+                        : taxCodeSaveError || (isTaxCodeLocked
                         ? t('Mã số thuế là định danh duy nhất và không thể thay đổi sau khi tạo Lead.')
                         : t('Mã số thuế được kiểm tra trên toàn bộ Lead và khách hàng CRM.'))}
                   </span>
@@ -738,6 +932,21 @@ export const Leads: React.FC<LeadsProps> = ({
                     </div>
                   )}
                 </div>
+                {profileDefinitions.some(field => field.active) && (
+                  <div className="lead-profile-custom-section lead-form-grid__wide">
+                    <div className="lead-profile-custom-section__heading">
+                      <strong>{t('Thông tin bổ sung')}</strong>
+                      <span>{t('Các trường do admin cấu hình cho hồ sơ khách hàng tiềm năng.')}</span>
+                    </div>
+                    <LeadProfileFields
+                      definitions={profileDefinitions}
+                      values={formProfileValues}
+                      canEditAll={currentUser.role === 'admin'}
+                      onChange={handleProfileValueChange}
+                    />
+                    {profileSaveError && <div className="lead-profile-validation"><AlertCircle size={13} /> {profileSaveError}</div>}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -786,13 +995,13 @@ export const Leads: React.FC<LeadsProps> = ({
           <footer className="lead-form-page__footer">
             <span>{t('Các thay đổi chỉ được ghi nhận khi bấm Lưu.')}</span>
             <div>
-              <button type="button" className="btn btn-outline" onClick={() => setShowLeadForm(false)}>{t('Hủy')}</button>
+              <button type="button" className="btn btn-outline" onClick={closeLeadForm}>{t('Hủy')}</button>
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={Boolean(taxCodeConflict) || !normalizeTaxCode(form.taxCode)}
+                disabled={Boolean(taxCodeConflict || candidateTaxCodeConflict) || !normalizeTaxCode(form.taxCode)}
               >
-                {editingLeadId ? t('Cập nhật Lead') : t('Lưu Lead')}
+                {editingLeadId ? t('Cập nhật Lead') : convertingCandidateId ? t('Lưu Lead & hoàn tất tiếp cận') : t('Lưu Lead')}
               </button>
             </div>
           </footer>
@@ -809,29 +1018,43 @@ export const Leads: React.FC<LeadsProps> = ({
           <p className="page-subtitle">{t('Quản lý cơ hội bán hàng, lịch chăm sóc và chuyển đổi Lead thành khách hàng chính thức.')}</p>
         </div>
         <div className="lead-page-actions">
-          {currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowFilterConfig(true)}><Settings2 size={16} /> {t('Cấu hình bộ lọc')}</button>}
-          <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>
+          {workspaceTab === 'list' && currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowProfileConfig(true)}><Building2 size={16} /> {t('Cấu hình hồ sơ')}</button>}
+          {workspaceTab === 'list' && currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowFilterConfig(true)}><Settings2 size={16} /> {t('Cấu hình bộ lọc')}</button>}
+          {workspaceTab === 'list' && <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>}
         </div>
       </div>
 
       <div className="lead-workspace-tabs" role="tablist" aria-label="Không gian quản lý Lead">
         <button type="button" role="tab" aria-selected={workspaceTab === 'list'} className={workspaceTab === 'list' ? 'is-active' : ''} onClick={() => setWorkspaceTab('list')}><List size={16} /> Danh sách Lead <span>{accessibleLeads.length}</span></button>
         {currentUser.role === 'admin' && <button type="button" role="tab" aria-selected={workspaceTab === 'performance'} className={workspaceTab === 'performance' ? 'is-active' : ''} onClick={() => setWorkspaceTab('performance')}><Users size={16} /> Khách hàng của Sale</button>}
+        <button type="button" role="tab" aria-selected={workspaceTab === 'data'} className={workspaceTab === 'data' ? 'is-active' : ''} onClick={() => setWorkspaceTab('data')}><Database size={16} /> Dữ liệu khách hàng <span>{accessibleCandidates.filter(candidate => candidate.status === 'new' || candidate.status === 'retry').length}</span></button>
       </div>
 
-      <div className="lead-summary-grid">
-        <div className="lead-summary-card"><Users size={18} /><div><strong>{accessibleLeads.length}</strong><span>Tổng Lead</span></div></div>
-        <div className="lead-summary-card"><TrendingUp size={18} /><div><strong>{pursuedLeadCount}</strong><span>Đang theo đuổi</span></div></div>
-        <div className="lead-summary-card"><CalendarClock size={18} /><div><strong>{accessibleLeads.filter(isOverdue).length}</strong><span>Quá hạn chăm sóc</span></div></div>
-        <div className="lead-summary-card"><CheckCircle2 size={18} /><div><strong>{accessibleLeads.filter(lead => lead.stage === 'converted').length}</strong><span>Đã chuyển đổi</span></div></div>
-      </div>
+      {workspaceTab === 'list' && (
+        <div className="lead-summary-grid">
+          <div className="lead-summary-card"><Users size={18} /><div><strong>{accessibleLeads.length}</strong><span>Tổng Lead</span></div></div>
+          <div className="lead-summary-card"><TrendingUp size={18} /><div><strong>{pursuedLeadCount}</strong><span>Đang theo đuổi</span></div></div>
+          <div className="lead-summary-card"><CalendarClock size={18} /><div><strong>{accessibleLeads.filter(isOverdue).length}</strong><span>Quá hạn chăm sóc</span></div></div>
+          <div className="lead-summary-card"><CheckCircle2 size={18} /><div><strong>{accessibleLeads.filter(lead => lead.stage === 'converted').length}</strong><span>Đã chuyển đổi</span></div></div>
+        </div>
+      )}
 
       {workspaceTab === 'performance' && currentUser.role === 'admin' ? (
         <LeadSalesWorkspace
           leads={leads}
+          candidates={candidates}
           saleUsers={saleUsers}
           definitions={filterDefinitions}
           onOpenLead={setSelectedLeadId}
+        />
+      ) : workspaceTab === 'data' ? (
+        <LeadCandidateWorkspace
+          candidates={candidates}
+          leads={leads}
+          customers={customers}
+          saleUsers={saleUsers}
+          currentUser={currentUser}
+          onStartConversion={openCreateFormFromCandidate}
         />
       ) : (
         <>
@@ -840,10 +1063,10 @@ export const Leads: React.FC<LeadsProps> = ({
               <Search size={16} />
               <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('Tìm công ty, liên hệ, SĐT, địa chỉ, nhu cầu, nhãn...')} />
             </div>
-            {filterDefinitions.filter(field => field.active).map(field => (
-              <details key={field.id} className="lead-filter-menu lead-filter-menu--toolbar">
-                <summary>{field.name}{(dynamicFilters[field.id] || []).length > 0 && <span>{dynamicFilters[field.id].length}</span>}</summary>
-                <div className="lead-filter-menu__content">
+            {filterDefinitions.filter(field => field.active && field.showInQuickFilter).map(field => (
+              <div key={field.id} className="lead-filter-menu lead-filter-menu--toolbar" data-lead-filter-popover>
+                <button type="button" className="lead-filter-menu__trigger" aria-expanded={openFilterId === field.id} onClick={() => setOpenFilterId(current => current === field.id ? '' : field.id)}>{field.name}{(dynamicFilters[field.id] || []).length > 0 && <span>{dynamicFilters[field.id].length}</span>}</button>
+                {openFilterId === field.id && <div className="lead-filter-menu__content">
                   <button
                     type="button"
                     className={(dynamicFilters[field.id] || []).length === 0 ? 'is-selected' : ''}
@@ -866,8 +1089,8 @@ export const Leads: React.FC<LeadsProps> = ({
                       </button>
                     );
                   })}
-                </div>
-              </details>
+                </div>}
+              </div>
             ))}
             <button type="button" className="btn btn-outline btn-symbol" onClick={clearFilters} title={t('Xóa bộ lọc')}><Filter size={15} /></button>
           </section>
@@ -902,6 +1125,13 @@ export const Leads: React.FC<LeadsProps> = ({
           definitions={filterDefinitions}
           onClose={() => setShowFilterConfig(false)}
           onSaveDefinition={handleSaveFilterDefinition}
+        />
+      )}
+      {showProfileConfig && currentUser.role === 'admin' && (
+        <LeadProfileAdminModal
+          definitions={profileDefinitions}
+          onClose={() => setShowProfileConfig(false)}
+          onSaveDefinition={handleSaveProfileDefinition}
         />
       )}
     </div>

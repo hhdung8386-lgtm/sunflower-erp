@@ -2,9 +2,302 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Emergency bootstrap for the first administrator. This also lets the
+    // existing admin create their users/{uid} profile if it does not exist yet.
+    function isBootstrapAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'admin@sunflower.com';
+    }
+
+    function hasUserProfile() {
+      return signedIn()
+        && exists(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        );
+    }
+
+    function userProfile() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function isActive() {
+      return isBootstrapAdmin()
+        || (hasUserProfile()
+          && userProfile().active == true);
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin()
+        || (isActive()
+          && userProfile().role == 'admin');
+    }
+
+    function hasPage(pageId) {
+      return isAdmin()
+        || (isActive()
+          && userProfile().keys().hasAll(['allowedPages'])
+          && userProfile().allowedPages is list
+          && pageId in userProfile().allowedPages);
+    }
+
+    function canUseCrm() {
+      return hasPage('crm') || hasPage('leads') || hasPage('sales');
+    }
+
+    function canUseOrderFlow() {
+      return hasPage('sales')
+        || hasPage('design')
+        || hasPage('purchase')
+        || hasPage('production')
+        || hasPage('delivery')
+        || hasPage('accounting');
+    }
+
+    function canUseDesign() {
+      return hasPage('sales') || hasPage('design');
+    }
+
+    function canUsePurchase() {
+      return hasPage('purchase') || hasPage('inventory');
+    }
+
+    function canUseInventory() {
+      return hasPage('purchase')
+        || hasPage('inventory')
+        || hasPage('production');
+    }
+
+    function canUseAccounting() {
+      return hasPage('sales')
+        || hasPage('purchase')
+        || hasPage('accounting');
+    }
+
+    function isValidRole(role) {
+      return role in [
+        'admin',
+        'sale',
+        'designer',
+        'purchaser',
+        'producer',
+        'accountant'
+      ];
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'uid',
+          'email',
+          'displayName',
+          'role',
+          'active',
+          'allowedPages'
+        ])
+        && data.uid is string
+        && data.email is string
+        && data.displayName is string
+        && isValidRole(data.role)
+        && data.active is bool
+        && data.allowedPages is list;
+    }
+
+    // User profiles must use the Firebase Authentication UID as document ID.
+    // Only an administrator (or the trusted server using Firebase Admin SDK)
+    // may grant roles, pages or account status.
+    match /users/{userId} {
+      allow read: if isActive();
+      allow create: if isAdmin()
+        && userId == request.resource.data.uid
+        && isValidUserProfile(request.resource.data);
+      allow update: if isAdmin()
+        && userId == resource.data.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && isValidUserProfile(request.resource.data);
+      allow delete: if isAdmin() && userId != request.auth.uid;
+    }
+
+    // CRM and lead management.
+    match /customers/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('crm') || hasPage('sales');
+      allow delete: if isAdmin();
+    }
+
+    match /leads/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('leads') || hasPage('crm');
+      allow delete: if isAdmin();
+    }
+
+    match /lead_candidates/{documentId} {
+      allow read: if isActive() && canUseCrm();
+      allow create: if canUseCrm()
+        && (isAdmin()
+          || request.resource.data.assignedSaleId == request.auth.uid);
+      allow update: if isAdmin()
+        || (canUseCrm()
+          && resource.data.assignedSaleId == request.auth.uid
+          && request.resource.data.assignedSaleId == resource.data.assignedSaleId);
+      allow delete: if isAdmin();
+    }
+
+    match /lead_filter_definitions/{documentId} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /lead_profile_field_definitions/{documentId} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Sale PO is shared by all downstream departments because every team
+    // updates its own stage on the same order document.
+    match /pos/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseOrderFlow();
+      allow delete: if isAdmin();
+    }
+
+    // Design workflow. Sale can create requests; design staff process them.
+    match /design_requests/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseDesign();
+      allow delete: if isAdmin();
+    }
+
+    match /designs/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseDesign();
+      allow delete: if isAdmin();
+    }
+
+    // Purchasing and supplier management.
+    match /suppliers/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('purchase');
+      allow delete: if isAdmin();
+    }
+
+    match /procurement_requests/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('sales') || hasPage('purchase');
+      allow delete: if isAdmin();
+    }
+
+    match /purchase_orders/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUsePurchase();
+      allow delete: if isAdmin();
+    }
+
+    // Inventory is also updated when production consumes raw materials.
+    match /inventory/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseInventory();
+      allow delete: if isAdmin();
+    }
+
+    match /warehouse_exports/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseInventory();
+      allow delete: if isAdmin();
+    }
+
+    // Production planning and machines.
+    match /production_commands/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('production');
+      allow delete: if isAdmin();
+    }
+
+    match /machines/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('production');
+      allow delete: if isAdmin();
+    }
+
+    // Delivery management.
+    match /deliveries/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('delivery');
+      allow delete: if isAdmin();
+    }
+
+    match /delivery_vehicles/{documentId} {
+      allow read: if isActive();
+      allow create, update: if hasPage('delivery');
+      allow delete: if isAdmin();
+    }
+
+    // Invoices are created by Sale/Purchasing flows and finalized by Accounting.
+    match /invoices/{documentId} {
+      allow read: if isActive();
+      allow create, update: if canUseAccounting();
+      allow delete: if isAdmin();
+    }
+
+    // Internal collaboration and per-user workflow notifications.
+    match /channels/{documentId} {
+      allow read: if isActive();
+      allow create: if isActive()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAdmin()
+        || (isActive()
+          && resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdBy == resource.data.createdBy);
+      allow delete: if isAdmin();
+    }
+
+    match /messages/{documentId} {
+      allow read: if isActive();
+      allow create: if isActive()
+        && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAdmin()
+        || (isActive()
+          && resource.data.senderId == request.auth.uid
+          && request.resource.data.senderId == resource.data.senderId);
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{documentId} {
+      allow read, create, update: if isActive();
+      allow delete: if isAdmin();
+    }
+
+    match /reminders/{documentId} {
+      allow read, create, update: if isActive();
+      allow delete: if isActive();
+    }
+
+    // Master data changes are restricted to the administrator. Other users
+    // submit an edit request for review.
+    match /product_classifications/{documentId} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /wind_directions/{documentId} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /edit_requests/{documentId} {
+      allow read: if isActive();
+      allow create: if canUseCrm();
+      allow update, delete: if isAdmin();
+    }
+
+    // Any collection not reviewed above is denied by default.
     match /{document=**} {
-      allow read, write: if request.auth != null
-                         && request.auth.token.email == 'admin@sunflower.com';
+      allow read, write: if false;
     }
   }
 }

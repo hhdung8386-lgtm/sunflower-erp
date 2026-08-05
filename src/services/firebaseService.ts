@@ -20,6 +20,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { normalizeCustomerRecords, normalizeLeadRecords } from '../domain/crmModels';
+import { normalizeLeadCandidateRecords } from '../domain/leadCandidateModels';
 import { normalizeNotificationRecords } from '../domain/notificationModels';
 import { normalizeProcurementRequests, normalizeSupplierRecords } from '../domain/purchaseModels';
 
@@ -765,6 +766,9 @@ const normalizeCollectionRecords = <T,>(colName: string, data: T[]): T[] => {
   }
   if (colName === 'leads') {
     return normalizeLeadRecords(data) as T[];
+  }
+  if (colName === 'lead_candidates') {
+    return normalizeLeadCandidateRecords(data) as T[];
   }
   if (colName === 'suppliers') {
     return normalizeSupplierRecords(data) as T[];

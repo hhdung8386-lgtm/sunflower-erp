@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Pencil, Save, Settings2, UserRoundSearch, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Eye, EyeOff, Pencil, Plus, Save, Settings2, UserRoundSearch, X } from 'lucide-react';
 import type {
   LeadCustomFieldType,
   LeadFilterDefinition,
   LeadRecord
 } from '../domain/crmModels';
+import type { LeadCandidateRecord } from '../domain/leadCandidateModels';
 import {
   findLeadFilterOption,
   getLeadFilterValues,
@@ -33,6 +34,25 @@ export const LeadDynamicFields: React.FC<{
 }> = ({ lead, values: controlledValues, definitions, canEditAll, onChange }) => {
   const values = controlledValues || (lead ? getLeadFilterValues(lead, definitions) : {});
   const fieldKeyPrefix = lead?.id || 'lead-draft';
+  const [openFieldId, setOpenFieldId] = useState('');
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && !target.closest('[data-lead-dynamic-filter]')) {
+        setOpenFieldId('');
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenFieldId('');
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
 
   return (
     <div className="lead-compact-filters">
@@ -50,11 +70,11 @@ export const LeadDynamicFields: React.FC<{
             : selectedLabels.length <= 2 ? selectedLabels.join(', ') : `${selectedLabels.length} lựa chọn`;
 
           return (
-            <div key={field.id} className="lead-compact-filter-row">
+            <div key={field.id} className="lead-compact-filter-row" data-lead-dynamic-filter>
               <span>{field.name}</span>
-              <details className="lead-compact-filter-menu">
-                <summary className={selectedLabels.length > 0 ? 'has-value' : ''}>{summary}</summary>
-                <div className="lead-compact-filter-options">
+              <div className="lead-compact-filter-menu">
+                <button type="button" className={`lead-compact-filter-trigger ${selectedLabels.length > 0 ? 'has-value' : ''}`} aria-expanded={openFieldId === field.id} onClick={() => setOpenFieldId(current => current === field.id ? '' : field.id)}>{summary}</button>
+                {openFieldId === field.id && <div className="lead-compact-filter-options">
                   {activeOptions.map(item => (
                     <label key={item.id} className={fieldValues.includes(item.id) ? 'is-checked' : ''}>
                       <input
@@ -66,8 +86,8 @@ export const LeadDynamicFields: React.FC<{
                       {item.label}
                     </label>
                   ))}
-                </div>
-              </details>
+                </div>}
+              </div>
             </div>
           );
         }
@@ -115,8 +135,37 @@ export const LeadFilterAdminModal: React.FC<{
   onSaveDefinition: (definition: LeadFilterDefinition) => Promise<void>;
 }> = ({ definitions, onClose, onSaveDefinition }) => {
   const [editingId, setEditingId] = useState('');
-  const [draft, setDraft] = useState<LeadFilterDefinition>(() => definitions[0]);
+  const [draft, setDraft] = useState<LeadFilterDefinition>(() => definitions[0] || {
+    id: '',
+    name: '',
+    group: 'Phân loại khách hàng tiềm năng',
+    type: 'single_select',
+    options: [],
+    active: true,
+    showInQuickFilter: true,
+    reportable: true,
+    saleEditable: true,
+    order: 10
+  });
   const [optionLines, setOptionLines] = useState('');
+
+  const startCreate = () => {
+    const id = `lead_filter_${Date.now().toString(36)}`;
+    setEditingId(id);
+    setDraft({
+      id,
+      name: '',
+      group: 'Phân loại khách hàng tiềm năng',
+      type: 'single_select',
+      options: [],
+      active: true,
+      showInQuickFilter: true,
+      reportable: true,
+      saleEditable: true,
+      order: Math.max(0, ...definitions.map(item => item.order || 0)) + 10
+    });
+    setOptionLines('');
+  };
 
   const startEdit = (definition: LeadFilterDefinition) => {
     setEditingId(definition.id);
@@ -159,25 +208,29 @@ export const LeadFilterAdminModal: React.FC<{
     await onSaveDefinition({
       ...draft,
       name: draft.name.trim(),
-      active: true,
-      showInQuickFilter: true,
-      reportable: true
+      group: draft.group || 'Phân loại khách hàng tiềm năng'
     });
     setEditingId('');
+  };
+
+  const toggleDefinitionActive = async (definition: LeadFilterDefinition) => {
+    await onSaveDefinition({ ...definition, active: !definition.active });
+    if (editingId === definition.id) setEditingId('');
   };
 
   return (
     <div className="modal-overlay">
       <div className="modal-content lead-config-modal">
         <div className="modal-header">
-          <div><strong>CẤU HÌNH 5 BỘ LỌC LEAD</strong><span>Đổi tên bộ lọc và các lựa chọn dùng chung cho toàn bộ Sale.</span></div>
+          <div><strong>CẤU HÌNH BỘ LỌC LEAD</strong><span>Admin có thể tạo thêm, sắp xếp và ngừng sử dụng bộ lọc mà không làm mất dữ liệu cũ.</span></div>
           <button type="button" className="btn btn-sm btn-outline" onClick={onClose}><X size={15} /> Đóng</button>
         </div>
         <div className="modal-body">
             <div className="lead-config-layout">
               <div className="lead-config-list">
                 <div className="lead-config-list__header">
-                  <strong>5 nhóm bộ lọc</strong>
+                  <strong>{definitions.length} bộ lọc</strong>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={startCreate}><Plus size={13} /> Thêm bộ lọc</button>
                 </div>
                 {definitions.map(definition => (
                   <div key={definition.id} className={`lead-config-item ${!definition.active ? 'is-inactive' : ''}`}>
@@ -186,6 +239,7 @@ export const LeadFilterAdminModal: React.FC<{
                       <span>{FIELD_TYPE_LABELS[definition.type]} · {definition.options.filter(item => item.active).length} lựa chọn</span>
                     </div>
                     <div>
+                      <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title={definition.active ? 'Ngừng sử dụng' : 'Sử dụng lại'} onClick={() => toggleDefinitionActive(definition)}>{definition.active ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                       <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title="Chỉnh sửa" onClick={() => startEdit(definition)}><Pencil size={13} /></button>
                     </div>
                   </div>
@@ -195,7 +249,7 @@ export const LeadFilterAdminModal: React.FC<{
               <div className="lead-config-editor">
                 {editingId ? (
                   <>
-                    <h3>Chỉnh sửa bộ lọc</h3>
+                    <h3>{definitions.some(item => item.id === editingId) ? 'Chỉnh sửa bộ lọc' : 'Tạo bộ lọc mới'}</h3>
                     <label><span>Tên bộ lọc *</span><input value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} /></label>
                     <label><span>Cách lựa chọn</span><select value={draft.type} onChange={event => setDraft(previous => ({ ...previous, type: event.target.value as LeadCustomFieldType }))}><option value="single_select">Chọn một</option><option value="multi_select">Chọn nhiều</option></select></label>
                     <label><span>Thứ tự hiển thị</span><input type="number" value={draft.order} onChange={event => setDraft(previous => ({ ...previous, order: Number(event.target.value) }))} /></label>
@@ -207,10 +261,13 @@ export const LeadFilterAdminModal: React.FC<{
                       </>
                     <div className="lead-config-checks">
                       <label><input type="checkbox" checked={draft.saleEditable} onChange={event => setDraft(previous => ({ ...previous, saleEditable: event.target.checked }))} /> Sale được chỉnh sửa</label>
+                      <label><input type="checkbox" checked={draft.showInQuickFilter} onChange={event => setDraft(previous => ({ ...previous, showInQuickFilter: event.target.checked }))} /> Hiển thị trên thanh lọc nhanh</label>
+                      <label><input type="checkbox" checked={draft.reportable} onChange={event => setDraft(previous => ({ ...previous, reportable: event.target.checked }))} /> Dùng trong báo cáo</label>
+                      <label><input type="checkbox" checked={draft.active} onChange={event => setDraft(previous => ({ ...previous, active: event.target.checked }))} /> Đang sử dụng</label>
                     </div>
                     <div className="lead-config-editor__actions">
                       <button type="button" className="btn btn-outline" onClick={() => setEditingId('')}>Hủy</button>
-                      <button type="button" className="btn btn-primary" onClick={saveDraft}><Save size={14} /> Lưu trường</button>
+                      <button type="button" className="btn btn-primary" onClick={saveDraft}><Save size={14} /> Lưu bộ lọc</button>
                     </div>
                   </>
                 ) : (
@@ -236,17 +293,26 @@ const LEAD_STAGE_LABELS: Record<string, string> = {
 
 export const LeadSalesWorkspace: React.FC<{
   leads: LeadRecord[];
+  candidates: LeadCandidateRecord[];
   saleUsers: UserProfile[];
   definitions: LeadFilterDefinition[];
   onOpenLead: (leadId: string) => void;
-}> = ({ leads, saleUsers, definitions, onOpenLead }) => {
+}> = ({ leads, candidates, saleUsers, definitions, onOpenLead }) => {
   const currentYear = new Date().getFullYear();
   const [selectedSaleId, setSelectedSaleId] = useState(saleUsers[0]?.uid || '');
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState('all');
-  const years = Array.from(new Set([currentYear, ...leads.map(lead => new Date(lead.createdAt).getFullYear()).filter(Number.isFinite)])).sort((a, b) => b - a);
+  const years = Array.from(new Set([
+    currentYear,
+    ...leads.map(lead => new Date(lead.createdAt).getFullYear()).filter(Number.isFinite),
+    ...candidates.map(candidate => new Date(candidate.createdAt).getFullYear()).filter(Number.isFinite)
+  ])).sort((a, b) => b - a);
   const periodLeads = leads.filter(lead => {
     const createdAt = new Date(lead.createdAt);
+    return createdAt.getFullYear() === year && (month === 'all' || createdAt.getMonth() + 1 === Number(month));
+  });
+  const periodCandidates = candidates.filter(candidate => {
+    const createdAt = new Date(candidate.createdAt);
     return createdAt.getFullYear() === year && (month === 'all' || createdAt.getMonth() + 1 === Number(month));
   });
   const selectedSale = saleUsers.find(sale => sale.uid === selectedSaleId) || saleUsers[0];
@@ -259,14 +325,20 @@ export const LeadSalesWorkspace: React.FC<{
   const discoveredLeads = selectedSale
     ? saleLeads.filter(lead => (lead.discoveredById || lead.createdById) === selectedSale.uid)
     : [];
-  const assignedLeads = selectedSale
-    ? saleLeads.filter(lead => lead.assignedSaleId === selectedSale.uid)
-    : [];
   const convertedLeads = discoveredLeads.filter(lead => lead.stage === 'converted');
   const conversionRate = discoveredLeads.length > 0
     ? convertedLeads.length / discoveredLeads.length * 100
     : 0;
-  const potentialValue = saleLeads.reduce((sum, lead) => sum + Number(lead.potentialValue || 0), 0);
+  const saleCandidates = selectedSale
+    ? periodCandidates.filter(candidate => (
+      (candidate.discoveredById || candidate.createdById) === selectedSale.uid
+      || candidate.assignedSaleId === selectedSale.uid
+    ))
+    : [];
+  const promotedCandidates = saleCandidates.filter(candidate => candidate.status === 'converted');
+  const candidateConversionRate = saleCandidates.length > 0
+    ? promotedCandidates.length / saleCandidates.length * 100
+    : 0;
 
   const getRelationshipLabel = (lead: LeadRecord) => {
     const discovered = (lead.discoveredById || lead.createdById) === selectedSale?.uid;
@@ -295,7 +367,7 @@ export const LeadSalesWorkspace: React.FC<{
       <div className="lead-sales-workspace__header">
         <div>
           <UserRoundSearch size={20} />
-          <div><strong>Khách hàng của Sale</strong><span>Chọn nhân viên để xem danh sách Lead và hiệu quả chuyển đổi trong kỳ.</span></div>
+          <div><strong>Khách hàng của Sale</strong><span>Theo dõi từ dữ liệu doanh nghiệp tìm được đến Lead và khách hàng CRM.</span></div>
         </div>
         <div className="lead-sales-workspace__selectors">
           <label>Nhân viên Sale<select value={selectedSale?.uid || ''} onChange={event => setSelectedSaleId(event.target.value)} disabled={saleUsers.length === 0}>{saleUsers.length === 0 && <option value="">Chưa có tài khoản Sale</option>}{saleUsers.map(sale => <option key={sale.uid} value={sale.uid}>{sale.displayName}</option>)}</select></label>
@@ -304,12 +376,12 @@ export const LeadSalesWorkspace: React.FC<{
         </div>
       </div>
       <div className="lead-sales-metrics">
+        <div><span>Dữ liệu tìm được</span><strong>{saleCandidates.length}</strong></div>
+        <div><span>Đã thành Lead</span><strong>{promotedCandidates.length}</strong></div>
+        <div><span>Tỷ lệ tiếp cận → Lead</span><strong>{candidateConversionRate.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</strong></div>
         <div><span>Tổng Lead liên quan</span><strong>{saleLeads.length}</strong></div>
-        <div><span>Sale tìm được</span><strong>{discoveredLeads.length}</strong></div>
-        <div><span>Được phân công</span><strong>{assignedLeads.length}</strong></div>
-        <div><span>Đã chuyển đổi</span><strong>{convertedLeads.length}</strong></div>
-        <div><span>Tỷ lệ chuyển đổi</span><strong>{conversionRate.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</strong></div>
-        <div><span>Giá trị tiềm năng</span><strong>{potentialValue.toLocaleString('vi-VN')} đ</strong></div>
+        <div><span>Đã thành khách hàng</span><strong>{convertedLeads.length}</strong></div>
+        <div><span>Tỷ lệ Lead → CRM</span><strong>{conversionRate.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</strong></div>
       </div>
       <div className="table-container">
         <table className="lead-sales-table">

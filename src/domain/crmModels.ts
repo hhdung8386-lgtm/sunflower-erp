@@ -31,6 +31,19 @@ export interface LeadFilterDefinition extends UnknownRecord {
   updatedAt?: string;
 }
 
+export interface LeadProfileFieldDefinition extends UnknownRecord {
+  id: string;
+  name: string;
+  type: LeadCustomFieldType;
+  options: LeadFilterOption[];
+  active: boolean;
+  required: boolean;
+  saleEditable: boolean;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface CustomerContactRecord extends UnknownRecord {
@@ -243,7 +256,9 @@ export interface LeadRecord extends UnknownRecord {
   assignedSaleName: string;
   discoveredById: string;
   discoveredByName: string;
+  sourceCandidateId: string;
   filterValues: Record<string, string[]>;
+  profileValues: Record<string, string[]>;
   note: string;
   reminderTime: string;
   nextFollowUpAt: string;
@@ -575,8 +590,15 @@ export const normalizeLeadRecord = (value: unknown): LeadRecord => {
     assignedSaleName: asText(source.assignedSaleName),
     discoveredById: asText(source.discoveredById, asText(source.createdById)),
     discoveredByName: asText(source.discoveredByName, asText(source.createdByName)),
+    sourceCandidateId: asText(source.sourceCandidateId),
     filterValues: Object.fromEntries(
       Object.entries(asRecord(source.filterValues)).map(([fieldId, fieldValue]) => [
+        fieldId,
+        asArray(fieldValue).map(item => asText(item)).filter(Boolean)
+      ])
+    ),
+    profileValues: Object.fromEntries(
+      Object.entries(asRecord(source.profileValues)).map(([fieldId, fieldValue]) => [
         fieldId,
         asArray(fieldValue).map(item => asText(item)).filter(Boolean)
       ])
