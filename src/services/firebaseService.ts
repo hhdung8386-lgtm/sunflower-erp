@@ -62,31 +62,27 @@ type FirebaseBackendState = 'idle' | 'connecting' | 'ready' | 'failed';
 let firebaseBackendState: FirebaseBackendState = 'idle';
 let firebaseReadyPromise: Promise<boolean> | null = null;
 const reportedFirebaseFailures = new Set<string>();
+let handleFirebaseSessionUnavailable: (() => void) | null = null;
 
 const getFirebaseErrorCode = (error: unknown): string => {
   if (typeof error !== 'object' || error === null || !('code' in error)) return 'unknown';
   return String((error as { code?: unknown }).code || 'unknown');
 };
 
-const isPermissionFailure = (error: unknown): boolean => {
-  const code = getFirebaseErrorCode(error);
-  return code === 'permission-denied' ||
-    code === 'firestore/permission-denied' ||
-    code === 'unauthenticated' ||
-    code === 'firestore/unauthenticated';
-};
-
 const reportFirebaseFailure = (context: string, error: unknown, disableForSession = false) => {
   const code = getFirebaseErrorCode(error);
-  const willDisableFirebase = disableForSession || isPermissionFailure(error);
-  const key = willDisableFirebase ? `firebase-disabled:${code}` : `${context}:${code}`;
+  const key = code === 'auth/session-expired'
+    ? code
+    : disableForSession ? `firebase-disabled:${code}` : `${context}:${code}`;
 
   if (!reportedFirebaseFailures.has(key)) {
     reportedFirebaseFailures.add(key);
     console.error(`[Firebase] ${context} failed (${code}). Local data fallback is disabled.`, error);
   }
 
-  if (willDisableFirebase) {
+  // Permission errors may be isolated to one collection or action. They must
+  // not disable every subsequent database request in the same session.
+  if (disableForSession) {
     firebaseBackendState = 'failed';
   }
 };
@@ -98,17 +94,18 @@ const reportFirebaseFailure = (context: string, error: unknown, disableForSessio
  */
 const ensureFirebaseReady = async (): Promise<boolean> => {
   if (!isFirebaseRuntimeEnabled || !realDb || !realAuth) return false;
-  if (firebaseBackendState === 'ready') return true;
+  if (firebaseBackendState === 'ready' && realAuth.currentUser) return true;
+  if (firebaseBackendState === 'ready' && !realAuth.currentUser) {
+    firebaseBackendState = 'idle';
+  }
   if (firebaseBackendState === 'failed') return false;
   if (firebaseReadyPromise) return firebaseReadyPromise;
 
   firebaseBackendState = 'connecting';
-  firebaseReadyPromise = new Promise<boolean>((resolve) => {
-    const unsubscribe = onFirebaseAuthStateChanged(realAuth!, (firebaseUser) => {
-      unsubscribe();
-      firebaseBackendState = firebaseUser ? 'ready' : 'idle';
-      resolve(Boolean(firebaseUser));
-    });
+  firebaseReadyPromise = realAuth.authStateReady().then(() => {
+    const authenticated = Boolean(realAuth?.currentUser);
+    firebaseBackendState = authenticated ? 'ready' : 'idle';
+    return authenticated;
   }).finally(() => {
     firebaseReadyPromise = null;
   });
@@ -121,10 +118,11 @@ const getFirebaseDatabase = async (context: string) => {
   if ((await ensureFirebaseReady()) && realDb) return realDb;
 
   const error = Object.assign(
-    new Error('Firebase is required but no authenticated Firestore connection is available.'),
-    { code: 'firebase/not-ready' }
+    new Error('Phiên đăng nhập Firebase đã hết hạn. Vui lòng đăng nhập lại.'),
+    { code: 'auth/session-expired' }
   );
-  reportFirebaseFailure(context, error, true);
+  handleFirebaseSessionUnavailable?.();
+  reportFirebaseFailure(context, error);
   throw error;
 };
 
@@ -1033,6 +1031,13 @@ let currentUser: UserProfile | null = (() => {
   const stored = localStorage.getItem('erp_current_user');
   return stored ? JSON.parse(stored) : null;
 })();
+
+handleFirebaseSessionUnavailable = () => {
+  firebaseBackendState = 'idle';
+  currentUser = null;
+  localStorage.removeItem('erp_current_user');
+  authStateListener?.(null);
+};
 
 export const authService = {
   async login(identifier: string, password: string): Promise<UserProfile> {

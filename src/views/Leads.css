@@ -1731,6 +1731,17 @@
   margin-top: 12px;
 }
 
+.lead-config-error {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .lead-config-placeholder {
   display: flex;
   min-height: 320px;

@@ -148,8 +148,38 @@ export const LeadFilterAdminModal: React.FC<{
     order: 10
   });
   const [optionLines, setOptionLines] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const getSaveErrorMessage = (error: unknown) => {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String(error.code)
+      : '';
+    if (code === 'permission-denied' || code === 'firestore/permission-denied') {
+      return 'Firebase chưa cấp quyền quản trị bộ lọc. Hãy kiểm tra và xuất bản Firestore Rules mới nhất.';
+    }
+    if (code === 'auth/session-expired' || code === 'unauthenticated' || code === 'firestore/unauthenticated') {
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.';
+    }
+    return 'Không thể lưu bộ lọc lúc này. Vui lòng thử lại hoặc kiểm tra kết nối Firebase.';
+  };
+
+  const persistDefinition = async (definition: LeadFilterDefinition) => {
+    setSaveError('');
+    setSaving(true);
+    try {
+      await onSaveDefinition(definition);
+      return true;
+    } catch (error) {
+      setSaveError(getSaveErrorMessage(error));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const startCreate = () => {
+    setSaveError('');
     const id = `lead_filter_${Date.now().toString(36)}`;
     setEditingId(id);
     setDraft({
@@ -168,6 +198,7 @@ export const LeadFilterAdminModal: React.FC<{
   };
 
   const startEdit = (definition: LeadFilterDefinition) => {
+    setSaveError('');
     setEditingId(definition.id);
     setDraft({ ...definition, options: definition.options.map(item => ({ ...item })) });
     setOptionLines(definition.options.filter(item => item.active).map(item => item.label).join('\n'));
@@ -205,17 +236,17 @@ export const LeadFilterAdminModal: React.FC<{
     if (!draft.name.trim()) return;
     const optionLabels = optionLines.split('\n').map(line => line.trim()).filter(Boolean);
     if (optionLabels.length === 0) return;
-    await onSaveDefinition({
+    const saved = await persistDefinition({
       ...draft,
       name: draft.name.trim(),
       group: draft.group || 'Phân loại khách hàng tiềm năng'
     });
-    setEditingId('');
+    if (saved) setEditingId('');
   };
 
   const toggleDefinitionActive = async (definition: LeadFilterDefinition) => {
-    await onSaveDefinition({ ...definition, active: !definition.active });
-    if (editingId === definition.id) setEditingId('');
+    const saved = await persistDefinition({ ...definition, active: !definition.active });
+    if (saved && editingId === definition.id) setEditingId('');
   };
 
   return (
@@ -239,7 +270,7 @@ export const LeadFilterAdminModal: React.FC<{
                       <span>{FIELD_TYPE_LABELS[definition.type]} · {definition.options.filter(item => item.active).length} lựa chọn</span>
                     </div>
                     <div>
-                      <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title={definition.active ? 'Ngừng sử dụng' : 'Sử dụng lại'} onClick={() => toggleDefinitionActive(definition)}>{definition.active ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                      <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title={definition.active ? 'Ngừng sử dụng' : 'Sử dụng lại'} disabled={saving} onClick={() => toggleDefinitionActive(definition)}>{definition.active ? <EyeOff size={13} /> : <Eye size={13} />}</button>
                       <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title="Chỉnh sửa" onClick={() => startEdit(definition)}><Pencil size={13} /></button>
                     </div>
                   </div>
@@ -267,8 +298,9 @@ export const LeadFilterAdminModal: React.FC<{
                     </div>
                     <div className="lead-config-editor__actions">
                       <button type="button" className="btn btn-outline" onClick={() => setEditingId('')}>Hủy</button>
-                      <button type="button" className="btn btn-primary" onClick={saveDraft}><Save size={14} /> Lưu bộ lọc</button>
+                      <button type="button" className="btn btn-primary" disabled={saving} onClick={saveDraft}><Save size={14} /> {saving ? 'Đang lưu...' : 'Lưu bộ lọc'}</button>
                     </div>
+                    {saveError && <p className="lead-config-error" role="alert">{saveError}</p>}
                   </>
                 ) : (
                   <div className="lead-config-placeholder"><Settings2 size={34} /><strong>Chọn một bộ lọc để chỉnh sửa</strong><span>Có thể đổi tên, lựa chọn, màu sắc và thứ tự hiển thị.</span></div>
