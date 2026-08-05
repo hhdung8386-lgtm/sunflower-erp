@@ -1,9 +1,27 @@
 import type { CustomerRecord, LeadRecord } from './crmModels';
 import { normalizeTaxCode } from './taxCodeUniqueness';
 
-export const LEAD_CANDIDATE_SCHEMA_VERSION = 1;
+export const LEAD_CANDIDATE_SCHEMA_VERSION = 2;
 
 export type LeadCandidateStatus = 'new' | 'retry' | 'disqualified' | 'converted';
+export type LeadCandidateContactOutcome =
+  | 'connected'
+  | 'no_answer'
+  | 'busy'
+  | 'wrong_number'
+  | 'call_back'
+  | 'not_interested'
+  | 'potential';
+
+export interface LeadCandidateContactLog {
+  id: string;
+  occurredAt: string;
+  outcome: LeadCandidateContactOutcome;
+  note: string;
+  nextContactAt: string;
+  createdById: string;
+  createdByName: string;
+}
 
 export interface LeadCandidateRecord extends Record<string, unknown> {
   id: string;
@@ -25,8 +43,11 @@ export interface LeadCandidateRecord extends Record<string, unknown> {
   discoveredByName: string;
   contactAttempts: number;
   lastContactAt: string;
+  lastContactOutcome: LeadCandidateContactOutcome | '';
   lastContactNote: string;
+  contactLogs: LeadCandidateContactLog[];
   nextContactAt: string;
+  pinned: boolean;
   convertedLeadId: string;
   convertedAt: string;
   createdAt: string;
@@ -61,6 +82,38 @@ const normalizeStatus = (value: unknown): LeadCandidateStatus => {
   return statuses.includes(value as LeadCandidateStatus) ? value as LeadCandidateStatus : 'new';
 };
 
+const normalizeContactOutcome = (value: unknown): LeadCandidateContactOutcome | '' => {
+  const outcomes: LeadCandidateContactOutcome[] = [
+    'connected',
+    'no_answer',
+    'busy',
+    'wrong_number',
+    'call_back',
+    'not_interested',
+    'potential'
+  ];
+  return outcomes.includes(value as LeadCandidateContactOutcome)
+    ? value as LeadCandidateContactOutcome
+    : '';
+};
+
+const normalizeContactLogs = (value: unknown): LeadCandidateContactLog[] => (
+  Array.isArray(value)
+    ? value.slice(0, 50).map(item => {
+      const log = asRecord(item);
+      return {
+        id: asText(log.id),
+        occurredAt: asText(log.occurredAt),
+        outcome: normalizeContactOutcome(log.outcome) || 'connected',
+        note: asText(log.note),
+        nextContactAt: asText(log.nextContactAt),
+        createdById: asText(log.createdById),
+        createdByName: asText(log.createdByName)
+      };
+    })
+    : []
+);
+
 export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecord => {
   const source = asRecord(value);
   return {
@@ -84,8 +137,11 @@ export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecor
     discoveredByName: asText(source.discoveredByName ?? source.createdByName),
     contactAttempts: asNonNegativeInteger(source.contactAttempts),
     lastContactAt: asText(source.lastContactAt),
+    lastContactOutcome: normalizeContactOutcome(source.lastContactOutcome),
     lastContactNote: asText(source.lastContactNote),
+    contactLogs: normalizeContactLogs(source.contactLogs),
     nextContactAt: asText(source.nextContactAt),
+    pinned: source.pinned === true,
     convertedLeadId: asText(source.convertedLeadId),
     convertedAt: asText(source.convertedAt),
     createdAt: asText(source.createdAt),
