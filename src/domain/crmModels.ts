@@ -8,6 +8,7 @@ export type CustomerDocumentCategory = 'contract' | 'acceptance' | 'qc' | 'qa' |
 export type LeadStage = 'new' | 'contacted' | 'quoted' | 'negotiating' | 'won' | 'lost' | 'converted';
 export type LeadCompanySize = '' | 'large' | 'medium' | 'small';
 export type LeadCustomFieldType = 'multi_select' | 'single_select' | 'checkbox' | 'text' | 'number' | 'date';
+export type LeadSystemProfileFieldKey = 'companyName' | 'contactPerson' | 'phone' | 'email' | 'taxCode' | 'address' | 'note';
 
 export interface LeadFilterOption {
   id: string;
@@ -34,6 +35,7 @@ export interface LeadFilterDefinition extends UnknownRecord {
 export interface LeadProfileFieldDefinition extends UnknownRecord {
   id: string;
   name: string;
+  systemKey?: LeadSystemProfileFieldKey;
   type: LeadCustomFieldType;
   options: LeadFilterOption[];
   active: boolean;

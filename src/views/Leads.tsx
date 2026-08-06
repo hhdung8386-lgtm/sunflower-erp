@@ -59,7 +59,14 @@ import {
   LeadSalesWorkspace
 } from '../components/LeadFilterSystem';
 import { LeadCandidateWorkspace } from '../components/LeadCandidateWorkspace';
-import { LeadProfileAdminModal, LeadProfileFields } from '../components/LeadProfileFields';
+import {
+  LeadProfileFieldControl,
+  LeadProfileStructureEditor
+} from '../components/LeadProfileFields';
+import {
+  isLeadSystemProfileField,
+  mergeLeadProfileFieldDefinitions
+} from '../domain/leadProfileConfig';
 import { PageBackButton } from '../components/PageBackButton';
 import './Leads.css';
 
@@ -195,7 +202,7 @@ export const Leads: React.FC<LeadsProps> = ({
   const [workspaceTab, setWorkspaceTab] = useState<'list' | 'performance' | 'data'>('list');
   const [candidates, setCandidates] = useState<LeadCandidateRecord[]>([]);
   const [showFilterConfig, setShowFilterConfig] = useState(false);
-  const [showProfileConfig, setShowProfileConfig] = useState(false);
+  const [isEditingProfileStructure, setIsEditingProfileStructure] = useState(false);
   const [storedFilterDefinitions, setStoredFilterDefinitions] = useState<LeadFilterDefinition[]>([]);
   const [profileDefinitions, setProfileDefinitions] = useState<LeadProfileFieldDefinition[]>([]);
   const [dynamicFilters, setDynamicFilters] = useState<Record<string, string[]>>({});
@@ -265,6 +272,16 @@ export const Leads: React.FC<LeadsProps> = ({
     [storedFilterDefinitions]
   );
 
+  const resolvedProfileDefinitions = useMemo(
+    () => mergeLeadProfileFieldDefinitions(profileDefinitions),
+    [profileDefinitions]
+  );
+
+  const customProfileDefinitions = useMemo(
+    () => profileDefinitions.filter(definition => !isLeadSystemProfileField(definition)),
+    [profileDefinitions]
+  );
+
   const accessibleLeads = useMemo(() => leads.filter(lead => {
     if (currentUser.role === 'admin') return true;
     return lead.assignedSaleId === currentUser.uid;
@@ -305,7 +322,7 @@ export const Leads: React.FC<LeadsProps> = ({
         }),
         (lead.activities || []).map(activity => activity.note),
         Object.entries(lead.profileValues || {}).flatMap(([fieldId, fieldValues]) => {
-          const definition = profileDefinitions.find(field => field.id === fieldId);
+          const definition = customProfileDefinitions.find(field => field.id === fieldId);
           return fieldValues.map(value => definition?.options.find(option => option.id === value)?.label || value);
         })
       ]);
@@ -324,7 +341,7 @@ export const Leads: React.FC<LeadsProps> = ({
     filterDefinitions,
     searchTerm,
     users,
-    profileDefinitions
+    customProfileDefinitions
   ]);
 
   const pursuedLeadCount = accessibleLeads.filter(lead => {
@@ -378,6 +395,7 @@ export const Leads: React.FC<LeadsProps> = ({
   };
 
   const openCreateForm = () => {
+    setIsEditingProfileStructure(false);
     setEditingLeadId('');
     setConvertingCandidateId('');
     setFormFilterValues({});
@@ -390,6 +408,7 @@ export const Leads: React.FC<LeadsProps> = ({
   };
 
   const openEditForm = (lead: LeadRecord) => {
+    setIsEditingProfileStructure(false);
     setEditingLeadId(lead.id);
     setConvertingCandidateId('');
     setFormFilterValues(getLeadFilterValues(lead, filterDefinitions));
@@ -419,6 +438,7 @@ export const Leads: React.FC<LeadsProps> = ({
   };
 
   const openCreateFormFromCandidate = (candidate: LeadCandidateRecord) => {
+    setIsEditingProfileStructure(false);
     setEditingLeadId('');
     setConvertingCandidateId(candidate.id);
     setUploadingFiles([]);
@@ -460,6 +480,7 @@ export const Leads: React.FC<LeadsProps> = ({
   const closeLeadForm = () => {
     setShowLeadForm(false);
     setConvertingCandidateId('');
+    setIsEditingProfileStructure(false);
   };
 
   const handleFormFilterValueChange = (
@@ -504,7 +525,7 @@ export const Leads: React.FC<LeadsProps> = ({
     event.preventDefault();
     const normalizedTaxCode = normalizeTaxCode(form.taxCode);
     if (!form.companyName.trim() || !normalizedTaxCode) return;
-    const missingRequiredField = profileDefinitions.find(field => (
+    const missingRequiredField = customProfileDefinitions.find(field => (
       field.active && field.required && (formProfileValues[field.id] || []).length === 0
     ));
     if (missingRequiredField) {
@@ -800,7 +821,7 @@ export const Leads: React.FC<LeadsProps> = ({
               <span>{t('Sale phụ trách')}</span><strong>{assignedSale?.displayName || selectedLead.assignedSaleName || 'Chưa phân công'}</strong>
               <span>{t('Lịch chăm sóc tiếp theo')}</span><strong className={isOverdue(selectedLead) ? 'lead-date-overdue' : ''}>{formatDateTime(selectedLead.nextFollowUpAt)}</strong>
               <span>{t('Giá trị tiềm năng')}</span><strong>{selectedLead.potentialValue.toLocaleString('vi-VN')} đ</strong>
-              {profileDefinitions
+              {customProfileDefinitions
                 .filter(definition => definition.active || (selectedLead.profileValues?.[definition.id] || []).length > 0)
                 .map(definition => (
                   <React.Fragment key={definition.id}>
@@ -847,6 +868,97 @@ export const Leads: React.FC<LeadsProps> = ({
   }
 
   function renderLeadForm() {
+    const renderSystemProfileField = (definition: LeadProfileFieldDefinition) => {
+      if (!definition.systemKey) return null;
+      const disabled = currentUser.role !== 'admin' && !definition.saleEditable;
+      const label = `${t(definition.name)}${definition.required ? ' *' : ''}`;
+      const wideField = definition.systemKey === 'companyName'
+        || definition.systemKey === 'address'
+        || definition.systemKey === 'note';
+      const className = `form-group${wideField ? ' lead-form-grid__wide' : ''}`;
+
+      if (definition.systemKey === 'companyName') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input autoFocus value={form.companyName} disabled={disabled} required={definition.required} onChange={event => updateForm('companyName', event.target.value)} />
+          </div>
+        );
+      }
+
+      if (definition.systemKey === 'contactPerson') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input value={form.contactPerson} disabled={disabled} required={definition.required} onChange={event => updateForm('contactPerson', event.target.value)} />
+          </div>
+        );
+      }
+
+      if (definition.systemKey === 'phone') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input type="tel" value={form.phone} disabled={disabled} required={definition.required} onChange={event => updateForm('phone', event.target.value)} />
+          </div>
+        );
+      }
+
+      if (definition.systemKey === 'email') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input type="email" value={form.email} disabled={disabled} required={definition.required} onChange={event => updateForm('email', event.target.value)} />
+          </div>
+        );
+      }
+
+      if (definition.systemKey === 'taxCode') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input
+              value={form.taxCode}
+              onChange={event => updateForm('taxCode', event.target.value)}
+              required={definition.required}
+              readOnly={isTaxCodeLocked || disabled}
+              aria-invalid={Boolean(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError)}
+              aria-describedby="lead-tax-code-guidance"
+            />
+            <span
+              id="lead-tax-code-guidance"
+              className={taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError ? 'lead-tax-code-message is-error' : 'lead-tax-code-message'}
+            >
+              {(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError) && <AlertCircle size={13} />}
+              {taxCodeConflict
+                ? describeTaxCodeConflict(taxCodeConflict)
+                : candidateTaxCodeConflict
+                  ? `Mã số thuế này đang nằm trong Dữ liệu khách hàng của doanh nghiệp “${candidateTaxCodeConflict.companyName}”.`
+                  : taxCodeSaveError || (isTaxCodeLocked
+                    ? t('Mã số thuế là định danh duy nhất và không thể thay đổi sau khi tạo Lead.')
+                    : t('Mã số thuế được kiểm tra trên toàn bộ Lead và khách hàng CRM.'))}
+            </span>
+          </div>
+        );
+      }
+
+      if (definition.systemKey === 'address') {
+        return (
+          <div className={className} key={definition.id}>
+            <label>{label}</label>
+            <input value={form.address} disabled={disabled} required={definition.required} onChange={event => updateForm('address', event.target.value)} />
+          </div>
+        );
+      }
+
+      return (
+        <div className={className} key={definition.id}>
+          <label>{label}</label>
+          <textarea rows={4} value={form.note} disabled={disabled} required={definition.required} onChange={event => updateForm('note', event.target.value)} placeholder={t('Thông tin cần lưu ý khi làm việc với khách hàng...')} />
+        </div>
+      );
+    };
+
     return (
       <div className="lead-form-page">
         <header className="lead-form-page__header">
@@ -860,94 +972,61 @@ export const Leads: React.FC<LeadsProps> = ({
 
         <form className="lead-form-page__form" onSubmit={handleSaveLead}>
           <div className="lead-form-page__content">
-            <section className="lead-form-card">
+            <section className={`lead-form-card ${isEditingProfileStructure ? 'lead-form-card--profile-structure' : ''}`}>
               <div className="lead-form-card__heading">
                 <Building2 size={18} />
                 <div><h2>{t('Thông tin doanh nghiệp')}</h2><p>{t('Thông tin nhận diện và đầu mối liên hệ chính.')}</p></div>
-              </div>
-              <div className="lead-form-grid">
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Tên doanh nghiệp *')}</label>
-                  <input autoFocus value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label>{t('Người liên hệ')}</label>
-                  <input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>{t('Điện thoại')}</label>
-                  <input type="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>{t('Mã số thuế *')}</label>
-                  <input
-                    value={form.taxCode}
-                    onChange={event => updateForm('taxCode', event.target.value)}
-                    required
-                    readOnly={isTaxCodeLocked}
-                    aria-invalid={Boolean(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError)}
-                    aria-describedby="lead-tax-code-guidance"
-                  />
-                  <span
-                    id="lead-tax-code-guidance"
-                    className={taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError ? 'lead-tax-code-message is-error' : 'lead-tax-code-message'}
+                {currentUser.role === 'admin' && (
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${isEditingProfileStructure ? 'btn-primary' : 'btn-outline'} lead-profile-structure-toggle`}
+                    onClick={() => setIsEditingProfileStructure(previous => !previous)}
                   >
-                    {(taxCodeConflict || candidateTaxCodeConflict || taxCodeSaveError) && <AlertCircle size={13} />}
-                    {taxCodeConflict
-                      ? describeTaxCodeConflict(taxCodeConflict)
-                      : candidateTaxCodeConflict
-                        ? `Mã số thuế này đang nằm trong Dữ liệu khách hàng của doanh nghiệp “${candidateTaxCodeConflict.companyName}”.`
-                        : taxCodeSaveError || (isTaxCodeLocked
-                        ? t('Mã số thuế là định danh duy nhất và không thể thay đổi sau khi tạo Lead.')
-                        : t('Mã số thuế được kiểm tra trên toàn bộ Lead và khách hàng CRM.'))}
-                  </span>
-                </div>
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Địa chỉ')}</label>
-                  <input value={form.address} onChange={event => updateForm('address', event.target.value)} />
-                </div>
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Ghi chú')}</label>
-                  <textarea rows={4} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder={t('Thông tin cần lưu ý khi làm việc với khách hàng...')} />
-                </div>
-                <div className="form-group lead-form-grid__wide">
-                  <label>{t('Tệp / tài liệu liên quan')}</label>
-                  <div className="lead-file-dropzone">
-                    <Paperclip size={18} />
-                    <div><strong>{t('Chọn tệp từ máy tính')}</strong><span>{t('Có thể gắn nhiều báo giá, hình ảnh hoặc tài liệu liên quan.')}</span></div>
-                    <input type="file" multiple onChange={handleLeadFilesChange} />
-                  </div>
-                  {uploadingFiles.length > 0 && (
-                    <div className="lead-upload-list">
-                      {uploadingFiles.map(file => (
-                        <span key={file.id}>
-                          <Paperclip size={12} /> {file.name}
-                          <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))} aria-label={`${t('Bỏ tệp')} ${file.name}`}><X size={12} /></button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {profileDefinitions.some(field => field.active) && (
-                  <div className="lead-profile-custom-section lead-form-grid__wide">
-                    <div className="lead-profile-custom-section__heading">
-                      <strong>{t('Thông tin bổ sung')}</strong>
-                      <span>{t('Các trường do admin cấu hình cho hồ sơ khách hàng tiềm năng.')}</span>
-                    </div>
-                    <LeadProfileFields
-                      definitions={profileDefinitions}
-                      values={formProfileValues}
-                      canEditAll={currentUser.role === 'admin'}
-                      onChange={handleProfileValueChange}
-                    />
-                    {profileSaveError && <div className="lead-profile-validation"><AlertCircle size={13} /> {profileSaveError}</div>}
-                  </div>
+                    <Settings2 size={14} /> {isEditingProfileStructure ? t('Hoàn tất') : t('Chỉnh cấu trúc')}
+                  </button>
                 )}
               </div>
+              {isEditingProfileStructure ? (
+                <LeadProfileStructureEditor
+                  definitions={resolvedProfileDefinitions}
+                  onSaveDefinition={handleSaveProfileDefinition}
+                />
+              ) : (
+                <div className="lead-form-grid">
+                  {resolvedProfileDefinitions.filter(definition => definition.active).map(definition => (
+                    isLeadSystemProfileField(definition)
+                      ? renderSystemProfileField(definition)
+                      : (
+                        <LeadProfileFieldControl
+                          key={definition.id}
+                          field={definition}
+                          values={formProfileValues[definition.id] || []}
+                          disabled={currentUser.role !== 'admin' && !definition.saleEditable}
+                          onChange={values => handleProfileValueChange(definition.id, values)}
+                        />
+                      )
+                  ))}
+                  <div className="form-group lead-form-grid__wide">
+                    <label>{t('Tệp / tài liệu liên quan')}</label>
+                    <div className="lead-file-dropzone">
+                      <Paperclip size={18} />
+                      <div><strong>{t('Chọn tệp từ máy tính')}</strong><span>{t('Có thể gắn nhiều báo giá, hình ảnh hoặc tài liệu liên quan.')}</span></div>
+                      <input type="file" multiple onChange={handleLeadFilesChange} />
+                    </div>
+                    {uploadingFiles.length > 0 && (
+                      <div className="lead-upload-list">
+                        {uploadingFiles.map(file => (
+                          <span key={file.id}>
+                            <Paperclip size={12} /> {file.name}
+                            <button type="button" onClick={() => setUploadingFiles(previous => previous.filter(item => item.id !== file.id))} aria-label={`${t('Bỏ tệp')} ${file.name}`}><X size={12} /></button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {profileSaveError && <div className="lead-profile-validation lead-form-grid__wide"><AlertCircle size={13} /> {profileSaveError}</div>}
+                </div>
+              )}
             </section>
 
             <section className="lead-form-card lead-form-card--classification">
@@ -1018,7 +1097,6 @@ export const Leads: React.FC<LeadsProps> = ({
           <p className="page-subtitle">{t('Quản lý cơ hội bán hàng, lịch chăm sóc và chuyển đổi Lead thành khách hàng chính thức.')}</p>
         </div>
         <div className="lead-page-actions">
-          {workspaceTab === 'list' && currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowProfileConfig(true)}><Building2 size={16} /> {t('Cấu hình hồ sơ')}</button>}
           {workspaceTab === 'list' && currentUser.role === 'admin' && <button type="button" className="btn btn-outline" onClick={() => setShowFilterConfig(true)}><Settings2 size={16} /> {t('Cấu hình bộ lọc')}</button>}
           {workspaceTab === 'list' && <button type="button" className="btn btn-primary" onClick={openCreateForm}><Plus size={16} /> {t('Thêm Lead')}</button>}
         </div>
@@ -1125,13 +1203,6 @@ export const Leads: React.FC<LeadsProps> = ({
           definitions={filterDefinitions}
           onClose={() => setShowFilterConfig(false)}
           onSaveDefinition={handleSaveFilterDefinition}
-        />
-      )}
-      {showProfileConfig && currentUser.role === 'admin' && (
-        <LeadProfileAdminModal
-          definitions={profileDefinitions}
-          onClose={() => setShowProfileConfig(false)}
-          onSaveDefinition={handleSaveProfileDefinition}
         />
       )}
     </div>

@@ -394,6 +394,15 @@
   font-size: 10.5px;
 }
 
+.lead-form-card--profile-structure {
+  grid-column: 1 / -1;
+}
+
+.lead-profile-structure-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .lead-form-card--classification .lead-compact-filter-row {
   grid-template-columns: 86px minmax(0, 1fr);
 }
@@ -1993,6 +2002,38 @@
   min-height: 520px;
 }
 
+.lead-profile-structure-editor {
+  display: grid;
+  grid-template-columns: minmax(520px, 1.2fr) minmax(360px, .8fr);
+  gap: 14px;
+}
+
+.lead-profile-structure-editor .lead-config-list,
+.lead-profile-structure-editor .lead-config-editor {
+  min-height: 350px;
+}
+
+.lead-profile-structure-editor .lead-config-list__header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lead-profile-structure-editor .lead-config-list__header > div > span {
+  color: #64748b;
+  font-size: 9.5px;
+  font-weight: 400;
+}
+
+.lead-profile-structure-list {
+  max-height: 310px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #fff;
+}
+
 .lead-config-list,
 .lead-config-editor {
   padding: 12px;
@@ -2020,6 +2061,13 @@
 
 .lead-config-item.is-inactive {
   opacity: .55;
+}
+
+.lead-config-item.is-editing {
+  position: relative;
+  z-index: 1;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 #2563eb;
 }
 
 .lead-config-item > div:first-child {
@@ -2054,6 +2102,24 @@
 
 .lead-config-editor textarea {
   resize: vertical;
+}
+
+.lead-profile-system-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 11px;
+  padding: 8px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  color: #1e40af;
+  background: #eff6ff;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.lead-profile-system-notice svg {
+  flex: 0 0 auto;
 }
 
 .lead-config-checks {
@@ -2214,8 +2280,14 @@
   .lead-dynamic-groups,
   .lead-advanced-fields,
   .lead-custom-value-filters,
-  .lead-config-layout {
+  .lead-config-layout,
+  .lead-profile-structure-editor {
     grid-template-columns: 1fr;
+  }
+
+  .lead-profile-structure-editor .lead-config-list,
+  .lead-profile-structure-editor .lead-config-editor {
+    min-height: 0;
   }
 
   .lead-saved-views,
