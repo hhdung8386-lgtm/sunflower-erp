@@ -11,7 +11,8 @@ export type LeadCandidateContactOutcome =
   | 'wrong_number'
   | 'call_back'
   | 'not_interested'
-  | 'potential';
+  | 'potential'
+  | 'task_completed';
 
 export interface LeadCandidateContactLog {
   id: string;
@@ -32,6 +33,7 @@ export interface LeadCandidateRecord extends Record<string, unknown> {
   email: string;
   taxCode: string;
   address: string;
+  province: string;
   website: string;
   source: string;
   sourceUrl: string;
@@ -90,7 +92,8 @@ const normalizeContactOutcome = (value: unknown): LeadCandidateContactOutcome | 
     'wrong_number',
     'call_back',
     'not_interested',
-    'potential'
+    'potential',
+    'task_completed'
   ];
   return outcomes.includes(value as LeadCandidateContactOutcome)
     ? value as LeadCandidateContactOutcome
@@ -126,6 +129,7 @@ export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecor
     email: asText(source.email),
     taxCode: normalizeTaxCode(source.taxCode),
     address: asText(source.address),
+    province: asText(source.province),
     website: asText(source.website),
     source: asText(source.source),
     sourceUrl: asText(source.sourceUrl),

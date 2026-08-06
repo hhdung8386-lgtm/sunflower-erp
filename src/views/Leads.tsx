@@ -467,6 +467,7 @@ export const Leads: React.FC<LeadsProps> = ({
       email: candidate.email,
       taxCode: candidate.taxCode,
       address: candidate.address,
+      province: candidate.province,
       source: leadSource,
       stage: 'contacted',
       assignedSaleId,
