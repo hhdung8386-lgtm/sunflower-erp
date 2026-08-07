@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { dbService } from '../services/firebaseService';
 import { useLanguage } from '../context/LanguageContext';
 import { HorizontalBarChart } from '../components/VisualCharts';
@@ -126,30 +126,53 @@ const CrmMultiSelectFilter: React.FC<{
   options: CrmFilterOption[];
   selectedValues: string[];
   onChange: (values: string[]) => void;
-}> = ({ label, options, selectedValues, onChange }) => (
-  <details className="crm-multi-filter">
-    <summary>
-      <span>{selectedValues.length > 0 ? `${label} (${selectedValues.length})` : label}</span>
-      <ChevronDown size={13} />
-    </summary>
-    <div className="crm-multi-filter__menu">
-      {options.map(option => (
-        <label key={option.value} className={selectedValues.includes(option.value) ? 'is-selected' : ''}>
-          <input
-            type="checkbox"
-            checked={selectedValues.includes(option.value)}
-            onChange={event => onChange(event.target.checked
-              ? [...selectedValues, option.value]
-              : selectedValues.filter(value => value !== option.value))}
-          />
-          <span>{option.label}</span>
-        </label>
-      ))}
-      {options.length === 0 && <span className="crm-multi-filter__empty">Chưa có dữ liệu</span>}
-      {selectedValues.length > 0 && <button type="button" onClick={() => onChange([])}>Bỏ chọn</button>}
-    </div>
-  </details>
-);
+}> = ({ label, options, selectedValues, onChange }) => {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const details = detailsRef.current;
+      if (details?.open && event.target instanceof Node && !details.contains(event.target)) {
+        details.removeAttribute('open');
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') detailsRef.current?.removeAttribute('open');
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  return (
+    <details ref={detailsRef} className="crm-multi-filter">
+      <summary>
+        <span>{selectedValues.length > 0 ? `${label} (${selectedValues.length})` : label}</span>
+        <ChevronDown size={13} />
+      </summary>
+      <div className="crm-multi-filter__menu">
+        {options.map(option => (
+          <label key={option.value} className={selectedValues.includes(option.value) ? 'is-selected' : ''}>
+            <input
+              type="checkbox"
+              checked={selectedValues.includes(option.value)}
+              onChange={event => onChange(event.target.checked
+                ? [...selectedValues, option.value]
+                : selectedValues.filter(value => value !== option.value))}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+        {options.length === 0 && <span className="crm-multi-filter__empty">Chưa có dữ liệu</span>}
+        {selectedValues.length > 0 && <button type="button" onClick={() => onChange([])}>Bỏ chọn</button>}
+      </div>
+    </details>
+  );
+};
 
 const createNextCustomerCode = (customers: CustomerRecord[]) => {
   const usedCodes = new Set(customers.map(customer => customer.customerCode).filter(Boolean));
