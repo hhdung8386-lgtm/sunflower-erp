@@ -2819,6 +2819,24 @@ tr:hover td {
   box-shadow: 0 0 0 2px var(--color-primary-light);
 }
 
+/* Keep numeric cells calm: values remain editable without browser hover steppers. */
+.po-inline-grid input[type="number"],
+.customer-data-table input[type="number"],
+.customer-onboarding-items__table input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.po-inline-grid input[type="number"]::-webkit-inner-spin-button,
+.po-inline-grid input[type="number"]::-webkit-outer-spin-button,
+.customer-data-table input[type="number"]::-webkit-inner-spin-button,
+.customer-data-table input[type="number"]::-webkit-outer-spin-button,
+.customer-onboarding-items__table input[type="number"]::-webkit-inner-spin-button,
+.customer-onboarding-items__table input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .po-grid-input-readonly {
   background-color: var(--bg-muted);
   color: var(--color-text-muted);
