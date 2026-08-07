@@ -663,6 +663,7 @@ export const Leads: React.FC<LeadsProps> = ({
         nextContactAt: '',
         queuedNextContactAt: '',
         taskStatus: 'dismissed',
+        workStatus: 'completed',
         taskDismissedAt: now,
         updatedBy: currentUser.displayName
       });

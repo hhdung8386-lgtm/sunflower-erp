@@ -16,9 +16,9 @@ import {
   Pencil,
   Phone,
   Plus,
-  Power,
   Search,
   Star,
+  Trash2,
   UserRoundSearch,
   X
 } from 'lucide-react';
@@ -28,10 +28,9 @@ import {
   findCandidateDuplicate,
   LEAD_CANDIDATE_SCHEMA_VERSION,
   type CandidateDuplicate,
-  type LeadCandidateContactOutcome,
   type LeadCandidateRecord,
-  type LeadCandidateStatus,
-  type LeadCandidateTaskStatus
+  type LeadCandidateTaskStatus,
+  type LeadCandidateWorkStatus
 } from '../domain/leadCandidateModels';
 import { normalizeTaxCode } from '../domain/taxCodeUniqueness';
 import {
@@ -66,42 +65,21 @@ interface CandidateFormState {
   note: string;
 }
 
-interface ContactAttemptState {
-  outcome: LeadCandidateContactOutcome;
+interface ScheduleFormState {
   nextContactAt: string;
   note: string;
 }
 
-const CANDIDATE_SOURCES = ['Google Maps', 'Facebook', 'Website', 'Khách hàng giới thiệu', 'Khác'];
+const CANDIDATE_SOURCES = ['Google Maps', 'Facebook', 'Mạng xã hội', 'Website', 'Khách hàng giới thiệu', 'Khác'];
 type CandidateWorkspaceView = 'tasks' | 'all';
-type CandidateOutcomeFilter = 'all' | 'not_contacted' | LeadCandidateContactOutcome;
+type CandidateWorkStatusFilter = 'all' | LeadCandidateWorkStatus;
 type CandidateSort = 'priority' | 'updated_desc' | 'company_asc' | 'next_contact_asc';
 
-const CANDIDATE_STATUS_LABELS: Record<LeadCandidateStatus, string> = {
-  new: 'Chưa tiếp cận',
-  retry: 'Cần liên hệ lại',
-  disqualified: 'Không phù hợp',
-  converted: 'Đã thành Lead'
+const WORK_STATUS_LABELS: Record<LeadCandidateWorkStatus, string> = {
+  not_contacted: 'Chưa tiếp cận',
+  pending: 'Đang chờ xử lý',
+  completed: 'Đã xử lý'
 };
-
-const CONTACT_OUTCOMES: Array<{
-  value: LeadCandidateContactOutcome;
-  label: string;
-  hint: string;
-}> = [
-  { value: 'connected', label: 'Đã kết nối', hint: 'Đã trao đổi được với khách hàng' },
-  { value: 'no_answer', label: 'Không nghe máy', hint: 'Chưa kết nối được' },
-  { value: 'busy', label: 'Máy bận', hint: 'Cần gọi lại sau' },
-  { value: 'call_back', label: 'Khách yêu cầu gọi lại', hint: 'Chọn lịch tiếp cận tiếp theo' },
-  { value: 'potential', label: 'Có tiềm năng', hint: 'Có thể chuyển thành Lead' },
-  { value: 'wrong_number', label: 'Sai số điện thoại', hint: 'Cần kiểm tra lại dữ liệu' },
-  { value: 'not_interested', label: 'Không có nhu cầu', hint: 'Kết thúc tiếp cận' },
-  { value: 'task_completed', label: 'Đã xử lý lịch gọi', hint: 'Xác nhận hoàn thành công việc đã hẹn' }
-];
-
-const CONTACT_OUTCOME_LABELS = Object.fromEntries(
-  CONTACT_OUTCOMES.map(outcome => [outcome.value, outcome.label])
-) as Record<LeadCandidateContactOutcome, string>;
 
 const toDateTimeLocal = (value: string) => {
   if (!value) return '';
@@ -118,12 +96,6 @@ const tomorrowAtNine = () => {
   return toDateTimeLocal(date.toISOString());
 };
 
-const formatDateTime = (value: string, fallback = 'Chưa đặt lịch') => {
-  if (!value) return fallback;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleString('vi-VN');
-};
-
 const formatShortDateTime = (value: string, fallback = 'Chưa có') => {
   if (!value) return fallback;
   const date = new Date(value);
@@ -136,16 +108,11 @@ const formatShortDateTime = (value: string, fallback = 'Chưa có') => {
   });
 };
 
-const CALL_OUTCOMES = CONTACT_OUTCOMES.filter(outcome => outcome.value !== 'task_completed');
-
-const isDueToday = (candidate: LeadCandidateRecord) => {
-  if (!candidate.nextContactAt || candidate.taskStatus === 'dismissed' || candidate.status === 'converted') return false;
-  const nextContact = new Date(candidate.nextContactAt);
-  if (Number.isNaN(nextContact.getTime())) return false;
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-  return nextContact.getTime() <= endOfToday.getTime();
-};
+const isVisibleTask = (candidate: LeadCandidateRecord) => (
+  Boolean(candidate.nextContactAt)
+  && candidate.taskStatus !== 'dismissed'
+  && candidate.status !== 'converted'
+);
 
 const createEmptyCandidateForm = (
   currentUser: UserProfile,
@@ -223,7 +190,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   const [saleFilter, setSaleFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [provinceFilter, setProvinceFilter] = useState('all');
-  const [outcomeFilter, setOutcomeFilter] = useState<CandidateOutcomeFilter>('all');
+  const [workStatusFilter, setWorkStatusFilter] = useState<CandidateWorkStatusFilter>('all');
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [candidateSort, setCandidateSort] = useState<CandidateSort>('priority');
   const [pageSize, setPageSize] = useState(25);
@@ -232,21 +199,21 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   const [editingCandidateId, setEditingCandidateId] = useState('');
   const [form, setForm] = useState<CandidateFormState>(() => createEmptyCandidateForm(currentUser, candidateOwners));
   const [saveError, setSaveError] = useState('');
-  const [attemptCandidateId, setAttemptCandidateId] = useState('');
-  const [attemptForm, setAttemptForm] = useState<ContactAttemptState>({ outcome: 'no_answer', nextContactAt: tomorrowAtNine(), note: '' });
-  const [attemptError, setAttemptError] = useState('');
-  const [savingAttempt, setSavingAttempt] = useState(false);
+  const [scheduleCandidateId, setScheduleCandidateId] = useState('');
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>({ nextContactAt: tomorrowAtNine(), note: '' });
+  const [scheduleError, setScheduleError] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [actionError, setActionError] = useState('');
   const [taskActionCandidateId, setTaskActionCandidateId] = useState('');
   const [referenceTime] = useState(() => Date.now());
 
   const accessibleCandidates = useMemo(() => candidates.filter(candidate => (
-    currentUser.role === 'admin' || candidate.assignedSaleId === currentUser.uid
+    !candidate.archived && (currentUser.role === 'admin' || candidate.assignedSaleId === currentUser.uid)
   )), [candidates, currentUser.role, currentUser.uid]);
 
   const workspaceCounts = useMemo(() => ({
-    tasks: accessibleCandidates.filter(isDueToday).length,
+    tasks: accessibleCandidates.filter(isVisibleTask).length,
     all: accessibleCandidates.length
   }), [accessibleCandidates]);
 
@@ -255,14 +222,13 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   )).sort((left, right) => left.localeCompare(right, 'vi-VN')), [accessibleCandidates]);
 
   const filteredCandidates = useMemo(() => accessibleCandidates.filter(candidate => {
-    const matchesWorkspace = workspaceView === 'all' || isDueToday(candidate);
+    const matchesWorkspace = workspaceView === 'all' || isVisibleTask(candidate);
     if (workspaceView === 'tasks') return matchesWorkspace;
     const matchesSale = saleFilter === 'all' || candidate.assignedSaleId === saleFilter;
     const matchesSource = sourceFilter === 'all' || candidate.source === sourceFilter;
     const matchesProvince = provinceFilter === 'all' || candidate.province === provinceFilter;
-    const matchesOutcome = outcomeFilter === 'all'
-      || (outcomeFilter === 'not_contacted' ? !candidate.lastContactAt : candidate.lastContactOutcome === outcomeFilter);
-    return matchesWorkspace && matchesSale && matchesSource && matchesProvince && matchesOutcome && (!pinnedOnly || candidate.pinned) && matchesSearch(candidate, searchTerm);
+    const matchesWorkStatus = workStatusFilter === 'all' || candidate.workStatus === workStatusFilter;
+    return matchesWorkspace && matchesSale && matchesSource && matchesProvince && matchesWorkStatus && (!pinnedOnly || candidate.pinned) && matchesSearch(candidate, searchTerm);
   }).sort((left, right) => {
     if (workspaceView === 'tasks') {
       if (left.taskStatus !== right.taskStatus) return left.taskStatus === 'pending' ? -1 : 1;
@@ -282,39 +248,25 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     const rightSchedule = right.nextContactAt ? new Date(right.nextContactAt).getTime() : Number.MAX_SAFE_INTEGER;
     if (leftSchedule !== rightSchedule) return leftSchedule - rightSchedule;
     return new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime();
-  }), [accessibleCandidates, candidateSort, outcomeFilter, pinnedOnly, provinceFilter, saleFilter, searchTerm, sourceFilter, workspaceView]);
+  }), [accessibleCandidates, candidateSort, pinnedOnly, provinceFilter, saleFilter, searchTerm, sourceFilter, workStatusFilter, workspaceView]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const displayedCandidates = workspaceView === 'all'
     ? filteredCandidates.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
     : filteredCandidates;
-  const activeFilterCount = [provinceFilter, sourceFilter, outcomeFilter, saleFilter]
+  const activeFilterCount = [provinceFilter, sourceFilter, workStatusFilter, saleFilter]
     .filter(value => value !== 'all').length + (pinnedOnly ? 1 : 0);
 
   const editingCandidate = editingCandidateId
     ? accessibleCandidates.find(candidate => candidate.id === editingCandidateId) || null
     : null;
-  const attemptCandidate = attemptCandidateId
-    ? accessibleCandidates.find(candidate => candidate.id === attemptCandidateId) || null
+  const scheduleCandidate = scheduleCandidateId
+    ? accessibleCandidates.find(candidate => candidate.id === scheduleCandidateId) || null
     : null;
   const selectedCandidate = selectedCandidateId
     ? accessibleCandidates.find(candidate => candidate.id === selectedCandidateId) || null
     : null;
-  const selectedContactLogs = selectedCandidate
-    ? (selectedCandidate.contactLogs?.length > 0
-      ? selectedCandidate.contactLogs
-      : selectedCandidate.lastContactAt ? [{
-        id: `legacy-${selectedCandidate.id}`,
-        occurredAt: selectedCandidate.lastContactAt,
-        outcome: (selectedCandidate.lastContactOutcome || 'connected') as LeadCandidateContactOutcome,
-        note: selectedCandidate.lastContactNote,
-        nextContactAt: selectedCandidate.nextContactAt,
-        createdById: '',
-        createdByName: selectedCandidate.updatedBy || selectedCandidate.assignedSaleName
-      }] : [])
-    : [];
-
   const duplicate = useMemo(() => findCandidateDuplicate(
     {
       companyName: form.companyName,
@@ -415,6 +367,9 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
         ...(scheduleChanged ? {
           queuedNextContactAt: '',
           taskStatus: (nextContactAt ? 'pending' : 'dismissed') as LeadCandidateTaskStatus,
+          workStatus: (nextContactAt
+            ? 'pending'
+            : editingCandidate?.workStatus === 'completed' ? 'completed' : 'not_contacted') as LeadCandidateWorkStatus,
           taskCompletedAt: '',
           taskCompletedById: '',
           taskCompletedByName: '',
@@ -438,6 +393,10 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
         lastContactNote: '',
         contactLogs: [],
         pinned: false,
+        archived: false,
+        archivedAt: '',
+        archivedById: '',
+        archivedByName: '',
         convertedLeadId: '',
         convertedAt: '',
         createdAt: now,
@@ -470,67 +429,44 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     }
   };
 
-  const openAttemptForm = (candidate: LeadCandidateRecord) => {
-    setAttemptCandidateId(candidate.id);
-    setAttemptForm({ outcome: 'no_answer', nextContactAt: tomorrowAtNine(), note: '' });
-    setAttemptError('');
+  const openScheduleForm = (candidate: LeadCandidateRecord) => {
+    setScheduleCandidateId(candidate.id);
+    setScheduleForm({
+      nextContactAt: toDateTimeLocal(candidate.nextContactAt) || tomorrowAtNine(),
+      note: candidate.note
+    });
+    setScheduleError('');
   };
 
-  const handleSaveAttempt = async (event: React.FormEvent) => {
+  const handleSaveSchedule = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!attemptCandidate) return;
-    const occurredAt = new Date().toISOString();
-    const nextContactAt = attemptForm.nextContactAt
-      ? new Date(attemptForm.nextContactAt).toISOString()
-      : '';
-    const closesCandidate = attemptForm.outcome === 'not_interested';
-    const hasVisibleTask = isDueToday(attemptCandidate);
-    const taskScheduleUpdate = hasVisibleTask
-      ? {
-        nextContactAt: attemptCandidate.nextContactAt,
-        queuedNextContactAt: closesCandidate ? '' : nextContactAt
-      }
-      : {
-        nextContactAt: closesCandidate ? '' : nextContactAt,
+    if (!scheduleCandidate || !scheduleForm.nextContactAt) return;
+    const nextContactAt = new Date(scheduleForm.nextContactAt).toISOString();
+    setSavingSchedule(true);
+    setScheduleError('');
+    try {
+      await dbService.updateDocument('lead_candidates', scheduleCandidate.id, {
+        nextContactAt,
         queuedNextContactAt: '',
-        taskStatus: (closesCandidate || !nextContactAt ? 'dismissed' : 'pending') as LeadCandidateTaskStatus,
+        taskStatus: 'pending',
+        workStatus: 'pending',
         taskCompletedAt: '',
         taskCompletedById: '',
         taskCompletedByName: '',
-        taskDismissedAt: closesCandidate || !nextContactAt ? occurredAt : ''
-      };
-
-    setSavingAttempt(true);
-    setAttemptError('');
-    try {
-      await dbService.updateDocument('lead_candidates', attemptCandidate.id, {
-        status: closesCandidate ? 'disqualified' : 'retry',
-        contactAttempts: attemptCandidate.contactAttempts + 1,
-        lastContactAt: occurredAt,
-        lastContactOutcome: attemptForm.outcome,
-        lastContactNote: attemptForm.note.trim(),
-        contactLogs: [{
-          id: `contact-${Date.now().toString(36)}`,
-          occurredAt,
-          outcome: attemptForm.outcome,
-          note: attemptForm.note.trim(),
-          nextContactAt: closesCandidate ? '' : nextContactAt,
-          createdById: currentUser.uid,
-          createdByName: currentUser.displayName
-        }, ...(attemptCandidate.contactLogs || [])].slice(0, 50),
-        ...taskScheduleUpdate,
+        taskDismissedAt: '',
+        note: scheduleForm.note.trim(),
         updatedBy: currentUser.displayName
       });
-      setAttemptCandidateId('');
+      setScheduleCandidateId('');
     } catch (error) {
       const code = typeof error === 'object' && error !== null && 'code' in error
         ? String(error.code)
         : '';
-      setAttemptError(code.includes('permission-denied')
-        ? 'Firebase chưa cấp quyền ghi nhận cuộc gọi. Admin cần xuất bản Firestore Rules mới nhất.'
-        : 'Không thể lưu kết quả cuộc gọi. Vui lòng thử lại.');
+      setScheduleError(code.includes('permission-denied')
+        ? 'Firebase chưa cấp quyền đặt lịch. Admin cần xuất bản Firestore Rules mới nhất.'
+        : 'Không thể lưu lịch hẹn. Vui lòng thử lại.');
     } finally {
-      setSavingAttempt(false);
+      setSavingSchedule(false);
     }
   };
 
@@ -546,49 +482,37 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     }
   };
 
-  const completeScheduledTask = async (candidate: LeadCandidateRecord) => {
-    if (candidate.taskStatus === 'completed') return;
-    const occurredAt = new Date().toISOString();
+  const toggleScheduledTask = async (candidate: LeadCandidateRecord) => {
+    const isCompleted = candidate.taskStatus === 'completed';
+    const updatedAt = new Date().toISOString();
     setActionError('');
     setTaskActionCandidateId(candidate.id);
     try {
       await dbService.updateDocument('lead_candidates', candidate.id, {
-        taskStatus: 'completed',
-        taskCompletedAt: occurredAt,
-        taskCompletedById: currentUser.uid,
-        taskCompletedByName: currentUser.displayName,
-        contactLogs: [{
-          id: `task-${occurredAt.replace(/\D/g, '')}`,
-          occurredAt,
-          outcome: 'task_completed' as LeadCandidateContactOutcome,
-          note: `Đã xử lý lịch gọi hẹn lúc ${formatDateTime(candidate.nextContactAt)}.`,
-          nextContactAt: candidate.queuedNextContactAt,
-          createdById: currentUser.uid,
-          createdByName: currentUser.displayName
-        }, ...(candidate.contactLogs || [])].slice(0, 50),
+        taskStatus: isCompleted ? 'pending' : 'completed',
+        workStatus: isCompleted ? 'pending' : 'completed',
+        taskCompletedAt: isCompleted ? '' : updatedAt,
+        taskCompletedById: isCompleted ? '' : currentUser.uid,
+        taskCompletedByName: isCompleted ? '' : currentUser.displayName,
         updatedBy: currentUser.displayName
       });
     } catch {
-      setActionError('Không thể xác nhận công việc đã xử lý. Vui lòng kiểm tra quyền Firebase và thử lại.');
+      setActionError('Không thể đổi trạng thái công việc. Vui lòng kiểm tra quyền Firebase và thử lại.');
     } finally {
       setTaskActionCandidateId('');
     }
   };
 
   const dismissScheduledTask = async (candidate: LeadCandidateRecord) => {
-    if (candidate.taskStatus !== 'completed') return;
     const dismissedAt = new Date().toISOString();
-    const nextContactAt = candidate.queuedNextContactAt;
     setActionError('');
     setTaskActionCandidateId(candidate.id);
     try {
       await dbService.updateDocument('lead_candidates', candidate.id, {
-        nextContactAt,
+        nextContactAt: '',
         queuedNextContactAt: '',
-        taskStatus: nextContactAt ? 'pending' : 'dismissed',
-        taskCompletedAt: '',
-        taskCompletedById: '',
-        taskCompletedByName: '',
+        taskStatus: 'dismissed',
+        workStatus: candidate.taskStatus === 'completed' ? 'completed' : 'not_contacted',
         taskDismissedAt: dismissedAt,
         updatedBy: currentUser.displayName
       });
@@ -604,24 +528,25 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     void navigator.clipboard?.writeText(phone).catch(() => undefined);
   };
 
-  const markDisqualified = async (candidate: LeadCandidateRecord) => {
-    if (!window.confirm(`Ngừng sử dụng dữ liệu “${candidate.companyName}”? Lịch sử liên hệ vẫn được giữ nguyên.`)) return;
-    const dismissedAt = new Date().toISOString();
+  const archiveCandidate = async (candidate: LeadCandidateRecord) => {
+    if (!window.confirm(`Xóa “${candidate.companyName}” khỏi danh sách dữ liệu? Thông tin cũ vẫn được lưu an toàn.`)) return;
+    const archivedAt = new Date().toISOString();
     setActionError('');
     try {
       await dbService.updateDocument('lead_candidates', candidate.id, {
-        status: 'disqualified',
-        ...(!isDueToday(candidate) ? {
-          nextContactAt: '',
-          queuedNextContactAt: '',
-          taskStatus: 'dismissed' as LeadCandidateTaskStatus,
-          taskDismissedAt: dismissedAt
-        } : {}),
+        archived: true,
+        archivedAt,
+        archivedById: currentUser.uid,
+        archivedByName: currentUser.displayName,
+        nextContactAt: '',
+        queuedNextContactAt: '',
+        taskStatus: 'dismissed',
+        taskDismissedAt: archivedAt,
         updatedBy: currentUser.displayName
       });
       setSelectedCandidateId('');
     } catch {
-      setActionError('Không thể cập nhật trạng thái dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.');
+      setActionError('Không thể xóa dữ liệu khỏi danh sách. Vui lòng kiểm tra quyền Firebase và thử lại.');
     }
   };
 
@@ -629,7 +554,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     setSearchTerm('');
     setProvinceFilter('all');
     setSourceFilter('all');
-    setOutcomeFilter('all');
+    setWorkStatusFilter('all');
     setSaleFilter('all');
     setPinnedOnly(false);
     setCurrentPage(1);
@@ -648,46 +573,43 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
         </header>
 
         <form className="lead-form-page__form" onSubmit={handleSaveCandidate}>
-          <div className="lead-form-page__content lead-candidate-form-page__content">
+          <div className="lead-form-page__content lead-candidate-form-page__content lead-candidate-quick-form">
             <section className="lead-form-card">
               <div className="lead-form-card__heading">
                 <Building2 size={18} />
-                <div><h2>Thông tin doanh nghiệp</h2><p>Thông tin nhận diện và đầu mối liên hệ ban đầu.</p></div>
+                <div><h2>Dữ liệu khách hàng</h2><p>Chỉ tên doanh nghiệp là bắt buộc; các thông tin tìm được có thể bổ sung linh hoạt.</p></div>
               </div>
               <div className="lead-form-grid">
                 <div className="form-group lead-form-grid__wide"><label>Tên doanh nghiệp *</label><input autoFocus required value={form.companyName} onChange={event => updateForm('companyName', event.target.value)} /></div>
-                <div className="form-group"><label>Mã số thuế</label><input value={form.taxCode} readOnly={Boolean(editingCandidate?.taxCode)} onChange={event => updateForm('taxCode', event.target.value)} /></div>
+                <div className="form-group"><label>Tỉnh / thành</label><input list="candidate-province-options" value={form.province} onChange={event => updateForm('province', event.target.value)} placeholder="Ví dụ: Bắc Ninh" /></div>
                 <div className="form-group"><label>Người liên hệ</label><input value={form.contactPerson} onChange={event => updateForm('contactPerson', event.target.value)} /></div>
                 <div className="form-group"><label>Điện thoại</label><input type="tel" value={form.phone} onChange={event => updateForm('phone', event.target.value)} /></div>
                 <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={event => updateForm('email', event.target.value)} /></div>
-                <div className="form-group"><label>Tỉnh / thành</label><input list="candidate-province-options" value={form.province} onChange={event => updateForm('province', event.target.value)} placeholder="Ví dụ: Hải Dương" /></div>
-                <div className="form-group lead-form-grid__wide"><label>Địa chỉ</label><input value={form.address} onChange={event => updateForm('address', event.target.value)} /></div>
+                <div className="form-group"><label>Nguồn tìm kiếm</label><select value={form.source} onChange={event => updateForm('source', event.target.value)}>{CANDIDATE_SOURCES.map(source => <option key={source}>{source}</option>)}</select></div>
+                <div className="form-group"><label>Đường dẫn nguồn</label><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="Link Facebook, Google Maps..." /></div>
+                <div className="form-group lead-form-grid__wide"><label>Ghi chú</label><textarea rows={7} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder="Nhu cầu sơ bộ, khu vực, thông tin cần lưu ý khi liên hệ..." /></div>
                 <datalist id="candidate-province-options">{provinceOptions.map(province => <option key={province} value={province} />)}</datalist>
               </div>
             </section>
 
             <section className="lead-form-card">
               <div className="lead-form-card__heading">
-                <ExternalLink size={18} />
-                <div><h2>Nguồn dữ liệu</h2><p>Lưu lại nơi tìm thấy doanh nghiệp để thuận tiện kiểm tra.</p></div>
-              </div>
-              <div className="lead-form-grid">
-                <div className="form-group lead-form-grid__wide"><label>Nguồn tìm kiếm</label><select value={form.source} onChange={event => updateForm('source', event.target.value)}>{CANDIDATE_SOURCES.map(source => <option key={source}>{source}</option>)}</select></div>
-                <div className="form-group lead-form-grid__wide"><label>Website</label><input type="url" value={form.website} onChange={event => updateForm('website', event.target.value)} placeholder="https://..." /></div>
-                <div className="form-group lead-form-grid__wide"><label>Đường dẫn nguồn</label><input type="url" value={form.sourceUrl} onChange={event => updateForm('sourceUrl', event.target.value)} placeholder="Link Google Maps, Facebook hoặc trang doanh nghiệp..." /></div>
-              </div>
-            </section>
-
-            <section className="lead-form-card">
-              <div className="lead-form-card__heading">
                 <CalendarClock size={18} />
-                <div><h2>Phụ trách và lịch tiếp cận</h2><p>Thông tin phục vụ phân công và theo dõi của Sale.</p></div>
+                <div><h2>Phụ trách và lịch hẹn</h2><p>Có thể lưu dữ liệu trước và đặt lịch làm việc sau.</p></div>
               </div>
               <div className="lead-form-grid">
-                <div className="form-group"><label>Người phụ trách *</label><select required value={form.assignedSaleId} disabled={currentUser.role === 'sale'} onChange={event => updateForm('assignedSaleId', event.target.value)}><option value="">Chưa phân công</option>{candidateOwners.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
-                <div className="form-group"><label>Lịch tiếp cận</label><input type="datetime-local" value={form.nextContactAt} onChange={event => updateForm('nextContactAt', event.target.value)} /></div>
-                <div className="form-group lead-form-grid__wide"><label>Ghi chú</label><textarea rows={6} value={form.note} onChange={event => updateForm('note', event.target.value)} placeholder="Thông tin sơ bộ trước khi Sale liên hệ..." /></div>
+                <div className="form-group lead-form-grid__wide"><label>Người phụ trách *</label><select required value={form.assignedSaleId} disabled={currentUser.role === 'sale'} onChange={event => updateForm('assignedSaleId', event.target.value)}><option value="">Chưa phân công</option>{candidateOwners.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}</select></div>
+                <div className="form-group lead-form-grid__wide"><label>Lịch hẹn xử lý</label><input type="datetime-local" value={form.nextContactAt} onChange={event => updateForm('nextContactAt', event.target.value)} /></div>
               </div>
+
+              <details className="lead-candidate-extra-fields">
+                <summary>Thông tin bổ sung (không bắt buộc)</summary>
+                <div className="lead-form-grid">
+                  <div className="form-group lead-form-grid__wide"><label>Mã số thuế</label><input value={form.taxCode} readOnly={Boolean(editingCandidate?.taxCode)} onChange={event => updateForm('taxCode', event.target.value)} /></div>
+                  <div className="form-group lead-form-grid__wide"><label>Địa chỉ</label><input value={form.address} onChange={event => updateForm('address', event.target.value)} /></div>
+                  <div className="form-group lead-form-grid__wide"><label>Website</label><input type="url" value={form.website} onChange={event => updateForm('website', event.target.value)} placeholder="https://..." /></div>
+                </div>
+              </details>
             </section>
           </div>
 
@@ -717,7 +639,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
           <UserRoundSearch size={20} />
           <div>
             <strong>Bàn làm việc Sale</strong>
-            <span>Danh sách doanh nghiệp cần gọi, lịch hẹn và kết quả tiếp cận trong ngày.</span>
+            <span>Kho dữ liệu doanh nghiệp và các công việc đã đến lịch xử lý.</span>
           </div>
         </div>
         {workspaceView === 'all' && <button type="button" className="btn btn-primary" onClick={openCreateForm}>
@@ -764,10 +686,9 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
             <option value="all">Tất cả nguồn</option>
             {CANDIDATE_SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
           </select>
-          <select value={outcomeFilter} onChange={event => { setOutcomeFilter(event.target.value as CandidateOutcomeFilter); setCurrentPage(1); }} aria-label="Lọc kết quả liên hệ">
-            <option value="all">Tất cả tình trạng gọi</option>
-            <option value="not_contacted">Chưa liên hệ</option>
-            {CALL_OUTCOMES.map(outcome => <option key={outcome.value} value={outcome.value}>{outcome.label}</option>)}
+          <select value={workStatusFilter} onChange={event => { setWorkStatusFilter(event.target.value as CandidateWorkStatusFilter); setCurrentPage(1); }} aria-label="Lọc trạng thái xử lý">
+            <option value="all">Tất cả trạng thái</option>
+            {(Object.entries(WORK_STATUS_LABELS) as Array<[LeadCandidateWorkStatus, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           {currentUser.role === 'admin' && (
             <select value={saleFilter} onChange={event => { setSaleFilter(event.target.value); setCurrentPage(1); }} aria-label="Lọc theo Sale">
@@ -799,20 +720,24 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       <section className="lead-table-card">
         <div className="lead-table-result">
           {workspaceView === 'tasks' ? <>
-            <span><strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'pending').length}</strong> chưa xử lý · <strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'completed').length}</strong> đã xử lý, chờ tắt</span>
-            <span>Nút đỏ chuyển sang xanh sau khi xử lý; công việc chỉ biến mất khi bấm Tắt.</span>
+            <span><strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'pending').length}</strong> chưa xử lý · <strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'completed').length}</strong> đã xử lý</span>
+            <span>Có thể đổi qua lại đỏ/xanh; đặt lịch mới sẽ tự chuyển về đỏ.</span>
           </> : <>
             <span>Hiển thị <strong>{filteredCandidates.length}</strong> / {accessibleCandidates.length} dữ liệu</span>
-            <span>{activeFilterCount > 0 ? `${activeFilterCount} bộ lọc đang áp dụng` : 'Bấm vào tên doanh nghiệp để mở hồ sơ và toàn bộ lịch sử.'}</span>
+            <span>{activeFilterCount > 0 ? `${activeFilterCount} bộ lọc đang áp dụng` : 'Bảng dữ liệu nhanh dành cho thông tin Sale thu thập được.'}</span>
           </>}
         </div>
         <div className="table-container">
           {workspaceView === 'tasks' ? (
             <table className="lead-candidate-table lead-candidate-task-table">
-              <thead><tr><th>Trạng thái</th><th>Doanh nghiệp</th><th>Liên hệ</th><th>Tỉnh/thành</th><th>Lịch sử liên hệ</th><th>Lịch hẹn</th><th>Thao tác</th></tr></thead>
+              <thead><tr><th>Trạng thái</th><th>Doanh nghiệp</th><th>Tỉnh/thành</th><th>Thông tin</th><th>Ghi chú</th><th>Lịch hẹn</th><th>Thao tác</th></tr></thead>
               <tbody>
                 {displayedCandidates.map(candidate => {
-                  const isOverdue = new Date(candidate.nextContactAt).getTime() < referenceTime;
+                  const scheduledTime = new Date(candidate.nextContactAt).getTime();
+                  const endOfToday = new Date(referenceTime);
+                  endOfToday.setHours(23, 59, 59, 999);
+                  const isOverdue = scheduledTime < referenceTime;
+                  const isToday = scheduledTime <= endOfToday.getTime();
                   const isCompleted = candidate.taskStatus === 'completed';
                   const isBusy = taskActionCandidateId === candidate.id;
                   return (
@@ -821,29 +746,28 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                         <button
                           type="button"
                           className={`lead-candidate-task-toggle ${isCompleted ? 'is-completed' : 'is-pending'}`}
-                          onClick={() => completeScheduledTask(candidate)}
-                          disabled={isBusy || isCompleted}
+                          onClick={() => toggleScheduledTask(candidate)}
+                          disabled={isBusy}
                         >
                           {isCompleted ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-                          <span><strong>{isCompleted ? 'Đã xử lý' : 'Chưa xử lý'}</strong><small>{isCompleted ? 'Chờ bấm Tắt' : 'Bấm để hoàn thành'}</small></span>
+                          <span><strong>{isCompleted ? 'Đã xử lý' : 'Chưa xử lý'}</strong><small>{isCompleted ? 'Bấm để chuyển lại' : 'Bấm để hoàn thành'}</small></span>
                         </button>
                       </td>
                       <td><button type="button" className="lead-candidate-company-button" onClick={() => setSelectedCandidateId(candidate.id)}><strong>{candidate.companyName}</strong><span>{candidate.taxCode ? `MST ${candidate.taxCode}` : candidate.source || 'Chưa rõ nguồn'}</span></button></td>
-                      <td><strong>{candidate.contactPerson || '—'}</strong>{candidate.phone ? <button type="button" className="lead-candidate-copy" onClick={() => copyPhone(candidate.phone)} title="Sao chép số điện thoại">{candidate.phone}<Copy size={11} /></button> : <span>{candidate.email || 'Chưa có liên hệ'}</span>}</td>
-                      <td><strong>{candidate.province || 'Chưa cập nhật'}</strong><span>{candidate.address || candidate.source || '—'}</span></td>
-                      <td><strong>{candidate.lastContactOutcome ? CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome] : 'Chưa có cuộc gọi'}</strong><span>{candidate.lastContactNote || candidate.note || `${candidate.contactAttempts} lần liên hệ`}</span></td>
-                      <td><strong className={isOverdue && !isCompleted ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-task-status ${isOverdue && !isCompleted ? 'is-overdue' : ''}`}>{isCompleted ? `Xử lý ${formatShortDateTime(candidate.taskCompletedAt)}` : isOverdue ? 'Quá hạn' : 'Hôm nay'}</span>{candidate.queuedNextContactAt && <small className="lead-candidate-next-queued">Hẹn tiếp: {formatShortDateTime(candidate.queuedNextContactAt)}</small>}</td>
+                      <td><strong>{candidate.province || 'Chưa cập nhật'}</strong><span>{candidate.source || 'Chưa rõ nguồn'}</span></td>
+                      <td><strong>{candidate.contactPerson || 'Chưa rõ người liên hệ'}</strong>{candidate.phone ? <button type="button" className="lead-candidate-copy" onClick={() => copyPhone(candidate.phone)} title="Sao chép số điện thoại">{candidate.phone}<Copy size={11} /></button> : <span>{candidate.email || candidate.sourceUrl || 'Chưa có thông tin liên hệ'}</span>}{candidate.phone && candidate.email && <span>{candidate.email}</span>}</td>
+                      <td><p className="lead-candidate-note-cell">{candidate.note || 'Chưa có ghi chú'}</p></td>
+                      <td><strong className={isOverdue && !isCompleted ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-task-status ${isOverdue && !isCompleted ? 'is-overdue' : ''}`}>{isCompleted ? `Đã xử lý ${formatShortDateTime(candidate.taskCompletedAt)}` : isOverdue ? 'Quá hạn' : isToday ? 'Hôm nay' : 'Sắp tới'}</span></td>
                       <td>
                         <div className="lead-candidate-task-actions">
-                          <button type="button" className="btn btn-sm btn-outline" onClick={() => openAttemptForm(candidate)}><Phone size={13} /> Ghi nhận</button>
-                          <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setSelectedCandidateId(candidate.id)} title="Mở hồ sơ"><Eye size={13} /></button>
-                          {isCompleted && <button type="button" className="btn btn-sm lead-candidate-task-dismiss" onClick={() => dismissScheduledTask(candidate)} disabled={isBusy}><Power size={13} /> Tắt</button>}
+                          <button type="button" className="btn btn-sm btn-outline" onClick={() => openScheduleForm(candidate)}><CalendarClock size={13} /> Hẹn tiếp</button>
+                          <button type="button" className="btn btn-sm lead-candidate-task-dismiss btn-symbol-sm" onClick={() => dismissScheduledTask(candidate)} disabled={isBusy} title="Tắt công việc" aria-label="Tắt công việc"><X size={14} /></button>
                         </div>
                       </td>
                     </tr>
                   );
                 })}
-                {filteredCandidates.length === 0 && <tr><td colSpan={7} className="lead-empty">Chưa có công việc đến hạn. Lịch gọi sẽ tự xuất hiện ở đây khi đến ngày xử lý.</td></tr>}
+                {filteredCandidates.length === 0 && <tr><td colSpan={7} className="lead-empty">Chưa có công việc được hẹn lịch. Khi đặt lịch, dữ liệu sẽ tự xuất hiện tại đây.</td></tr>}
               </tbody>
             </table>
           ) : (
@@ -851,22 +775,18 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
               <thead>
                 <tr>
                   <th>Doanh nghiệp</th>
-                  <th>Liên hệ</th>
                   <th>Tỉnh/thành</th>
-                  <th>Lịch sử liên hệ</th>
-                  <th>Việc tiếp theo</th>
-                  {currentUser.role === 'admin' && <th>Phụ trách</th>}
+                  <th>Thông tin liên hệ</th>
+                  <th>Ghi chú</th>
+                  <th>Trạng thái</th>
                   <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {displayedCandidates.map(candidate => {
-                  const isDue = candidate.nextContactAt
-                    && candidate.taskStatus !== 'dismissed'
-                    && new Date(candidate.nextContactAt).getTime() < referenceTime;
                   const isActive = candidate.status === 'new' || candidate.status === 'retry';
                   return (
-                    <tr key={candidate.id} className={isDue ? 'is-overdue' : ''}>
+                    <tr key={candidate.id}>
                       <td>
                         <div className="lead-candidate-company-cell">
                           <button
@@ -877,36 +797,24 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                           ><Star size={14} fill={candidate.pinned ? 'currentColor' : 'none'} /></button>
                           <button type="button" className="lead-candidate-company-button" onClick={() => setSelectedCandidateId(candidate.id)}>
                             <strong>{candidate.companyName}</strong>
-                            <span>{candidate.source || 'Chưa rõ nguồn'}{candidate.taxCode ? ` · MST ${candidate.taxCode}` : ''}</span>
+                            <span>{candidate.source || 'Chưa rõ nguồn'}{currentUser.role === 'admin' && candidate.assignedSaleName ? ` · ${candidate.assignedSaleName}` : ''}{candidate.taxCode ? ` · MST ${candidate.taxCode}` : ''}</span>
                           </button>
                         </div>
                       </td>
-                      <td>
-                        <strong>{candidate.contactPerson || '—'}</strong>
-                        {candidate.phone ? (
-                          <button type="button" className="lead-candidate-copy" onClick={() => copyPhone(candidate.phone)} title="Sao chép số điện thoại">
-                            {candidate.phone}<Copy size={11} />
-                          </button>
-                        ) : <span>{candidate.email || 'Chưa có liên hệ'}</span>}
-                      </td>
                       <td><strong>{candidate.province || 'Chưa cập nhật'}</strong><span>{candidate.address || '—'}</span></td>
-                      <td>
-                        {candidate.lastContactAt ? <><strong>{CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome || 'connected']}</strong><span>{formatShortDateTime(candidate.lastContactAt)} · {candidate.contactAttempts} lần</span></> : <span className="lead-candidate-muted">Chưa có cuộc gọi</span>}
-                      </td>
-                      <td>
-                        {candidate.nextContactAt && candidate.taskStatus !== 'dismissed' ? <><strong className={isDue ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-status ${candidate.taskStatus === 'completed' ? 'lead-candidate-status--converted' : `lead-candidate-status--${candidate.status}`}`}>{candidate.taskStatus === 'completed' ? 'Đã xử lý · chờ tắt' : CANDIDATE_STATUS_LABELS[candidate.status]}</span>{candidate.queuedNextContactAt && <small className="lead-candidate-next-queued">Hẹn tiếp: {formatShortDateTime(candidate.queuedNextContactAt)}</small>}</> : <span className={`lead-candidate-status lead-candidate-status--${candidate.status}`}>{CANDIDATE_STATUS_LABELS[candidate.status]}</span>}
-                      </td>
-                      {currentUser.role === 'admin' && <td><strong>{candidate.assignedSaleName || candidateOwners.find(user => user.uid === candidate.assignedSaleId)?.displayName || 'Chưa phân công'}</strong><span>{candidate.contactAttempts > 0 ? `${candidate.contactAttempts} lần tiếp cận` : 'Chưa gọi lần nào'}</span></td>}
+                      <td><strong>{candidate.contactPerson || 'Chưa rõ người liên hệ'}</strong>{candidate.phone ? <button type="button" className="lead-candidate-copy" onClick={() => copyPhone(candidate.phone)} title="Sao chép số điện thoại">{candidate.phone}<Copy size={11} /></button> : <span>{candidate.email || candidate.sourceUrl || 'Chưa có thông tin liên hệ'}</span>}{candidate.phone && candidate.email && <span>{candidate.email}</span>}</td>
+                      <td><p className="lead-candidate-note-cell">{candidate.note || 'Chưa có ghi chú'}</p></td>
+                      <td><span className={`lead-candidate-work-status lead-candidate-work-status--${candidate.workStatus}`}>{WORK_STATUS_LABELS[candidate.workStatus]}</span>{candidate.nextContactAt && candidate.taskStatus !== 'dismissed' && <small className="lead-candidate-next-queued">Hẹn: {formatShortDateTime(candidate.nextContactAt)}</small>}</td>
                       <td>
                         <div className="lead-candidate-actions">
-                          {isActive && <button type="button" className="btn btn-sm btn-primary" onClick={() => openAttemptForm(candidate)}><Phone size={13} /> Ghi nhận</button>}
+                          {isActive && <button type="button" className="btn btn-sm btn-primary" onClick={() => openScheduleForm(candidate)}><CalendarClock size={13} /> Hẹn lịch</button>}
+                          <button type="button" className="btn btn-sm btn-outline btn-symbol-sm lead-candidate-delete-button" onClick={() => archiveCandidate(candidate)} title="Xóa khỏi danh sách" aria-label={`Xóa ${candidate.companyName}`}><Trash2 size={13} /></button>
                           <details className="lead-candidate-row-menu">
                             <summary title="Thao tác khác"><MoreHorizontal size={16} /></summary>
                             <div>
                               <button type="button" onClick={() => setSelectedCandidateId(candidate.id)}><Eye size={13} /> Xem hồ sơ</button>
                               <button type="button" onClick={() => openEditForm(candidate)}><Pencil size={13} /> Chỉnh sửa</button>
                               {isActive && <button type="button" onClick={() => onStartConversion(candidate)}><CheckCircle2 size={13} /> Chuyển thành Lead</button>}
-                              {isActive && <button type="button" className="is-danger" onClick={() => markDisqualified(candidate)}><Power size={13} /> Ngừng sử dụng</button>}
                             </div>
                           </details>
                         </div>
@@ -914,7 +822,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                     </tr>
                   );
                 })}
-                {filteredCandidates.length === 0 && <tr><td colSpan={currentUser.role === 'admin' ? 7 : 6} className="lead-empty">Không có dữ liệu phù hợp với điều kiện lọc.</td></tr>}
+                {filteredCandidates.length === 0 && <tr><td colSpan={6} className="lead-empty">Không có dữ liệu phù hợp với điều kiện lọc.</td></tr>}
               </tbody>
             </table>
           )}
@@ -933,12 +841,12 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
           <button type="button" className="lead-candidate-drawer-backdrop" aria-label="Đóng hồ sơ" onClick={() => setSelectedCandidateId('')} />
           <aside className="lead-candidate-drawer" aria-label={`Hồ sơ ${selectedCandidate.companyName}`}>
             <div className="lead-candidate-drawer__header">
-              <div><span>HỒ SƠ TIẾP CẬN</span><h2>{selectedCandidate.companyName}</h2><p>{selectedCandidate.source || 'Chưa rõ nguồn'} · {selectedCandidate.assignedSaleName || 'Chưa phân công'}</p></div>
+              <div><span>HỒ SƠ DỮ LIỆU</span><h2>{selectedCandidate.companyName}</h2><p>{selectedCandidate.province || 'Chưa rõ tỉnh/thành'} · {selectedCandidate.source || 'Chưa rõ nguồn'}</p></div>
               <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setSelectedCandidateId('')} aria-label="Đóng"><X size={15} /></button>
             </div>
 
             <div className="lead-candidate-drawer__actions">
-              {(selectedCandidate.status === 'new' || selectedCandidate.status === 'retry') && <button type="button" className="btn btn-primary" onClick={() => openAttemptForm(selectedCandidate)}><Check size={14} /> Ghi nhận đã gọi</button>}
+              {(selectedCandidate.status === 'new' || selectedCandidate.status === 'retry') && <button type="button" className="btn btn-primary" onClick={() => openScheduleForm(selectedCandidate)}><CalendarClock size={14} /> Hẹn lịch xử lý</button>}
               {(selectedCandidate.status === 'new' || selectedCandidate.status === 'retry') && <button type="button" className="btn btn-outline" onClick={() => onStartConversion(selectedCandidate)}><CheckCircle2 size={14} /> Chuyển Lead</button>}
               <button type="button" className="btn btn-outline btn-symbol-sm" onClick={() => openEditForm(selectedCandidate)} title="Chỉnh sửa"><Pencil size={14} /></button>
             </div>
@@ -960,41 +868,28 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                 <p className="lead-candidate-drawer__note">{selectedCandidate.note || 'Chưa có ghi chú.'}</p>
               </section>
 
-              <section>
-                <div className="lead-candidate-drawer__timeline-title"><h3>Lịch sử tiếp cận</h3><span>{selectedCandidate.contactAttempts} lần</span></div>
-                <div className="lead-candidate-timeline">
-                  {selectedContactLogs.map(log => (
-                    <article key={log.id}>
-                      <span className="lead-candidate-timeline__dot" />
-                      <div><strong>{CONTACT_OUTCOME_LABELS[log.outcome]}</strong><time>{formatDateTime(log.occurredAt)}</time><p>{log.note || 'Không có ghi chú.'}</p>{log.nextContactAt && <small>Hẹn tiếp: {formatDateTime(log.nextContactAt)}</small>}<small>{log.createdByName}</small></div>
-                    </article>
-                  ))}
-                  {selectedContactLogs.length === 0 && <div className="lead-candidate-timeline__empty">Chưa phát sinh lần tiếp cận nào.</div>}
-                </div>
-              </section>
-
-              {(selectedCandidate.status === 'new' || selectedCandidate.status === 'retry') && <button type="button" className="lead-candidate-disqualify" onClick={() => markDisqualified(selectedCandidate)}>Đánh dấu dữ liệu không phù hợp</button>}
+              <button type="button" className="lead-candidate-disqualify" onClick={() => archiveCandidate(selectedCandidate)}>Xóa khỏi danh sách dữ liệu</button>
             </div>
           </aside>
         </>
       )}
 
-      {attemptCandidate && (
+      {scheduleCandidate && (
         <div className="modal-overlay">
-          <form className="modal-content lead-candidate-attempt-modal" onSubmit={handleSaveAttempt}>
+          <form className="modal-content lead-candidate-schedule-modal" onSubmit={handleSaveSchedule}>
             <div className="modal-header">
-              <div><strong>GHI NHẬN KẾT QUẢ CUỘC GỌI</strong><span>{attemptCandidate.companyName} · {formatDateTime(new Date().toISOString())}</span></div>
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => setAttemptCandidateId('')}><X size={14} /> Đóng</button>
+              <div><strong>ĐẶT LỊCH LÀM VIỆC TIẾP THEO</strong><span>{scheduleCandidate.companyName}</span></div>
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => setScheduleCandidateId('')}><X size={14} /> Đóng</button>
             </div>
-            <div className="modal-body lead-candidate-attempt-form">
-              <fieldset className="lead-candidate-outcomes"><legend>Kết quả cuộc gọi</legend>{CONTACT_OUTCOMES.filter(outcome => outcome.value !== 'task_completed').map(outcome => <label key={outcome.value} className={attemptForm.outcome === outcome.value ? 'is-selected' : ''}><input type="radio" name="contactOutcome" value={outcome.value} checked={attemptForm.outcome === outcome.value} onChange={() => setAttemptForm(previous => ({ ...previous, outcome: outcome.value }))} /><span><strong>{outcome.label}</strong><small>{outcome.hint}</small></span></label>)}</fieldset>
-              {attemptForm.outcome !== 'not_interested' && <label><span>Lịch liên hệ tiếp theo</span><input type="datetime-local" value={attemptForm.nextContactAt} onChange={event => setAttemptForm(previous => ({ ...previous, nextContactAt: event.target.value }))} /></label>}
-              <label><span>Ghi chú cuộc gọi</span><textarea rows={4} value={attemptForm.note} onChange={event => setAttemptForm(previous => ({ ...previous, note: event.target.value }))} placeholder="Nội dung trao đổi hoặc thông tin cần lưu ý..." /></label>
-              {attemptError && <div className="lead-candidate-warning is-error"><AlertCircle size={14} /><span>{attemptError}</span></div>}
+            <div className="modal-body lead-candidate-schedule-form">
+              <label><span>Ngày giờ xử lý *</span><input required autoFocus type="datetime-local" value={scheduleForm.nextContactAt} onChange={event => setScheduleForm(previous => ({ ...previous, nextContactAt: event.target.value }))} /></label>
+              <label><span>Ghi chú</span><textarea rows={5} value={scheduleForm.note} onChange={event => setScheduleForm(previous => ({ ...previous, note: event.target.value }))} placeholder="Thông tin Sale cần lưu ý khi xử lý công việc..." /></label>
+              <p>Đặt lịch mới sẽ tự chuyển trạng thái công việc về <strong>Chưa xử lý</strong>.</p>
+              {scheduleError && <div className="lead-candidate-warning is-error"><AlertCircle size={14} /><span>{scheduleError}</span></div>}
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn btn-outline" onClick={() => setAttemptCandidateId('')}>Hủy</button>
-              <button type="submit" className="btn btn-primary" disabled={savingAttempt}><Check size={14} /> {savingAttempt ? 'Đang lưu...' : 'Lưu kết quả cuộc gọi'}</button>
+              <button type="button" className="btn btn-outline" onClick={() => setScheduleCandidateId('')}>Hủy</button>
+              <button type="submit" className="btn btn-primary" disabled={savingSchedule}><Check size={14} /> {savingSchedule ? 'Đang lưu...' : 'Lưu lịch hẹn'}</button>
             </div>
           </form>
         </div>

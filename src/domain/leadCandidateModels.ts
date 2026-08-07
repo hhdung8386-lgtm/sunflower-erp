@@ -1,10 +1,11 @@
 import type { CustomerRecord, LeadRecord } from './crmModels';
 import { normalizeTaxCode } from './taxCodeUniqueness';
 
-export const LEAD_CANDIDATE_SCHEMA_VERSION = 3;
+export const LEAD_CANDIDATE_SCHEMA_VERSION = 4;
 
 export type LeadCandidateStatus = 'new' | 'retry' | 'disqualified' | 'converted';
 export type LeadCandidateTaskStatus = 'pending' | 'completed' | 'dismissed';
+export type LeadCandidateWorkStatus = 'not_contacted' | 'pending' | 'completed';
 export type LeadCandidateContactOutcome =
   | 'connected'
   | 'no_answer'
@@ -56,7 +57,12 @@ export interface LeadCandidateRecord extends Record<string, unknown> {
   taskCompletedById: string;
   taskCompletedByName: string;
   taskDismissedAt: string;
+  workStatus: LeadCandidateWorkStatus;
   pinned: boolean;
+  archived: boolean;
+  archivedAt: string;
+  archivedById: string;
+  archivedByName: string;
   convertedLeadId: string;
   convertedAt: string;
   createdAt: string;
@@ -97,6 +103,21 @@ const normalizeTaskStatus = (value: unknown, nextContactAt: string): LeadCandida
   return nextContactAt ? 'pending' : 'dismissed';
 };
 
+const normalizeWorkStatus = (
+  value: unknown,
+  taskStatus: LeadCandidateTaskStatus,
+  nextContactAt: string,
+  contactLogs: LeadCandidateContactLog[],
+  lastContactAt: string
+): LeadCandidateWorkStatus => {
+  const statuses: LeadCandidateWorkStatus[] = ['not_contacted', 'pending', 'completed'];
+  if (statuses.includes(value as LeadCandidateWorkStatus)) return value as LeadCandidateWorkStatus;
+  if (taskStatus === 'completed') return 'completed';
+  if (taskStatus === 'pending' && nextContactAt) return 'pending';
+  if (contactLogs.some(log => log.outcome === 'task_completed') || lastContactAt) return 'completed';
+  return 'not_contacted';
+};
+
 const normalizeContactOutcome = (value: unknown): LeadCandidateContactOutcome | '' => {
   const outcomes: LeadCandidateContactOutcome[] = [
     'connected',
@@ -133,6 +154,9 @@ const normalizeContactLogs = (value: unknown): LeadCandidateContactLog[] => (
 export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecord => {
   const source = asRecord(value);
   const nextContactAt = asText(source.nextContactAt);
+  const taskStatus = normalizeTaskStatus(source.taskStatus, nextContactAt);
+  const contactLogs = normalizeContactLogs(source.contactLogs);
+  const lastContactAt = asText(source.lastContactAt);
   return {
     ...source,
     id: asText(source.id),
@@ -154,18 +178,23 @@ export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecor
     discoveredById: asText(source.discoveredById ?? source.createdById),
     discoveredByName: asText(source.discoveredByName ?? source.createdByName),
     contactAttempts: asNonNegativeInteger(source.contactAttempts),
-    lastContactAt: asText(source.lastContactAt),
+    lastContactAt,
     lastContactOutcome: normalizeContactOutcome(source.lastContactOutcome),
     lastContactNote: asText(source.lastContactNote),
-    contactLogs: normalizeContactLogs(source.contactLogs),
+    contactLogs,
     nextContactAt,
     queuedNextContactAt: asText(source.queuedNextContactAt),
-    taskStatus: normalizeTaskStatus(source.taskStatus, nextContactAt),
+    taskStatus,
     taskCompletedAt: asText(source.taskCompletedAt),
     taskCompletedById: asText(source.taskCompletedById),
     taskCompletedByName: asText(source.taskCompletedByName),
     taskDismissedAt: asText(source.taskDismissedAt),
+    workStatus: normalizeWorkStatus(source.workStatus, taskStatus, nextContactAt, contactLogs, lastContactAt),
     pinned: source.pinned === true,
+    archived: source.archived === true,
+    archivedAt: asText(source.archivedAt),
+    archivedById: asText(source.archivedById),
+    archivedByName: asText(source.archivedByName),
     convertedLeadId: asText(source.convertedLeadId),
     convertedAt: asText(source.convertedAt),
     createdAt: asText(source.createdAt),
