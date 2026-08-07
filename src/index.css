@@ -2375,6 +2375,37 @@ tr:hover td {
   border-bottom: 1px solid #ccd7e8;
 }
 
+.customer-data-section__heading--actions {
+  justify-content: space-between;
+}
+
+.customer-data-section__heading--actions > div,
+.customer-profile-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.customer-profile-copy-button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid #b9c8dc;
+  border-radius: 5px;
+  background: #fff;
+  color: #244b90;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.customer-profile-copy-button:hover {
+  border-color: #7c93c4;
+  background: #f8fbff;
+}
+
 .customer-data-table-wrap {
   width: 100%;
   overflow-x: auto;

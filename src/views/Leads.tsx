@@ -299,6 +299,25 @@ export const Leads: React.FC<LeadsProps> = ({
     currentUser.role === 'admin' || candidate.assignedSaleId === currentUser.uid
   )), [candidates, currentUser.role, currentUser.uid]);
 
+  const quickFilterOptionsByField = useMemo(() => {
+    const provinceValuesWithData = new Set(
+      accessibleLeads.flatMap(lead => getLeadFilterValues(lead, filterDefinitions)[LEAD_FILTER_IDS.province] || [])
+    );
+
+    return Object.fromEntries(filterDefinitions.map(field => {
+      const activeOptions = field.options.filter(option => option.active);
+      if (field.id !== LEAD_FILTER_IDS.province) return [field.id, activeOptions];
+
+      return [field.id, activeOptions.flatMap(province => {
+        const activeAreasWithData = (province.children || []).filter(area => (
+          area.active && provinceValuesWithData.has(area.id)
+        ));
+        const provinceHasData = provinceValuesWithData.has(province.id) || activeAreasWithData.length > 0;
+        return provinceHasData ? [{ ...province, children: activeAreasWithData }] : [];
+      })];
+    }));
+  }, [accessibleLeads, filterDefinitions]);
+
   const isOverdue = (lead: LeadRecord) => {
     if (!lead.nextFollowUpAt || ['won', 'lost', 'converted'].includes(lead.stage)) return false;
     const timestamp = new Date(lead.nextFollowUpAt).getTime();
@@ -1177,7 +1196,7 @@ export const Leads: React.FC<LeadsProps> = ({
                   >
                     Tất cả {field.name.toLocaleLowerCase('vi-VN')}
                   </button>
-                  {field.options.filter(option => option.active).map(option => {
+                  {(quickFilterOptionsByField[field.id] || []).map(option => {
                     const selected = (dynamicFilters[field.id] || []).includes(option.id);
                     return (
                       <React.Fragment key={option.id}>

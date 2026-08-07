@@ -20,7 +20,7 @@ export function slugifyLeadFilterId(value: string) {
     .replace(/^_+|_+$/g, '');
 }
 
-const VIETNAM_PROVINCES_2026 = [
+export const VIETNAM_PROVINCES_2026 = [
   'An Giang', 'Bắc Ninh', 'Cà Mau', 'Cao Bằng', 'Cần Thơ', 'Đà Nẵng', 'Đắk Lắk',
   'Điện Biên', 'Đồng Nai', 'Đồng Tháp', 'Gia Lai', 'Hà Nội', 'Hà Tĩnh', 'Hải Phòng',
   'Huế', 'Hưng Yên', 'Khánh Hòa', 'Lai Châu', 'Lâm Đồng', 'Lạng Sơn', 'Lào Cai',
