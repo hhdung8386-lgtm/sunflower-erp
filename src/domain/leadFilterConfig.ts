@@ -134,7 +134,24 @@ export const findLeadFilterOption = (
   definitions: LeadFilterDefinition[],
   fieldId: string,
   optionId: string
-) => definitions.find(field => field.id === fieldId)?.options.find(item => item.id === optionId);
+) => {
+  const field = definitions.find(definition => definition.id === fieldId);
+  if (!field) return undefined;
+  return field.options.find(item => item.id === optionId)
+    || field.options.flatMap(item => item.children || []).find(item => item.id === optionId);
+};
+
+export const findLeadFilterParentOption = (
+  definitions: LeadFilterDefinition[],
+  fieldId: string,
+  optionId: string
+) => {
+  const field = definitions.find(definition => definition.id === fieldId);
+  if (!field) return undefined;
+  return field.options.find(item => (
+    item.id === optionId || (item.children || []).some(child => child.id === optionId)
+  ));
+};
 
 export const findLeadFilterOptionId = (
   definitions: LeadFilterDefinition[],
@@ -144,7 +161,8 @@ export const findLeadFilterOptionId = (
   if (!labelOrId) return '';
   const normalizedValue = slugifyLeadFilterId(labelOrId);
   const field = definitions.find(definition => definition.id === fieldId);
-  return field?.options.find(item => (
+  const options = field?.options.flatMap(item => [item, ...(item.children || [])]) || [];
+  return options.find(item => (
     item.id === labelOrId
     || slugifyLeadFilterId(item.id) === normalizedValue
     || slugifyLeadFilterId(item.label) === normalizedValue
@@ -186,8 +204,15 @@ export const getLeadFilterValues = (
   const existingValues = lead.filterValues || {};
   const companySizeValues = existingValues[LEAD_FILTER_IDS.companySize]
     || (lead.companySize ? [lead.companySize] : []);
-  const provinceValues = existingValues[LEAD_FILTER_IDS.province]
+  const rawProvinceValues = existingValues[LEAD_FILTER_IDS.province]
     || [findLeadFilterOptionId(definitions, LEAD_FILTER_IDS.province, lead.province)].filter(Boolean);
+  const provinceDefinition = definitions.find(definition => definition.id === LEAD_FILTER_IDS.province);
+  const provinceFromArea = provinceDefinition?.options.find(item => (
+    (item.children || []).some(child => rawProvinceValues.includes(child.id))
+  ));
+  const provinceValues = provinceFromArea && !rawProvinceValues.includes(provinceFromArea.id)
+    ? [provinceFromArea.id, ...rawProvinceValues]
+    : rawProvinceValues;
   const productNeedValues = existingValues[LEAD_FILTER_IDS.productNeed]
     || existingValues.product_interest
     || [];

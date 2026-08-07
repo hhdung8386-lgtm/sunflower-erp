@@ -44,6 +44,7 @@ import {
 import {
   findLeadFilterOption,
   findLeadFilterOptionId,
+  findLeadFilterParentOption,
   getLeadFilterValues,
   LEAD_FILTER_IDS,
   mergeLeadFilterDefinitions,
@@ -156,7 +157,14 @@ const updateLeadFilterValues = (
   const previousFieldValues = currentValues[field.id] || [];
   let nextFieldValues: string[];
 
-  if (field.type === 'multi_select') {
+  if (field.id === LEAD_FILTER_IDS.province) {
+    const province = field.options.find(option => (
+      option.id === value || (option.children || []).some(child => child.id === value)
+    ));
+    nextFieldValues = value && province
+      ? value === province.id ? [province.id] : [province.id, value]
+      : [];
+  } else if (field.type === 'multi_select') {
     nextFieldValues = checked
       ? Array.from(new Set([...previousFieldValues, value]))
       : previousFieldValues.filter(item => item !== value);
@@ -317,8 +325,7 @@ export const Leads: React.FC<LeadsProps> = ({
         getStageLabel(lead.stage),
         COMPANY_SIZE_LABELS[lead.companySize],
         Object.entries(leadFilterValues).flatMap(([fieldId, optionIds]) => {
-          const definition = filterDefinitions.find(field => field.id === fieldId);
-          return optionIds.map(optionId => definition?.options.find(item => item.id === optionId)?.label || optionId);
+          return optionIds.map(optionId => findLeadFilterOption(filterDefinitions, fieldId, optionId)?.label || optionId);
         }),
         (lead.activities || []).map(activity => activity.note),
         Object.entries(lead.profileValues || {}).flatMap(([fieldId, fieldValues]) => {
@@ -491,11 +498,12 @@ export const Leads: React.FC<LeadsProps> = ({
   ) => {
     setFormFilterValues(previous => updateLeadFilterValues(previous, field, value, checked));
 
-    const selectedLabel = field.options.find(option => option.id === value)?.label || '';
+    const selectedOption = findLeadFilterOption(filterDefinitions, field.id, value);
+    const selectedLabel = selectedOption?.label || '';
     if (field.id === LEAD_FILTER_IDS.companySize) {
       updateForm('companySize', ['', 'large', 'medium', 'small'].includes(value) ? value as LeadCompanySize : '');
     } else if (field.id === LEAD_FILTER_IDS.province) {
-      updateForm('province', selectedLabel);
+      updateForm('province', findLeadFilterParentOption(filterDefinitions, field.id, value)?.label || '');
     } else if (field.id === LEAD_FILTER_IDS.source) {
       updateForm('source', selectedLabel);
     }
@@ -573,11 +581,19 @@ export const Leads: React.FC<LeadsProps> = ({
     const currentFilterValues = editingLead
       ? getLeadFilterValues(editingLead, filterDefinitions)
       : {};
+    const provinceOptionId = findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.province, form.province);
+    const selectedProvinceValues = formFilterValues[LEAD_FILTER_IDS.province] || [];
+    const selectedProvince = selectedProvinceValues.length > 0
+      ? findLeadFilterParentOption(filterDefinitions, LEAD_FILTER_IDS.province, selectedProvinceValues.at(-1) || '')
+      : undefined;
+    const provinceFilterValues = selectedProvince?.id === provinceOptionId
+      ? selectedProvinceValues
+      : [provinceOptionId].filter(Boolean);
     const profileFilterValues = {
       ...currentFilterValues,
       ...formFilterValues,
       [LEAD_FILTER_IDS.companySize]: form.companySize ? [form.companySize] : [],
-      [LEAD_FILTER_IDS.province]: [findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.province, form.province)].filter(Boolean),
+      [LEAD_FILTER_IDS.province]: provinceFilterValues,
       [LEAD_FILTER_IDS.source]: [findLeadFilterOptionId(filterDefinitions, LEAD_FILTER_IDS.source, form.source)].filter(Boolean)
     };
     const now = new Date().toISOString();
@@ -680,7 +696,7 @@ export const Leads: React.FC<LeadsProps> = ({
   ) => {
     const currentValues = getLeadFilterValues(lead, filterDefinitions);
     const nextFilterValues = updateLeadFilterValues(currentValues, field, value, checked);
-    const optionLabel = field.options.find(item => item.id === value)?.label || value || 'để trống';
+    const optionLabel = findLeadFilterOption(filterDefinitions, field.id, value)?.label || value || 'để trống';
     const actionLabel = field.type === 'multi_select' || field.type === 'checkbox'
       ? (checked ? 'Thêm' : 'Bỏ')
       : 'Cập nhật';
@@ -690,7 +706,7 @@ export const Leads: React.FC<LeadsProps> = ({
       linkedProfileFields.companySize = value as LeadCompanySize;
     }
     if (field.id === LEAD_FILTER_IDS.province) {
-      linkedProfileFields.province = field.options.find(item => item.id === value)?.label || '';
+      linkedProfileFields.province = findLeadFilterParentOption(filterDefinitions, field.id, value)?.label || '';
     }
     if (field.id === LEAD_FILTER_IDS.source) {
       linkedProfileFields.source = field.options.find(item => item.id === value)?.label || '';
@@ -768,8 +784,11 @@ export const Leads: React.FC<LeadsProps> = ({
   };
 
   const getClassificationLabel = (lead: LeadRecord, fieldId: string, fallback = '—') => {
-    const optionId = getLeadFilterValues(lead, filterDefinitions)[fieldId]?.[0];
-    return (optionId && findLeadFilterOption(filterDefinitions, fieldId, optionId)?.label) || fallback;
+    const optionIds = getLeadFilterValues(lead, filterDefinitions)[fieldId] || [];
+    const labels = optionIds
+      .map(optionId => findLeadFilterOption(filterDefinitions, fieldId, optionId)?.label)
+      .filter(Boolean);
+    return (fieldId === LEAD_FILTER_IDS.province ? labels.join(' · ') : labels[0]) || fallback;
   };
 
   const getProfileDisplayValue = (definition: LeadProfileFieldDefinition, values: string[]) => {
@@ -1161,16 +1180,32 @@ export const Leads: React.FC<LeadsProps> = ({
                   {field.options.filter(option => option.active).map(option => {
                     const selected = (dynamicFilters[field.id] || []).includes(option.id);
                     return (
-                      <button
-                        type="button"
-                        key={option.id}
-                        className={selected ? 'is-selected' : ''}
-                        onClick={() => handleDynamicFilterToggle(field, option.id, !selected)}
-                      >
-                        <i style={{ backgroundColor: option.color }} />
-                        <span>{option.label}</span>
-                        {selected && <CheckCircle2 size={14} />}
-                      </button>
+                      <React.Fragment key={option.id}>
+                        <button
+                          type="button"
+                          className={selected ? 'is-selected' : ''}
+                          onClick={() => handleDynamicFilterToggle(field, option.id, !selected)}
+                        >
+                          <i style={{ backgroundColor: option.color }} />
+                          <span>{option.label}</span>
+                          {selected && <CheckCircle2 size={14} />}
+                        </button>
+                        {field.id === LEAD_FILTER_IDS.province && (option.children || []).filter(area => area.active).map(area => {
+                          const areaSelected = (dynamicFilters[field.id] || []).includes(area.id);
+                          return (
+                            <button
+                              type="button"
+                              key={area.id}
+                              className={`lead-filter-area-option ${areaSelected ? 'is-selected' : ''}`}
+                              onClick={() => handleDynamicFilterToggle(field, area.id, !areaSelected)}
+                            >
+                              <i style={{ backgroundColor: option.color }} />
+                              <span>{area.label}</span>
+                              {areaSelected && <CheckCircle2 size={14} />}
+                            </button>
+                          );
+                        })}
+                      </React.Fragment>
                     );
                   })}
                 </div>}

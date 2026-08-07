@@ -61,6 +61,33 @@ export const LeadDynamicFields: React.FC<{
         const disabled = !canEditAll && !field.saleEditable;
         const activeOptions = field.options.filter(item => item.active);
 
+        if (field.id === LEAD_FILTER_IDS.province) {
+          const selectedProvince = activeOptions.find(option => (
+            fieldValues.includes(option.id)
+            || (option.children || []).some(child => fieldValues.includes(child.id))
+          ));
+          const activeAreas = (selectedProvince?.children || []).filter(area => area.active);
+          const selectedAreaId = activeAreas.find(area => fieldValues.includes(area.id))?.id || '';
+
+          return (
+            <div key={field.id} className="lead-compact-filter-row lead-compact-filter-row--province">
+              <span>{field.name}</span>
+              <div className="lead-province-selects">
+                <select value={selectedProvince?.id || ''} disabled={disabled} onChange={event => onChange(field, event.target.value)}>
+                  <option value="">Chưa chọn tỉnh/thành</option>
+                  {activeOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                {selectedProvince && activeAreas.length > 0 && (
+                  <select value={selectedAreaId} disabled={disabled} onChange={event => onChange(field, event.target.value || selectedProvince.id)}>
+                    <option value="">Toàn bộ {selectedProvince.label}</option>
+                    {activeAreas.map(area => <option key={area.id} value={area.id}>{area.label}</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+          );
+        }
+
         if (field.type === 'multi_select') {
           const selectedLabels = activeOptions
             .filter(item => fieldValues.includes(item.id))
@@ -148,6 +175,7 @@ export const LeadFilterAdminModal: React.FC<{
     order: 10
   });
   const [optionLines, setOptionLines] = useState('');
+  const [provinceAreaLines, setProvinceAreaLines] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -195,13 +223,24 @@ export const LeadFilterAdminModal: React.FC<{
       order: Math.max(0, ...definitions.map(item => item.order || 0)) + 10
     });
     setOptionLines('');
+    setProvinceAreaLines({});
   };
 
   const startEdit = (definition: LeadFilterDefinition) => {
     setSaveError('');
     setEditingId(definition.id);
-    setDraft({ ...definition, options: definition.options.map(item => ({ ...item })) });
+    setDraft({
+      ...definition,
+      options: definition.options.map(item => ({
+        ...item,
+        children: (item.children || []).map(child => ({ ...child }))
+      }))
+    });
     setOptionLines(definition.options.filter(item => item.active).map(item => item.label).join('\n'));
+    setProvinceAreaLines(Object.fromEntries(definition.options.map(province => [
+      province.id,
+      (province.children || []).filter(child => child.active).map(child => child.label).join('\n')
+    ])));
   };
 
   const updateOptionLines = (value: string) => {
@@ -244,6 +283,41 @@ export const LeadFilterAdminModal: React.FC<{
     if (saved) setEditingId('');
   };
 
+  const updateProvinceAreaLines = (provinceId: string, value: string) => {
+    setProvinceAreaLines(previous => ({ ...previous, [provinceId]: value }));
+    const labels = value.split('\n').map(line => line.trim()).filter(Boolean);
+    setDraft(previous => ({
+      ...previous,
+      options: previous.options.map(province => {
+        if (province.id !== provinceId) return province;
+        const previousChildren = province.children || [];
+        const previousByLabel = new Map(previousChildren.map(item => [item.label.toLocaleLowerCase('vi-VN'), item]));
+        const previousActiveChildren = previousChildren.filter(item => item.active);
+        const usedIds = new Set<string>();
+        const activeChildren = labels.map((label, index) => {
+          const sameLabel = previousByLabel.get(label.toLocaleLowerCase('vi-VN'));
+          const samePosition = previousActiveChildren[index];
+          const existing = sameLabel && !usedIds.has(sameLabel.id)
+            ? sameLabel
+            : samePosition && !usedIds.has(samePosition.id) ? samePosition : null;
+          const child = existing || {
+            id: `${province.id}__${slugifyLeadFilterId(label) || 'area'}_${Date.now().toString(36)}_${index + 1}`,
+            label,
+            color: province.color,
+            active: true
+          };
+          usedIds.add(child.id);
+          return { ...child, label, color: province.color, active: true };
+        });
+        const activeIds = new Set(activeChildren.map(item => item.id));
+        const archivedChildren = previousChildren
+          .filter(item => !activeIds.has(item.id))
+          .map(item => ({ ...item, active: false }));
+        return { ...province, children: [...activeChildren, ...archivedChildren] };
+      })
+    }));
+  };
+
   const toggleDefinitionActive = async (definition: LeadFilterDefinition) => {
     const saved = await persistDefinition({ ...definition, active: !definition.active });
     if (saved && editingId === definition.id) setEditingId('');
@@ -267,7 +341,9 @@ export const LeadFilterAdminModal: React.FC<{
                   <div key={definition.id} className={`lead-config-item ${!definition.active ? 'is-inactive' : ''}`}>
                     <div>
                       <strong>{definition.name}</strong>
-                      <span>{FIELD_TYPE_LABELS[definition.type]} · {definition.options.filter(item => item.active).length} lựa chọn</span>
+                      <span>{definition.id === LEAD_FILTER_IDS.province
+                        ? `${definition.options.filter(item => item.active).length} tỉnh/thành · ${definition.options.flatMap(item => item.children || []).filter(item => item.active).length} vùng`
+                        : `${FIELD_TYPE_LABELS[definition.type]} · ${definition.options.filter(item => item.active).length} lựa chọn`}</span>
                     </div>
                     <div>
                       <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" title={definition.active ? 'Ngừng sử dụng' : 'Sử dụng lại'} disabled={saving} onClick={() => toggleDefinitionActive(definition)}>{definition.active ? <EyeOff size={13} /> : <Eye size={13} />}</button>
@@ -289,6 +365,25 @@ export const LeadFilterAdminModal: React.FC<{
                         <div className="lead-option-colors">
                           {draft.options.filter(item => item.active).map(item => <label key={item.id}><input type="color" value={item.color} onChange={event => setDraft(previous => ({ ...previous, options: previous.options.map(optionItem => optionItem.id === item.id ? { ...optionItem, color: event.target.value } : optionItem) }))} /><span>{item.label}</span></label>)}
                         </div>
+                        {draft.id === LEAD_FILTER_IDS.province && (
+                          <div className="lead-province-area-editor">
+                            <div><strong>Vùng/KCN bên trong từng tỉnh</strong><span>Mở một tỉnh và nhập mỗi vùng trên một dòng. Có thể để trống nếu chưa cần phân chia.</span></div>
+                            {draft.options.filter(item => item.active).map(province => (
+                              <details key={province.id}>
+                                <summary><span>{province.label}</span><small>{(province.children || []).filter(child => child.active).length} vùng</small></summary>
+                                <label>
+                                  <span>Các vùng/KCN thuộc {province.label}</span>
+                                  <textarea
+                                    rows={4}
+                                    value={provinceAreaLines[province.id] ?? (province.children || []).filter(child => child.active).map(child => child.label).join('\n')}
+                                    onChange={event => updateProvinceAreaLines(province.id, event.target.value)}
+                                    placeholder={`Ví dụ:\nKCN A\nKCN B\nKhu vực C`}
+                                  />
+                                </label>
+                              </details>
+                            ))}
+                          </div>
+                        )}
                       </>
                     <div className="lead-config-checks">
                       <label><input type="checkbox" checked={draft.saleEditable} onChange={event => setDraft(previous => ({ ...previous, saleEditable: event.target.checked }))} /> Sale được chỉnh sửa</label>

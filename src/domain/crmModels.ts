@@ -15,6 +15,7 @@ export interface LeadFilterOption {
   label: string;
   color: string;
   active: boolean;
+  children?: LeadFilterOption[];
 }
 
 export interface LeadFilterDefinition extends UnknownRecord {
