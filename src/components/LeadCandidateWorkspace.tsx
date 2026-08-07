@@ -5,13 +5,18 @@ import {
   CalendarClock,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   ExternalLink,
+  Eye,
   Mail,
   MapPin,
+  MoreHorizontal,
   Pencil,
   Phone,
   Plus,
+  Power,
   Search,
   Star,
   UserRoundSearch,
@@ -25,7 +30,8 @@ import {
   type CandidateDuplicate,
   type LeadCandidateContactOutcome,
   type LeadCandidateRecord,
-  type LeadCandidateStatus
+  type LeadCandidateStatus,
+  type LeadCandidateTaskStatus
 } from '../domain/leadCandidateModels';
 import { normalizeTaxCode } from '../domain/taxCodeUniqueness';
 import {
@@ -68,6 +74,8 @@ interface ContactAttemptState {
 
 const CANDIDATE_SOURCES = ['Google Maps', 'Facebook', 'Website', 'Khách hàng giới thiệu', 'Khác'];
 type CandidateWorkspaceView = 'tasks' | 'all';
+type CandidateOutcomeFilter = 'all' | 'not_contacted' | LeadCandidateContactOutcome;
+type CandidateSort = 'priority' | 'updated_desc' | 'company_asc' | 'next_contact_asc';
 
 const CANDIDATE_STATUS_LABELS: Record<LeadCandidateStatus, string> = {
   new: 'Chưa tiếp cận',
@@ -128,8 +136,10 @@ const formatShortDateTime = (value: string, fallback = 'Chưa có') => {
   });
 };
 
+const CALL_OUTCOMES = CONTACT_OUTCOMES.filter(outcome => outcome.value !== 'task_completed');
+
 const isDueToday = (candidate: LeadCandidateRecord) => {
-  if (!candidate.nextContactAt || !['new', 'retry'].includes(candidate.status)) return false;
+  if (!candidate.nextContactAt || candidate.taskStatus === 'dismissed' || candidate.status === 'converted') return false;
   const nextContact = new Date(candidate.nextContactAt);
   if (Number.isNaN(nextContact.getTime())) return false;
   const endOfToday = new Date();
@@ -213,8 +223,11 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   const [saleFilter, setSaleFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [provinceFilter, setProvinceFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | LeadCandidateStatus>('all');
+  const [outcomeFilter, setOutcomeFilter] = useState<CandidateOutcomeFilter>('all');
   const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [candidateSort, setCandidateSort] = useState<CandidateSort>('priority');
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingCandidateId, setEditingCandidateId] = useState('');
   const [form, setForm] = useState<CandidateFormState>(() => createEmptyCandidateForm(currentUser, candidateOwners));
@@ -225,6 +238,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   const [savingAttempt, setSavingAttempt] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [actionError, setActionError] = useState('');
+  const [taskActionCandidateId, setTaskActionCandidateId] = useState('');
   const [referenceTime] = useState(() => Date.now());
 
   const accessibleCandidates = useMemo(() => candidates.filter(candidate => (
@@ -246,18 +260,37 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
     const matchesSale = saleFilter === 'all' || candidate.assignedSaleId === saleFilter;
     const matchesSource = sourceFilter === 'all' || candidate.source === sourceFilter;
     const matchesProvince = provinceFilter === 'all' || candidate.province === provinceFilter;
-    const matchesStatus = statusFilter === 'all' || candidate.status === statusFilter;
-    return matchesWorkspace && matchesSale && matchesSource && matchesProvince && matchesStatus && (!pinnedOnly || candidate.pinned) && matchesSearch(candidate, searchTerm);
+    const matchesOutcome = outcomeFilter === 'all'
+      || (outcomeFilter === 'not_contacted' ? !candidate.lastContactAt : candidate.lastContactOutcome === outcomeFilter);
+    return matchesWorkspace && matchesSale && matchesSource && matchesProvince && matchesOutcome && (!pinnedOnly || candidate.pinned) && matchesSearch(candidate, searchTerm);
   }).sort((left, right) => {
     if (workspaceView === 'tasks') {
+      if (left.taskStatus !== right.taskStatus) return left.taskStatus === 'pending' ? -1 : 1;
       return new Date(left.nextContactAt).getTime() - new Date(right.nextContactAt).getTime();
+    }
+    if (candidateSort === 'company_asc') return left.companyName.localeCompare(right.companyName, 'vi-VN');
+    if (candidateSort === 'next_contact_asc') {
+      const leftSchedule = left.nextContactAt ? new Date(left.nextContactAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightSchedule = right.nextContactAt ? new Date(right.nextContactAt).getTime() : Number.MAX_SAFE_INTEGER;
+      return leftSchedule - rightSchedule;
+    }
+    if (candidateSort === 'updated_desc') {
+      return new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime();
     }
     if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
     const leftSchedule = left.nextContactAt ? new Date(left.nextContactAt).getTime() : Number.MAX_SAFE_INTEGER;
     const rightSchedule = right.nextContactAt ? new Date(right.nextContactAt).getTime() : Number.MAX_SAFE_INTEGER;
     if (leftSchedule !== rightSchedule) return leftSchedule - rightSchedule;
     return new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime();
-  }), [accessibleCandidates, pinnedOnly, provinceFilter, saleFilter, searchTerm, sourceFilter, statusFilter, workspaceView]);
+  }), [accessibleCandidates, candidateSort, outcomeFilter, pinnedOnly, provinceFilter, saleFilter, searchTerm, sourceFilter, workspaceView]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const displayedCandidates = workspaceView === 'all'
+    ? filteredCandidates.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
+    : filteredCandidates;
+  const activeFilterCount = [provinceFilter, sourceFilter, outcomeFilter, saleFilter]
+    .filter(value => value !== 'all').length + (pinnedOnly ? 1 : 0);
 
   const editingCandidate = editingCandidateId
     ? accessibleCandidates.find(candidate => candidate.id === editingCandidateId) || null
@@ -359,6 +392,8 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       const assignedSale = candidateOwners.find(user => user.uid === form.assignedSaleId);
       const now = new Date().toISOString();
       const normalizedTaxCode = normalizeTaxCode(form.taxCode);
+      const nextContactAt = form.nextContactAt ? new Date(form.nextContactAt).toISOString() : '';
+      const scheduleChanged = !editingCandidate || editingCandidate.nextContactAt !== nextContactAt;
       const payload = {
         schemaVersion: LEAD_CANDIDATE_SCHEMA_VERSION,
         companyName: form.companyName.trim(),
@@ -376,7 +411,15 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
         assignedSaleName: assignedSale?.displayName || '',
         discoveredById: editingCandidate?.discoveredById || currentUser.uid,
         discoveredByName: editingCandidate?.discoveredByName || currentUser.displayName,
-        nextContactAt: form.nextContactAt ? new Date(form.nextContactAt).toISOString() : '',
+        nextContactAt,
+        ...(scheduleChanged ? {
+          queuedNextContactAt: '',
+          taskStatus: (nextContactAt ? 'pending' : 'dismissed') as LeadCandidateTaskStatus,
+          taskCompletedAt: '',
+          taskCompletedById: '',
+          taskCompletedByName: '',
+          taskDismissedAt: nextContactAt ? '' : now
+        } : {}),
         updatedBy: currentUser.displayName
       };
 
@@ -441,6 +484,21 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       ? new Date(attemptForm.nextContactAt).toISOString()
       : '';
     const closesCandidate = attemptForm.outcome === 'not_interested';
+    const hasVisibleTask = isDueToday(attemptCandidate);
+    const taskScheduleUpdate = hasVisibleTask
+      ? {
+        nextContactAt: attemptCandidate.nextContactAt,
+        queuedNextContactAt: closesCandidate ? '' : nextContactAt
+      }
+      : {
+        nextContactAt: closesCandidate ? '' : nextContactAt,
+        queuedNextContactAt: '',
+        taskStatus: (closesCandidate || !nextContactAt ? 'dismissed' : 'pending') as LeadCandidateTaskStatus,
+        taskCompletedAt: '',
+        taskCompletedById: '',
+        taskCompletedByName: '',
+        taskDismissedAt: closesCandidate || !nextContactAt ? occurredAt : ''
+      };
 
     setSavingAttempt(true);
     setAttemptError('');
@@ -460,7 +518,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
           createdById: currentUser.uid,
           createdByName: currentUser.displayName
         }, ...(attemptCandidate.contactLogs || [])].slice(0, 50),
-        nextContactAt: closesCandidate ? '' : nextContactAt,
+        ...taskScheduleUpdate,
         updatedBy: currentUser.displayName
       });
       setAttemptCandidateId('');
@@ -489,18 +547,22 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   };
 
   const completeScheduledTask = async (candidate: LeadCandidateRecord) => {
-    if (!window.confirm(`Đánh dấu đã xử lý lịch gọi của “${candidate.companyName}”?`)) return;
+    if (candidate.taskStatus === 'completed') return;
     const occurredAt = new Date().toISOString();
     setActionError('');
+    setTaskActionCandidateId(candidate.id);
     try {
       await dbService.updateDocument('lead_candidates', candidate.id, {
-        nextContactAt: '',
+        taskStatus: 'completed',
+        taskCompletedAt: occurredAt,
+        taskCompletedById: currentUser.uid,
+        taskCompletedByName: currentUser.displayName,
         contactLogs: [{
-          id: `task-${Date.now().toString(36)}`,
+          id: `task-${occurredAt.replace(/\D/g, '')}`,
           occurredAt,
           outcome: 'task_completed' as LeadCandidateContactOutcome,
           note: `Đã xử lý lịch gọi hẹn lúc ${formatDateTime(candidate.nextContactAt)}.`,
-          nextContactAt: '',
+          nextContactAt: candidate.queuedNextContactAt,
           createdById: currentUser.uid,
           createdByName: currentUser.displayName
         }, ...(candidate.contactLogs || [])].slice(0, 50),
@@ -508,6 +570,32 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       });
     } catch {
       setActionError('Không thể xác nhận công việc đã xử lý. Vui lòng kiểm tra quyền Firebase và thử lại.');
+    } finally {
+      setTaskActionCandidateId('');
+    }
+  };
+
+  const dismissScheduledTask = async (candidate: LeadCandidateRecord) => {
+    if (candidate.taskStatus !== 'completed') return;
+    const dismissedAt = new Date().toISOString();
+    const nextContactAt = candidate.queuedNextContactAt;
+    setActionError('');
+    setTaskActionCandidateId(candidate.id);
+    try {
+      await dbService.updateDocument('lead_candidates', candidate.id, {
+        nextContactAt,
+        queuedNextContactAt: '',
+        taskStatus: nextContactAt ? 'pending' : 'dismissed',
+        taskCompletedAt: '',
+        taskCompletedById: '',
+        taskCompletedByName: '',
+        taskDismissedAt: dismissedAt,
+        updatedBy: currentUser.displayName
+      });
+    } catch {
+      setActionError('Không thể tắt công việc. Vui lòng kiểm tra quyền Firebase và thử lại.');
+    } finally {
+      setTaskActionCandidateId('');
     }
   };
 
@@ -517,17 +605,34 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
   };
 
   const markDisqualified = async (candidate: LeadCandidateRecord) => {
-    if (!window.confirm(`Đánh dấu “${candidate.companyName}” là dữ liệu không phù hợp?`)) return;
+    if (!window.confirm(`Ngừng sử dụng dữ liệu “${candidate.companyName}”? Lịch sử liên hệ vẫn được giữ nguyên.`)) return;
+    const dismissedAt = new Date().toISOString();
     setActionError('');
     try {
       await dbService.updateDocument('lead_candidates', candidate.id, {
         status: 'disqualified',
+        ...(!isDueToday(candidate) ? {
+          nextContactAt: '',
+          queuedNextContactAt: '',
+          taskStatus: 'dismissed' as LeadCandidateTaskStatus,
+          taskDismissedAt: dismissedAt
+        } : {}),
         updatedBy: currentUser.displayName
       });
       setSelectedCandidateId('');
     } catch {
       setActionError('Không thể cập nhật trạng thái dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.');
     }
+  };
+
+  const clearDataFilters = () => {
+    setSearchTerm('');
+    setProvinceFilter('all');
+    setSourceFilter('all');
+    setOutcomeFilter('all');
+    setSaleFilter('all');
+    setPinnedOnly(false);
+    setCurrentPage(1);
   };
 
   if (showForm) {
@@ -647,31 +752,39 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
             <Search size={15} />
             <input
               value={searchTerm}
-              onChange={event => setSearchTerm(event.target.value)}
-              placeholder="Tìm công ty, MST, điện thoại, nguồn..."
+              onChange={event => { setSearchTerm(event.target.value); setCurrentPage(1); }}
+              placeholder="Tìm doanh nghiệp, MST, điện thoại, người liên hệ..."
             />
           </label>
-          <select value={provinceFilter} onChange={event => setProvinceFilter(event.target.value)} aria-label="Lọc tỉnh thành">
+          <select value={provinceFilter} onChange={event => { setProvinceFilter(event.target.value); setCurrentPage(1); }} aria-label="Lọc tỉnh thành">
             <option value="all">Tất cả tỉnh/thành</option>
             {provinceOptions.map(province => <option key={province} value={province}>{province}</option>)}
           </select>
-          <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} aria-label="Lọc nguồn dữ liệu">
+          <select value={sourceFilter} onChange={event => { setSourceFilter(event.target.value); setCurrentPage(1); }} aria-label="Lọc nguồn dữ liệu">
             <option value="all">Tất cả nguồn</option>
             {CANDIDATE_SOURCES.map(source => <option key={source} value={source}>{source}</option>)}
           </select>
-          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as 'all' | LeadCandidateStatus)} aria-label="Lọc tình trạng tiếp cận">
-            <option value="all">Tất cả tình trạng</option>
-            {(Object.entries(CANDIDATE_STATUS_LABELS) as Array<[LeadCandidateStatus, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select value={outcomeFilter} onChange={event => { setOutcomeFilter(event.target.value as CandidateOutcomeFilter); setCurrentPage(1); }} aria-label="Lọc kết quả liên hệ">
+            <option value="all">Tất cả tình trạng gọi</option>
+            <option value="not_contacted">Chưa liên hệ</option>
+            {CALL_OUTCOMES.map(outcome => <option key={outcome.value} value={outcome.value}>{outcome.label}</option>)}
           </select>
           {currentUser.role === 'admin' && (
-            <select value={saleFilter} onChange={event => setSaleFilter(event.target.value)} aria-label="Lọc theo Sale">
+            <select value={saleFilter} onChange={event => { setSaleFilter(event.target.value); setCurrentPage(1); }} aria-label="Lọc theo Sale">
               <option value="all">Tất cả phụ trách</option>
               {candidateOwners.map(user => <option key={user.uid} value={user.uid}>{user.displayName}</option>)}
             </select>
           )}
-          <button type="button" className={`lead-candidate-pinned-filter ${pinnedOnly ? 'is-active' : ''}`} onClick={() => setPinnedOnly(previous => !previous)}>
+          <button type="button" className={`lead-candidate-pinned-filter ${pinnedOnly ? 'is-active' : ''}`} onClick={() => { setPinnedOnly(previous => !previous); setCurrentPage(1); }}>
             <Star size={14} fill={pinnedOnly ? 'currentColor' : 'none'} /> Đã ghim
           </button>
+          <select value={candidateSort} onChange={event => { setCandidateSort(event.target.value as CandidateSort); setCurrentPage(1); }} aria-label="Sắp xếp dữ liệu">
+            <option value="priority">Ưu tiên làm việc</option>
+            <option value="updated_desc">Mới cập nhật</option>
+            <option value="company_asc">Tên doanh nghiệp A–Z</option>
+            <option value="next_contact_asc">Lịch gọi gần nhất</option>
+          </select>
+          {(activeFilterCount > 0 || searchTerm) && <button type="button" className="lead-candidate-clear-filter" onClick={clearDataFilters}><X size={13} /> Xóa lọc ({activeFilterCount})</button>}
         </section>
       )}
 
@@ -686,49 +799,70 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
       <section className="lead-table-card">
         <div className="lead-table-result">
           {workspaceView === 'tasks' ? <>
-            <span><strong>{filteredCandidates.length}</strong> công việc đến hạn hôm nay hoặc đã quá hạn</span>
-            <span>Hoàn thành công việc để đưa khách hàng ra khỏi danh sách này.</span>
+            <span><strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'pending').length}</strong> chưa xử lý · <strong>{filteredCandidates.filter(candidate => candidate.taskStatus === 'completed').length}</strong> đã xử lý, chờ tắt</span>
+            <span>Nút đỏ chuyển sang xanh sau khi xử lý; công việc chỉ biến mất khi bấm Tắt.</span>
           </> : <>
             <span>Hiển thị <strong>{filteredCandidates.length}</strong> / {accessibleCandidates.length} dữ liệu</span>
-            <span>Ưu tiên doanh nghiệp đã ghim và lịch gọi gần nhất.</span>
+            <span>{activeFilterCount > 0 ? `${activeFilterCount} bộ lọc đang áp dụng` : 'Bấm vào tên doanh nghiệp để mở hồ sơ và toàn bộ lịch sử.'}</span>
           </>}
         </div>
         <div className="table-container">
           {workspaceView === 'tasks' ? (
             <table className="lead-candidate-table lead-candidate-task-table">
-              <thead><tr><th>Thời gian hẹn</th><th>Khách hàng</th><th>Liên hệ</th><th>Nội dung cần xử lý</th><th>Hoàn thành</th></tr></thead>
+              <thead><tr><th>Trạng thái</th><th>Doanh nghiệp</th><th>Liên hệ</th><th>Tỉnh/thành</th><th>Lịch sử liên hệ</th><th>Lịch hẹn</th><th>Thao tác</th></tr></thead>
               <tbody>
-                {filteredCandidates.map(candidate => {
+                {displayedCandidates.map(candidate => {
                   const isOverdue = new Date(candidate.nextContactAt).getTime() < referenceTime;
+                  const isCompleted = candidate.taskStatus === 'completed';
+                  const isBusy = taskActionCandidateId === candidate.id;
                   return (
-                    <tr key={candidate.id} className={isOverdue ? 'is-overdue' : ''}>
-                      <td><strong className={isOverdue ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-task-status ${isOverdue ? 'is-overdue' : ''}`}>{isOverdue ? 'Quá hạn' : 'Hôm nay'}</span></td>
-                      <td><strong>{candidate.companyName}</strong><span>{candidate.province || candidate.source || 'Chưa rõ tỉnh/thành'}</span></td>
+                    <tr key={candidate.id} className={`${isOverdue && !isCompleted ? 'is-overdue' : ''} ${isCompleted ? 'is-task-completed' : ''}`}>
+                      <td>
+                        <button
+                          type="button"
+                          className={`lead-candidate-task-toggle ${isCompleted ? 'is-completed' : 'is-pending'}`}
+                          onClick={() => completeScheduledTask(candidate)}
+                          disabled={isBusy || isCompleted}
+                        >
+                          {isCompleted ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                          <span><strong>{isCompleted ? 'Đã xử lý' : 'Chưa xử lý'}</strong><small>{isCompleted ? 'Chờ bấm Tắt' : 'Bấm để hoàn thành'}</small></span>
+                        </button>
+                      </td>
+                      <td><button type="button" className="lead-candidate-company-button" onClick={() => setSelectedCandidateId(candidate.id)}><strong>{candidate.companyName}</strong><span>{candidate.taxCode ? `MST ${candidate.taxCode}` : candidate.source || 'Chưa rõ nguồn'}</span></button></td>
                       <td><strong>{candidate.contactPerson || '—'}</strong>{candidate.phone ? <button type="button" className="lead-candidate-copy" onClick={() => copyPhone(candidate.phone)} title="Sao chép số điện thoại">{candidate.phone}<Copy size={11} /></button> : <span>{candidate.email || 'Chưa có liên hệ'}</span>}</td>
-                      <td><strong>{candidate.lastContactOutcome ? CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome] : 'Lịch gọi đã hẹn'}</strong><span>{candidate.lastContactNote || candidate.note || 'Cần liên hệ theo lịch đã đặt.'}</span></td>
-                      <td><button type="button" className="btn btn-sm btn-primary" onClick={() => completeScheduledTask(candidate)}><Check size={13} /> Đã xử lý</button></td>
+                      <td><strong>{candidate.province || 'Chưa cập nhật'}</strong><span>{candidate.address || candidate.source || '—'}</span></td>
+                      <td><strong>{candidate.lastContactOutcome ? CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome] : 'Chưa có cuộc gọi'}</strong><span>{candidate.lastContactNote || candidate.note || `${candidate.contactAttempts} lần liên hệ`}</span></td>
+                      <td><strong className={isOverdue && !isCompleted ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-task-status ${isOverdue && !isCompleted ? 'is-overdue' : ''}`}>{isCompleted ? `Xử lý ${formatShortDateTime(candidate.taskCompletedAt)}` : isOverdue ? 'Quá hạn' : 'Hôm nay'}</span>{candidate.queuedNextContactAt && <small className="lead-candidate-next-queued">Hẹn tiếp: {formatShortDateTime(candidate.queuedNextContactAt)}</small>}</td>
+                      <td>
+                        <div className="lead-candidate-task-actions">
+                          <button type="button" className="btn btn-sm btn-outline" onClick={() => openAttemptForm(candidate)}><Phone size={13} /> Ghi nhận</button>
+                          <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setSelectedCandidateId(candidate.id)} title="Mở hồ sơ"><Eye size={13} /></button>
+                          {isCompleted && <button type="button" className="btn btn-sm lead-candidate-task-dismiss" onClick={() => dismissScheduledTask(candidate)} disabled={isBusy}><Power size={13} /> Tắt</button>}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
-                {filteredCandidates.length === 0 && <tr><td colSpan={5} className="lead-empty">Chưa có công việc đến hạn. Lịch gọi sẽ tự xuất hiện ở đây khi đến ngày xử lý.</td></tr>}
+                {filteredCandidates.length === 0 && <tr><td colSpan={7} className="lead-empty">Chưa có công việc đến hạn. Lịch gọi sẽ tự xuất hiện ở đây khi đến ngày xử lý.</td></tr>}
               </tbody>
             </table>
           ) : (
             <table className="lead-candidate-table">
               <thead>
                 <tr>
-                  <th>Khách hàng</th>
+                  <th>Doanh nghiệp</th>
                   <th>Liên hệ</th>
-                  {currentUser.role === 'admin' && <th>Phụ trách</th>}
-                  <th>Tình trạng gọi</th>
+                  <th>Tỉnh/thành</th>
+                  <th>Lịch sử liên hệ</th>
                   <th>Việc tiếp theo</th>
+                  {currentUser.role === 'admin' && <th>Phụ trách</th>}
                   <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredCandidates.map(candidate => {
+                {displayedCandidates.map(candidate => {
                   const isDue = candidate.nextContactAt
-                    && ['new', 'retry'].includes(candidate.status)
+                    && candidate.taskStatus !== 'dismissed'
                     && new Date(candidate.nextContactAt).getTime() < referenceTime;
                   const isActive = candidate.status === 'new' || candidate.status === 'retry';
                   return (
@@ -743,7 +877,7 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                           ><Star size={14} fill={candidate.pinned ? 'currentColor' : 'none'} /></button>
                           <button type="button" className="lead-candidate-company-button" onClick={() => setSelectedCandidateId(candidate.id)}>
                             <strong>{candidate.companyName}</strong>
-                            <span>{candidate.province || 'Chưa rõ tỉnh/thành'} · {candidate.source || 'Chưa rõ nguồn'}{candidate.taxCode ? ` · MST ${candidate.taxCode}` : ''}</span>
+                            <span>{candidate.source || 'Chưa rõ nguồn'}{candidate.taxCode ? ` · MST ${candidate.taxCode}` : ''}</span>
                           </button>
                         </div>
                       </td>
@@ -755,28 +889,43 @@ export const LeadCandidateWorkspace: React.FC<LeadCandidateWorkspaceProps> = ({
                           </button>
                         ) : <span>{candidate.email || 'Chưa có liên hệ'}</span>}
                       </td>
+                      <td><strong>{candidate.province || 'Chưa cập nhật'}</strong><span>{candidate.address || '—'}</span></td>
+                      <td>
+                        {candidate.lastContactAt ? <><strong>{CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome || 'connected']}</strong><span>{formatShortDateTime(candidate.lastContactAt)} · {candidate.contactAttempts} lần</span></> : <span className="lead-candidate-muted">Chưa có cuộc gọi</span>}
+                      </td>
+                      <td>
+                        {candidate.nextContactAt && candidate.taskStatus !== 'dismissed' ? <><strong className={isDue ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt)}</strong><span className={`lead-candidate-status ${candidate.taskStatus === 'completed' ? 'lead-candidate-status--converted' : `lead-candidate-status--${candidate.status}`}`}>{candidate.taskStatus === 'completed' ? 'Đã xử lý · chờ tắt' : CANDIDATE_STATUS_LABELS[candidate.status]}</span>{candidate.queuedNextContactAt && <small className="lead-candidate-next-queued">Hẹn tiếp: {formatShortDateTime(candidate.queuedNextContactAt)}</small>}</> : <span className={`lead-candidate-status lead-candidate-status--${candidate.status}`}>{CANDIDATE_STATUS_LABELS[candidate.status]}</span>}
+                      </td>
                       {currentUser.role === 'admin' && <td><strong>{candidate.assignedSaleName || candidateOwners.find(user => user.uid === candidate.assignedSaleId)?.displayName || 'Chưa phân công'}</strong><span>{candidate.contactAttempts > 0 ? `${candidate.contactAttempts} lần tiếp cận` : 'Chưa gọi lần nào'}</span></td>}
                       <td>
-                        {candidate.lastContactAt ? <><strong>{CONTACT_OUTCOME_LABELS[candidate.lastContactOutcome || 'connected']}</strong><span>{formatShortDateTime(candidate.lastContactAt)}</span></> : <span className="lead-candidate-muted">Chưa có cuộc gọi</span>}
-                      </td>
-                      <td>
-                        {isActive ? <><strong className={isDue ? 'lead-date-overdue' : ''}>{formatShortDateTime(candidate.nextContactAt, 'Chưa đặt lịch')}</strong><span className={`lead-candidate-status lead-candidate-status--${candidate.status}`}>{CANDIDATE_STATUS_LABELS[candidate.status]}</span></> : <span className={`lead-candidate-status lead-candidate-status--${candidate.status}`}>{CANDIDATE_STATUS_LABELS[candidate.status]}</span>}
-                      </td>
-                      <td>
                         <div className="lead-candidate-actions">
-                          {isActive && <button type="button" className="btn btn-sm btn-primary" onClick={() => openAttemptForm(candidate)}><Check size={13} /> Đã gọi</button>}
-                          {isActive && <button type="button" className="btn btn-sm btn-outline" onClick={() => onStartConversion(candidate)}><CheckCircle2 size={13} /> Chuyển Lead</button>}
-                          <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => setSelectedCandidateId(candidate.id)} title="Mở hồ sơ"><UserRoundSearch size={13} /></button>
+                          {isActive && <button type="button" className="btn btn-sm btn-primary" onClick={() => openAttemptForm(candidate)}><Phone size={13} /> Ghi nhận</button>}
+                          <details className="lead-candidate-row-menu">
+                            <summary title="Thao tác khác"><MoreHorizontal size={16} /></summary>
+                            <div>
+                              <button type="button" onClick={() => setSelectedCandidateId(candidate.id)}><Eye size={13} /> Xem hồ sơ</button>
+                              <button type="button" onClick={() => openEditForm(candidate)}><Pencil size={13} /> Chỉnh sửa</button>
+                              {isActive && <button type="button" onClick={() => onStartConversion(candidate)}><CheckCircle2 size={13} /> Chuyển thành Lead</button>}
+                              {isActive && <button type="button" className="is-danger" onClick={() => markDisqualified(candidate)}><Power size={13} /> Ngừng sử dụng</button>}
+                            </div>
+                          </details>
                         </div>
                       </td>
                     </tr>
                   );
                 })}
-                {filteredCandidates.length === 0 && <tr><td colSpan={currentUser.role === 'admin' ? 6 : 5} className="lead-empty">Không có dữ liệu phù hợp với điều kiện lọc.</td></tr>}
+                {filteredCandidates.length === 0 && <tr><td colSpan={currentUser.role === 'admin' ? 7 : 6} className="lead-empty">Không có dữ liệu phù hợp với điều kiện lọc.</td></tr>}
               </tbody>
             </table>
           )}
         </div>
+        {workspaceView === 'all' && filteredCandidates.length > 0 && (
+          <footer className="lead-candidate-pagination">
+            <label>Hiển thị <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setCurrentPage(1); }}><option value={25}>25 dòng</option><option value={50}>50 dòng</option><option value={100}>100 dòng</option></select></label>
+            <span>{(safeCurrentPage - 1) * pageSize + 1}–{Math.min(safeCurrentPage * pageSize, filteredCandidates.length)} trong {filteredCandidates.length}</span>
+            <div><button type="button" onClick={() => setCurrentPage(page => Math.max(1, page - 1))} disabled={safeCurrentPage === 1} aria-label="Trang trước"><ChevronLeft size={15} /></button><strong>{safeCurrentPage} / {totalPages}</strong><button type="button" onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))} disabled={safeCurrentPage === totalPages} aria-label="Trang sau"><ChevronRight size={15} /></button></div>
+          </footer>
+        )}
       </section>
 
       {selectedCandidate && (

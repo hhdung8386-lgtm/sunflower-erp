@@ -472,7 +472,7 @@ export const Leads: React.FC<LeadsProps> = ({
       stage: 'contacted',
       assignedSaleId,
       discoveredById: candidate.discoveredById || candidate.createdById,
-      nextFollowUpAt: toDateTimeLocal(candidate.nextContactAt),
+      nextFollowUpAt: toDateTimeLocal(candidate.queuedNextContactAt || candidate.nextContactAt),
       note: notes
     });
     setShowLeadForm(true);
@@ -660,6 +660,10 @@ export const Leads: React.FC<LeadsProps> = ({
         convertedAt: now,
         lastContactAt: now,
         contactAttempts: (candidate?.contactAttempts || 0) + 1,
+        nextContactAt: '',
+        queuedNextContactAt: '',
+        taskStatus: 'dismissed',
+        taskDismissedAt: now,
         updatedBy: currentUser.displayName
       });
     }

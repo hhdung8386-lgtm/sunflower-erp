@@ -1,9 +1,10 @@
 import type { CustomerRecord, LeadRecord } from './crmModels';
 import { normalizeTaxCode } from './taxCodeUniqueness';
 
-export const LEAD_CANDIDATE_SCHEMA_VERSION = 2;
+export const LEAD_CANDIDATE_SCHEMA_VERSION = 3;
 
 export type LeadCandidateStatus = 'new' | 'retry' | 'disqualified' | 'converted';
+export type LeadCandidateTaskStatus = 'pending' | 'completed' | 'dismissed';
 export type LeadCandidateContactOutcome =
   | 'connected'
   | 'no_answer'
@@ -49,6 +50,12 @@ export interface LeadCandidateRecord extends Record<string, unknown> {
   lastContactNote: string;
   contactLogs: LeadCandidateContactLog[];
   nextContactAt: string;
+  queuedNextContactAt: string;
+  taskStatus: LeadCandidateTaskStatus;
+  taskCompletedAt: string;
+  taskCompletedById: string;
+  taskCompletedByName: string;
+  taskDismissedAt: string;
   pinned: boolean;
   convertedLeadId: string;
   convertedAt: string;
@@ -82,6 +89,12 @@ const asNonNegativeInteger = (value: unknown): number => {
 const normalizeStatus = (value: unknown): LeadCandidateStatus => {
   const statuses: LeadCandidateStatus[] = ['new', 'retry', 'disqualified', 'converted'];
   return statuses.includes(value as LeadCandidateStatus) ? value as LeadCandidateStatus : 'new';
+};
+
+const normalizeTaskStatus = (value: unknown, nextContactAt: string): LeadCandidateTaskStatus => {
+  const statuses: LeadCandidateTaskStatus[] = ['pending', 'completed', 'dismissed'];
+  if (statuses.includes(value as LeadCandidateTaskStatus)) return value as LeadCandidateTaskStatus;
+  return nextContactAt ? 'pending' : 'dismissed';
 };
 
 const normalizeContactOutcome = (value: unknown): LeadCandidateContactOutcome | '' => {
@@ -119,6 +132,7 @@ const normalizeContactLogs = (value: unknown): LeadCandidateContactLog[] => (
 
 export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecord => {
   const source = asRecord(value);
+  const nextContactAt = asText(source.nextContactAt);
   return {
     ...source,
     id: asText(source.id),
@@ -144,7 +158,13 @@ export const normalizeLeadCandidateRecord = (value: unknown): LeadCandidateRecor
     lastContactOutcome: normalizeContactOutcome(source.lastContactOutcome),
     lastContactNote: asText(source.lastContactNote),
     contactLogs: normalizeContactLogs(source.contactLogs),
-    nextContactAt: asText(source.nextContactAt),
+    nextContactAt,
+    queuedNextContactAt: asText(source.queuedNextContactAt),
+    taskStatus: normalizeTaskStatus(source.taskStatus, nextContactAt),
+    taskCompletedAt: asText(source.taskCompletedAt),
+    taskCompletedById: asText(source.taskCompletedById),
+    taskCompletedByName: asText(source.taskCompletedByName),
+    taskDismissedAt: asText(source.taskDismissedAt),
     pinned: source.pinned === true,
     convertedLeadId: asText(source.convertedLeadId),
     convertedAt: asText(source.convertedAt),
