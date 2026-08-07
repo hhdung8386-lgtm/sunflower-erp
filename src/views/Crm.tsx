@@ -2046,6 +2046,18 @@ export const Crm: React.FC<CrmProps> = ({
                                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-primary" onClick={() => onPreparedOrderCreated?.(customer.id)}><ClipboardPlus size={13} /> {t('Tạo PO')}</button>}
                                 <button type="button" className="btn btn-sm btn-outline" onClick={() => openCustomerDetail(customer)}>{t('Chi tiết')}</button>
                                 {(currentUser.role === 'admin' || currentUser.role === 'sale') && <button type="button" className="btn btn-sm btn-outline btn-symbol-sm" onClick={() => openEditModal(customer)} title={t('Sửa')}><Pencil size={14} /></button>}
+                                {(currentUser.role === 'admin' || currentUser.role === 'sale') && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline btn-symbol-sm crm-row-delete"
+                                    onClick={() => handleDeleteCustomer(customer.id)}
+                                    disabled={currentUser.role !== 'admin' && customer.deleteRequested}
+                                    title={currentUser.role !== 'admin' && customer.deleteRequested ? 'Đã gửi yêu cầu xóa' : 'Xóa khách hàng'}
+                                    aria-label={currentUser.role !== 'admin' && customer.deleteRequested ? `Đã gửi yêu cầu xóa ${customer.companyName}` : `Xóa khách hàng ${customer.companyName}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
                               </div></td>
                             </tr>
                             {isMaterialsExpanded && (

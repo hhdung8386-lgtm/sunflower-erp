@@ -679,6 +679,17 @@
   border-color: #fecaca;
 }
 
+.crm-row-delete {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.crm-row-delete:disabled {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
 .crm-analytics-panel {
   padding: 4px 2px 2px;
 }
@@ -1638,7 +1649,6 @@
   line-height: 1.35;
 }
 
-.po-items-card .po-grid-input:hover,
 .po-items-card .po-grid-input:focus {
   border-color: #93a9d3;
   background: #ffffff;

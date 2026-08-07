@@ -2437,11 +2437,6 @@ tr:hover td {
   font: inherit;
 }
 
-.customer-data-table input:hover,
-.customer-data-table select:hover {
-  border-color: #b9c8dc;
-}
-
 .customer-data-table input:focus,
 .customer-data-table select:focus {
   outline: none;
@@ -2454,6 +2449,16 @@ tr:hover td {
   color: #53627a;
   background: #f3f5f8;
   cursor: not-allowed;
+}
+
+/* Editable data tables stay visually still until a field actually receives focus. */
+.customer-data-table tbody tr:hover td,
+.customer-onboarding-items__table tbody tr:not(.customer-onboarding-items__details):hover td {
+  background: #fff;
+}
+
+.customer-onboarding-items__table tbody tr.customer-onboarding-items__details:hover td {
+  background: #f8fafc;
 }
 
 .customer-data-table--profile th:nth-child(1) { width: 145px; }
@@ -2792,8 +2797,8 @@ tr:hover td {
   vertical-align: middle;
 }
 
-.po-inline-grid tr:hover {
-  background-color: var(--bg-hover);
+.po-inline-grid tbody > tr:not(.po-item-detail-row):hover > td {
+  background-color: transparent;
 }
 
 .po-grid-input {
